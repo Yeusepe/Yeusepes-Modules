@@ -1,0 +1,40 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+	<PropertyGroup>
+		<TargetFramework>net8.0-windows10.0.22621.0</TargetFramework>
+		<UseWPF>true</UseWPF>
+		<ImplicitUsings>enable</ImplicitUsings>
+		<Nullable>enable</Nullable>
+		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
+		<LangVersion>latestmajor</LangVersion>
+		<WindowsSdkPackageVersion>10.0.22621.52</WindowsSdkPackageVersion>
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>		
+	</PropertyGroup>
+
+	<Target Name="PostBuild" AfterTargets="Build">
+		<!-- Ensure the target directory exists -->
+		<MakeDir Directories="$(APPDATA)\vrcosc-v2-Dev\packages\local" />
+
+		<!-- Define files to exclude -->
+		<ItemGroup>
+			<ExcludedFiles Include="&#xD;&#xA;				$(TargetDir)FontAwesome6.Core.dll;&#xD;&#xA;				$(TargetDir)FontAwesome6.Fonts.Net.dll;&#xD;&#xA;				$(TargetDir)FontAwesome6.Shared.Net.dll;&#xD;&#xA;				$(TargetDir)HidSharp.dll;&#xD;&#xA;				$(TargetDir)JsonSubTypes.dll;&#xD;&#xA;				$(TargetDir)LibreHardwareMonitorLib.dll;&#xD;&#xA;				$(TargetDir)MathParser.org-mXparser.dll;&#xD;&#xA;				$(TargetDir)MeaMod.DNS.dll;&#xD;&#xA;				$(TargetDir)Microsoft.Extensions.DependencyInjection.Abstractions.dll;&#xD;&#xA;				$(TargetDir)Microsoft.Extensions.Logging.Abstractions.dll;&#xD;&#xA;				$(TargetDir)Microsoft.Extensions.Primitives.dll;&#xD;&#xA;				$(TargetDir)Microsoft.Windows.SDK.NET.dll;&#xD;&#xA;				$(TargetDir)Microsoft.Xaml.Behaviors.dll;&#xD;&#xA;				$(TargetDir)NAudio.Core.dll;&#xD;&#xA;				$(TargetDir)NAudio.Wasapi.dll;&#xD;&#xA;				$(TargetDir)Newtonsoft.Json.dll;&#xD;&#xA;				$(TargetDir)NuGet.Versioning.dll;&#xD;&#xA;				$(TargetDir)Octokit.dll;&#xD;&#xA;				$(TargetDir)OpenVR.dll;&#xD;&#xA;				$(TargetDir)openvr_api.dll;&#xD;&#xA;				$(TargetDir)PInvoke.Kernel32.dll;&#xD;&#xA;				$(TargetDir)PInvoke.User32.dll;&#xD;&#xA;				$(TargetDir)PInvoke.Windows.Core.dll;&#xD;&#xA;				$(TargetDir)PInvoke.Windows.ShellScalingApi.dll;&#xD;&#xA;				$(TargetDir)Polly.dll;&#xD;&#xA;				$(TargetDir)RestSharp.dll;&#xD;&#xA;				$(TargetDir)Semver.dll;&#xD;&#xA;				$(TargetDir)System.CodeDom.dll;&#xD;&#xA;				$(TargetDir)System.IO.Ports.dll;&#xD;&#xA;				$(TargetDir)System.Management.dll;&#xD;&#xA;				$(TargetDir)Validation.dll;&#xD;&#xA;				$(TargetDir)Velopack.dll;&#xD;&#xA;				$(TargetDir)VRChat.API.dll;&#xD;&#xA;				$(TargetDir)VRCOSC.App.dll;&#xD;&#xA;				$(TargetDir)VRCOSC.App.pdb;&#xD;&#xA;				$(TargetDir)Whisper.net.dll;&#xD;&#xA;				$(TargetDir)WindowsInput.dll;&#xD;&#xA;				$(TargetDir)WinRT.Runtime.dll;&#xD;&#xA;				$(TargetDir)Xceed.Wpf.AvalonDock.dll;&#xD;&#xA;				$(TargetDir)Xceed.Wpf.AvalonDock.Themes.Aero.dll;&#xD;&#xA;				$(TargetDir)Xceed.Wpf.AvalonDock.Themes.Metro.dll;&#xD;&#xA;				$(TargetDir)Xceed.Wpf.AvalonDock.Themes.VS2010.dll;&#xD;&#xA;				$(TargetDir)Xceed.Wpf.Toolkit.dll" />
+		</ItemGroup>
+
+		<Copy SourceFiles="@(ResourceFiles)" DestinationFolder="$(APPDATA)\vrcosc-v2-Dev\packages\local\Resources\" />
+
+		<!-- Copy only non-excluded files -->
+		<ItemGroup>
+			<FilteredDependencies Include="$(TargetDir)*.dll" Exclude="@(ExcludedFiles)" />
+		</ItemGroup>
+
+		<Copy SourceFiles="@(FilteredDependencies)" DestinationFolder="$(APPDATA)\vrcosc-v2-Dev\packages\local\" />
+	</Target>
+
+
+	<ItemGroup>
+		<ProjectReference Include="..\Plugins\VRCOSC.App\VRCOSC.App.csproj" />
+		<ProjectReference Include="..\Plugins\YeusepesLowLevelTools\YeusepesLowLevelTools.csproj" />
+	</ItemGroup>
+
+</Project>
+
