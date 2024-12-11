@@ -1,27 +1,22 @@
 # Yeusepe's Modules
 
-Welcome to **Yeusepe's Modules**, the official repository for Yeusepe's assets! This project is a part of the [VolcanicArts/VRCOSC](https://github.com/VolcanicArts/VRCOSC) ecosystem, providing tools and utilities for enhanced virtual reality experiences.
+![Modules Overview](https://raw.githubusercontent.com/Yeusepe/Yeusepes-Modules/main/Modules.png)
 
----
-
-## About
-This repository is a collection of tools, modules, and assets aimed at enhancing Virtual Reality interactions using OSC (Open Sound Control) technology. Each module is designed to integrate seamlessly into VRChat, providing unique functionalities and improving user experiences.
+Welcome to **Yeusepe's Modules**, the official repository for Yeusepe's assets! This project is a part of the [VolcanicArts/VRCOSC](https://github.com/VolcanicArts/VRCOSC) ecosystem.
 
 ---
 
 ## Table of Modules
 
-| Module Name    | Description                                                                                       | Status      |
-|----------------|---------------------------------------------------------------------------------------------------|-------------|
-| **DiscordOSC** | Bridges Discord status updates with OSC for integration in VRChat, allowing dynamic interactions. | In Progress |
+| Module Name    | Description                                                                                     | Status      |
+|----------------|-------------------------------------------------------------------------------------------------|-------------|
+| **DiscordOSC** | Enables control and monitoring of Discord through OSC, allowing enhanced integration in VRChat. | In Progress |
 
 More modules will be added as the project evolves!
 
 ---
 
 ## Modules Overview
-
-![Modules Overview](https://raw.githubusercontent.com/Yeusepe/Yeusepes-Modules/main/Modules.png)
 
 This image provides a quick visual overview of the modules available in this repository. Each module is designed to fit seamlessly into the broader OSC ecosystem while delivering practical features.
 
