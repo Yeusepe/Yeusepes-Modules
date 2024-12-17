@@ -1,6 +1,6 @@
 # Yeusepe's Modules
 
-![Modules Overview](https://raw.githubusercontent.com/Yeusepe/Yeusepes-Modules/main/Modules.png)
+![Modules Overview](https://raw.githubusercontent.com/Yeusepe/Yeusepes-Modules/main/Banner.gif)
 
 Welcome to **Yeusepe's Modules**, the official repository for Yeusepe's assets! This project is a part of the [VolcanicArts/VRCOSC](https://github.com/VolcanicArts/VRCOSC) ecosystem.
 
