@@ -10,7 +10,8 @@ Welcome to **Yeusepe's Modules**, the official repository for Yeusepe's assets! 
 
 | Module Name    | Description                                                                                     | Status      |
 |----------------|-------------------------------------------------------------------------------------------------|-------------|
-| **DiscordOSC** | Enables control and monitoring of Discord through OSC, allowing enhanced integration in VRChat. | In Progress |
+| **DiscordOSC** | Enables control and monitoring of Discord through OSC, allowing enhanced integration in VRChat. | Available ✅ |
+| **OSCQR** | Allows real-time QR code detection directly from your screen using Open Sound Control (OSC). | Available ✅ |
 
 More modules will be added as the project evolves!
 
