@@ -1,8 +1,9 @@
-﻿using DISCORDOSC.RPCTools;
+using DISCORDOSC.RPCTools;
 using DISCORDOSC.UI;
 using VRCOSC.App.SDK.Modules;
 using VRCOSC.App.SDK.Modules.Attributes.Settings;
 using VRCOSC.App.SDK.Parameters;
+
 
 #pragma warning disable CA1416 // Validate platform compatibility
 
@@ -11,6 +12,7 @@ namespace VIRAModules.DISCORDOSC
     [ModuleTitle("DiscordOSC")]
     [ModuleDescription("A module to control your Discord Through OSC.")]
     [ModuleType(ModuleType.Generic)]
+    [ModuleInfo("https://github.com/Yeusepe/Yeusepes-Modules/wiki/DiscordOSC")]
     public class DISCORDOSC : Module
     {
         private string clientId;
@@ -82,15 +84,18 @@ namespace VIRAModules.DISCORDOSC
         {
             client = new BaseDiscordClient();
 
+            // Fallback to hardcoded defaults if settings are empty
+            clientId = GetSettingValue<string>(DiscordSetting.ClientId);
+            clientSecret = GetSettingValue<string>(DiscordSetting.ClientSecret);
+
             if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
             {
-                Log("Please set both Client ID and Client Secret as environment variables or in the settings!");
-                return Task.FromResult(false);
+                clientId = "";
+                clientSecret = "";
+                LogDebug("ClientId was empty or clientSecret was empty. Using defaults.");
             }
 
-            Log("Discord Module started!");
-
-            Task.Run(async () =>
+            return Task.Run(async () =>
             {
                 try
                 {
@@ -98,23 +103,92 @@ namespace VIRAModules.DISCORDOSC
                     string accessToken = await auth.FetchAccessTokenAsync();
                     LogDebug("Access token retrieved successfully.");
 
-                    client.Connect("discord-ipc-0"); // Adjust the pipe name as needed
+                    // Attempt to connect to any available Discord IPC pipe
+                    bool connected = false;
+                    Log("Attempting to connect to Discord...");
+                    for (int i = 0; i < 10; i++) // Attempt discord-ipc-0 through discord-ipc-9
+                    {
+                        string pipeName = $"discord-ipc-{i}";
+                        LogDebug($"Attempting to connect to {pipeName}...");
 
-                    var handshakeResponse = client.Handshake(clientId);
-                    LogDebug("Handshake completed");
+                        var connectTask = Task.Run(() => client.Connect(pipeName)); // Start the connect task
+                        var timeoutTask = Task.Delay(TimeSpan.FromSeconds(2)); // 2-second timeout
 
+                        var completedTask = await Task.WhenAny(connectTask, timeoutTask);
+
+                        if (completedTask == connectTask) // Connection completed successfully
+                        {
+                            try
+                            {
+                                await connectTask; // Ensure no exceptions occurred
+                                connected = true;
+                                Log($"Successfully connected to {pipeName}");
+                                break;
+                            }
+                            catch (Exception ex)
+                            {
+                                LogDebug($"Error connecting to {pipeName}: {ex.Message}");
+                            }
+                        }
+                        else // Timeout
+                        {
+                            LogDebug($"Connection attempt to {pipeName} timed out.");
+                        }
+                    }
+
+                    if (!connected)
+                    {
+                        Log("Failed to connect to Discord IPC pipes. Make sure Discord is running.");
+                        return false;
+                    }
+
+                    // Timeout for the handshake process
+                    var handshakeTask = Task.Run(() => client.Handshake(clientId));
+                    var handshakeTimeout = Task.Delay(TimeSpan.FromSeconds(3)); // 3-second timeout for handshake
+
+                    var completedHandshake = await Task.WhenAny(handshakeTask, handshakeTimeout);
+                    if (completedHandshake == handshakeTask)
+                    {
+                        var handshakeResponse = await handshakeTask;
+                        LogDebug("Handshake completed successfully.");
+                    }
+                    else
+                    {
+                        Log("Handshake timed out. Try restarting discord.");
+                        return false;
+                    }
+
+                    // Timeout for the authentication process
                     var authPayload = Payload.Authenticate(accessToken);
-                    var authResponse = client.SendDataAndWait(1, authPayload);
-                    LogDebug("Authenticated successfully");
+                    var authTask = Task.Run(() => client.SendDataAndWait(1, authPayload));
+                    var authTimeout = Task.Delay(TimeSpan.FromSeconds(3)); // 3-second timeout for authentication
+
+                    var completedAuth = await Task.WhenAny(authTask, authTimeout);
+                    if (completedAuth == authTask)
+                    {
+                        var authResponse = await authTask;
+                        Log("Authenticated successfully!");
+                    }
+                    else
+                    {
+                        Log("Authentication timed out. Try restarting discord.");
+                        return false;
+                    }
+
+                    LogDebug("Discord Module started!");
+                    return true;
                 }
                 catch (Exception ex)
                 {
-                    LogDebug("Error during module start: " + ex.Message);
+                    Log("Error during module start: " + ex.Message);
+                    return false;
                 }
-            }).Wait();
+            });
 
-            return Task.FromResult(true);
+
         }
+
+
 
         protected override void OnRegisteredParameterReceived(RegisteredParameter parameter)
         {
