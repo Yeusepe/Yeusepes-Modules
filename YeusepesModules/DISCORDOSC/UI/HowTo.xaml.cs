@@ -1,6 +1,7 @@
 ﻿using System.Windows.Controls;
-using VIRAModules.DISCORDOSC;
+using YeusepesModules.DISCORDOSC;
 using VRCOSC.App.SDK.Modules;
+using YeusepesModules.Common;
 
 
 namespace DISCORDOSC.UI

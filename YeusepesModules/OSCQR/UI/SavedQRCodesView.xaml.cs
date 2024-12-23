@@ -6,7 +6,7 @@ using System.Windows.Input;
 using VRCOSC.App.SDK.Modules.Attributes.Settings;
 using System.Windows.Controls;
 
-namespace VIRAModules.OSCQR.UI
+namespace YeusepesModules.OSCQR.UI
 {
     public class SavedQRCodesViewModel
     {

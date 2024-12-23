@@ -8,7 +8,8 @@
 		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
 		<LangVersion>latestmajor</LangVersion>
 		<WindowsSdkPackageVersion>10.0.22621.52</WindowsSdkPackageVersion>
-		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>		
+		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+		<UseWinUI>true</UseWinUI>
 	</PropertyGroup>
 
 	<Target Name="PostBuild" AfterTargets="Build">
@@ -17,18 +18,28 @@
 
 		<!-- Define files to exclude -->
 		<ItemGroup>
-			<ExcludedFiles Include="&#xD;&#xA;				$(TargetDir)FontAwesome6.Core.dll;&#xD;&#xA;				$(TargetDir)FontAwesome6.Fonts.Net.dll;&#xD;&#xA;				$(TargetDir)FontAwesome6.Shared.Net.dll;&#xD;&#xA;				$(TargetDir)HidSharp.dll;&#xD;&#xA;				$(TargetDir)JsonSubTypes.dll;&#xD;&#xA;				$(TargetDir)LibreHardwareMonitorLib.dll;&#xD;&#xA;				$(TargetDir)MathParser.org-mXparser.dll;&#xD;&#xA;				$(TargetDir)MeaMod.DNS.dll;&#xD;&#xA;				$(TargetDir)Microsoft.Extensions.DependencyInjection.Abstractions.dll;&#xD;&#xA;				$(TargetDir)Microsoft.Extensions.Logging.Abstractions.dll;&#xD;&#xA;				$(TargetDir)Microsoft.Extensions.Primitives.dll;&#xD;&#xA;				$(TargetDir)Microsoft.Windows.SDK.NET.dll;&#xD;&#xA;				$(TargetDir)Microsoft.Xaml.Behaviors.dll;&#xD;&#xA;				$(TargetDir)NAudio.Core.dll;&#xD;&#xA;				$(TargetDir)NAudio.Wasapi.dll;&#xD;&#xA;				$(TargetDir)Newtonsoft.Json.dll;&#xD;&#xA;				$(TargetDir)NuGet.Versioning.dll;&#xD;&#xA;				$(TargetDir)Octokit.dll;&#xD;&#xA;				$(TargetDir)OpenVR.dll;&#xD;&#xA;				$(TargetDir)openvr_api.dll;&#xD;&#xA;				$(TargetDir)PInvoke.Kernel32.dll;&#xD;&#xA;				$(TargetDir)PInvoke.User32.dll;&#xD;&#xA;				$(TargetDir)PInvoke.Windows.Core.dll;&#xD;&#xA;				$(TargetDir)PInvoke.Windows.ShellScalingApi.dll;&#xD;&#xA;				$(TargetDir)Polly.dll;&#xD;&#xA;				$(TargetDir)RestSharp.dll;&#xD;&#xA;				$(TargetDir)Semver.dll;&#xD;&#xA;				$(TargetDir)System.CodeDom.dll;&#xD;&#xA;				$(TargetDir)System.IO.Ports.dll;&#xD;&#xA;				$(TargetDir)System.Management.dll;&#xD;&#xA;				$(TargetDir)Validation.dll;&#xD;&#xA;				$(TargetDir)Velopack.dll;&#xD;&#xA;				$(TargetDir)VRChat.API.dll;&#xD;&#xA;				$(TargetDir)VRCOSC.App.dll;&#xD;&#xA;				$(TargetDir)VRCOSC.App.pdb;&#xD;&#xA;				$(TargetDir)Whisper.net.dll;&#xD;&#xA;				$(TargetDir)WindowsInput.dll;&#xD;&#xA;				$(TargetDir)WinRT.Runtime.dll;&#xD;&#xA;				$(TargetDir)Xceed.Wpf.AvalonDock.dll;&#xD;&#xA;				$(TargetDir)Xceed.Wpf.AvalonDock.Themes.Aero.dll;&#xD;&#xA;				$(TargetDir)Xceed.Wpf.AvalonDock.Themes.Metro.dll;&#xD;&#xA;				$(TargetDir)Xceed.Wpf.AvalonDock.Themes.VS2010.dll;&#xD;&#xA;				$(TargetDir)Xceed.Wpf.Toolkit.dll" />
+			<ExcludedFiles Include="&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)FontAwesome6.Core.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)FontAwesome6.Fonts.Net.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)FontAwesome6.Shared.Net.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)HidSharp.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)JsonSubTypes.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)LibreHardwareMonitorLib.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)MathParser.org-mXparser.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)MeaMod.DNS.dll;&#xD;&#xA;																	&#xD;&#xA;				$(TargetDir)Microsoft.Windows.SDK.NET.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Microsoft.Xaml.Behaviors.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)NAudio.Core.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)NAudio.Wasapi.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Newtonsoft.Json.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)NuGet.Versioning.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Octokit.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)OpenVR.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)openvr_api.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)PInvoke.Kernel32.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)PInvoke.User32.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)PInvoke.Windows.Core.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)PInvoke.Windows.ShellScalingApi.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Polly.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Semver.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)System.CodeDom.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)System.IO.Ports.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)System.Management.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Validation.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Velopack.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)VRChat.API.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)VRCOSC.App.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)VRCOSC.App.pdb;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Whisper.net.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)WindowsInput.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)WinRT.Runtime.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Xceed.Wpf.AvalonDock.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Xceed.Wpf.AvalonDock.Themes.Aero.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Xceed.Wpf.AvalonDock.Themes.Metro.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Xceed.Wpf.AvalonDock.Themes.VS2010.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Xceed.Wpf.Toolkit.dll" />
 		</ItemGroup>
-
-		<Copy SourceFiles="@(ResourceFiles)" DestinationFolder="$(APPDATA)\vrcosc-v2-Dev\packages\local\Resources\" />
 
 		<!-- Copy only non-excluded files -->
 		<ItemGroup>
 			<FilteredDependencies Include="$(TargetDir)*.dll" Exclude="@(ExcludedFiles)" />
 		</ItemGroup>
 
-		<Copy SourceFiles="@(FilteredDependencies)" DestinationFolder="$(APPDATA)\vrcosc-v2-Dev\packages\local\" />
+		<Copy SourceFiles="@(FilteredDependencies)" DestinationFolder="$(APPDATA)\VRCOSC-Dev\packages\local" />
+		<Copy SourceFiles="@(FilteredDependencies)" DestinationFolder="$(APPDATA)\VRCOSC\packages\local" />
 	</Target>
+
+	<ItemGroup>
+		<PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Primitives" Version="9.0.0" />
+		<PackageReference Include="ScreenCapture.NET.DX11" Version="3.0.0" />
+		<PackageReference Include="Selenium.WebDriver" Version="4.27.0" />
+		<PackageReference Include="Selenium.WebDriver.ChromeDriver" Version="131.0.6778.20400" />
+		<PackageReference Include="ZXing.Net" Version="0.16.9" />
+		<PackageReference Include="ZXing.Net.Bindings.Windows.Compatibility" Version="0.16.12" />
+	</ItemGroup>
+
 
 
 	<ItemGroup>

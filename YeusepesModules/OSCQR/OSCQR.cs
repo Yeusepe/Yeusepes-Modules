@@ -12,17 +12,17 @@ using System.Drawing.Imaging;
 using ZXing.Common;
 using ZXing.Windows.Compatibility;
 using System.IO;
-using VIRAModules.OSCQR.UI;
+using YeusepesModules.OSCQR.UI;
 using VRCOSC.App.SDK.Modules.Attributes.Settings;
 
 #pragma warning disable CA1416 // Validate platform compatibility
 
-
-namespace VIRAModules.OSCQR
+namespace YeusepesModules.OSCQR
 {
     [ModuleTitle("OSCQR")]
     [ModuleDescription("A module to scan QR Codes using OSC.")]
     [ModuleType(ModuleType.Generic)]
+    [ModuleInfo("https://github.com/Yeusepe/Yeusepes-Modules/wiki/OSCQR")]
     public class OSCQR : Module
     {
         private IScreenCaptureService screenCaptureService;

@@ -6,7 +6,7 @@ using VRCOSC.App.SDK.Modules.Attributes.Settings;
 using System.Windows;
 using System.Windows.Input;
 
-namespace VIRAModules.OSCQR.UI
+namespace YeusepesModules.OSCQR.UI
 {
     public partial class GraphicsCardSettingView : UserControl
     {

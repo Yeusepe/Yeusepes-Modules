@@ -4,7 +4,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Windows.Input;
 
-namespace VIRAModules.OSCQR.UI
+namespace YeusepesModules.OSCQR.UI
 {
     public partial class SavedQRCodesRuntimeView : UserControl
     {
