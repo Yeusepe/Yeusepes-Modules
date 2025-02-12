@@ -1,39 +1,28 @@
-﻿using DISCORDOSC.RPCTools;
+using DISCORDOSC.RPCTools;
 using DISCORDOSC.UI;
 using VRCOSC.App.SDK.Modules;
 using VRCOSC.App.SDK.Modules.Attributes.Settings;
 using VRCOSC.App.SDK.Parameters;
-using Ye                    Log("Error during module start: " + ex.Mess            });
+using YeusepesModules.Common;
 
-   return falules.DISCORDOSC
+
+#pragma warning disable CA1416 // Validate platform compatibility
+
+namespace YeusepesModules.DISCORDOSC
 {
     [ModuleTitle("DiscordOSC")]
-       [ModuleType(ModuleType.Integrations)]
-
-
+    [ModuleDescription("A module to control your Discord Through OSC.")]
+    [ModuleType(ModuleType.Integrations)]
     [ModuleInfo("https://github.com/Yeusepe/Yeusepes-Modules/wiki/DiscordOSC")]
-rol your Discord Through OSC.")]
-    [ModuleType(ModuleType.Generic)]
     public class DISCORDOSC : Module
     {
-        private string clientId;                    var authTask = Task.Run(() => client.SendDataAndWait(1, authPayload));
-                    var authTimeout = Task.Delay(TimeSpan.FromSeconds(3)); // 3-second timeout for authentication
+        private string clientId;
+        private string clientSecret;
+        BaseDiscordClient client;
 
-                    var completedAuth = await Task.WhenAny(authTask, authTimeout);
-                    if (completedAuth == authTask)
-                    {
-                        var authResponse = await authTask;
-                        Log("Authenticated successfully!");
-                    }
-                    else
-                    {
-                        Log("Authentication timed out. Try restarting discord.");
-                        return false;
-                    }
-
-                    LogDebug("Discord Module started!");
-                    return true;
-,
+        public enum DISCORDOSCParameter
+        {
+            Mute,
             Deafen
         }
 
@@ -47,8 +36,30 @@ rol your Discord Through OSC.")]
                 ParameterMode.ReadWrite,
                 "Mute or unmute.",
                 "Trigger to mute or unmute the Discord client."
-           tingUserControl),
-                    string.Empty // The image itself doesn't store a value
+            );
+
+            RegisterParameter<bool>(
+                DISCORDOSCParameter.Deafen,
+                "VRCOSC/Discord/Deafen",
+                ParameterMode.ReadWrite,
+                "Deafen or undeafen.",
+                "Trigger to deafen or undeafen the Discord client."
+            );
+
+            #endregion
+            #region Settings
+
+            CreateTextBox(DiscordSetting.ClientId, "Client ID", "Discord Client ID", string.Empty);
+            CreatePasswordTextBox(DiscordSetting.ClientSecret, "Client Secret", "Discord Client Secret", string.Empty);
+
+            // Add the image setting
+            CreateCustomSetting(
+                DiscordSetting.IMG,
+                new CustomModuleSetting(
+                    string.Empty,
+                    string.Empty,
+                    typeof(ImageSettingUserControl),
+                    true
                 )
             );
 
@@ -60,12 +71,53 @@ rol your Discord Through OSC.")]
             clientId = "";
             clientSecret = "";
 
-                          clientId = "";
+            base.OnPreLoad();
+        }
+
+        private enum DiscordSetting
+        {
+            ClientId,
+            ClientSecret,
+            IMG
+        }
+
+        protected override Task<bool> OnModuleStart()
+        {
+            client = new BaseDiscordClient();
+
+            // Fallback to hardcoded defaults if settings are empty
+            clientId = GetSettingValue<string>(DiscordSetting.ClientId);
+            clientSecret = GetSettingValue<string>(DiscordSetting.ClientSecret);
+
+            if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
+            {
+                clientId = "";
                 clientSecret = "";
-                LogDebug                        var completedTask = await Task.WhenAny(connectTask, timeoutTask);
-=>
-Id);
-            clientSecret = GetSettingValue<string>(DiscordSetti                        if (completedTask == connectTask) // Connection completed successfully
+                LogDebug("ClientId was empty or clientSecret was empty. Using defaults.");
+            }
+
+            return Task.Run(async () =>
+            {
+                try
+                {
+                    var auth = new DiscordAuth(clientId, clientSecret);
+                    string accessToken = await auth.FetchAccessTokenAsync();
+                    LogDebug("Access token retrieved successfully.");
+
+                    // Attempt to connect to any available Discord IPC pipe
+                    bool connected = false;
+                    Log("Attempting to connect to Discord...");
+                    for (int i = 0; i < 10; i++) // Attempt discord-ipc-0 through discord-ipc-9
+                    {
+                        string pipeName = $"discord-ipc-{i}";
+                        LogDebug($"Attempting to connect to {pipeName}...");
+
+                        var connectTask = Task.Run(() => client.Connect(pipeName)); // Start the connect task
+                        var timeoutTask = Task.Delay(TimeSpan.FromSeconds(2)); // 2-second timeout
+
+                        var completedTask = await Task.WhenAny(connectTask, timeoutTask);
+
+                        if (completedTask == connectTask) // Connection completed successfully
                         {
                             try
                             {
@@ -108,59 +160,36 @@ Id);
                     }
 
                     // Timeout for the authentication process
-ng.ClientSecret);
-
-,
-            IMG
-        }
-
-        protected override Task<bool> OnModuleStart()
-        {
-            client = new BaseDiscordClient();
-
-            if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
-            {
-                Log("                    // Attempt to connect to any available Discord IPC pipe
-                    bool connected = false;
-                    Log("Attempting to connect to Discord...");
-                    for (int i = 0; i < 10; i++) // Attempt discord-ipc-0 through discord-ipc-9
-                    {
-                        string pipeName = $"discord-ipc-{i}";
-                        LogDebug($"Attempting to connect to {pipeName}...");
-
-                        var connectTask = Task.Run(() => client.Connect(pipeName)); // Start the connect task
-                        var timeoutTask = Task.Delay(TimeSpan.FromSeconds(2)); // 2-second timeout
-!");
-                return Task.FromResult(false);
-            }
-
-            Log("Discord Module started!");
-
-            Task.Run(async () =>
-            {
-                try
-                {
-                    var auth = new DiscordAuth(clientId, clientSecret);
-                    string accessToken = await auth.FetchAccessTokenAsync();
-                    LogDebug("Access token retrieved successfully.");
-
-                    client.Connect("discord-ipc-0"); // Adjust the pipe name as needed
-
-                    var handshakeResponse = client.Handshake(clientId);
-                    LogDebug("Handshake completed");
-
                     var authPayload = Payload.Authenticate(accessToken);
-                    var authResponse = client.SendDataAndWait(1, authPayload);
-                    LogDebug("Authenticated successfully");
+                    var authTask = Task.Run(() => client.SendDataAndWait(1, authPayload));
+                    var authTimeout = Task.Delay(TimeSpan.FromSeconds(3)); // 3-second timeout for authentication
+
+                    var completedAuth = await Task.WhenAny(authTask, authTimeout);
+                    if (completedAuth == authTask)
+                    {
+                        var authResponse = await authTask;
+                        Log("Authenticated successfully!");
+                    }
+                    else
+                    {
+                        Log("Authentication timed out. Try restarting discord.");
+                        return false;
+                    }
+
+                    LogDebug("Discord Module started!");
+                    return true;
                 }
                 catch (Exception ex)
                 {
-                    LogDebug("Error during module start: " + ex.Message);
+                    Log("Error during module start: " + ex.Message);
+                    return false;
                 }
-            }).Wait();
+            });
 
-            return Task.FromResult(true);
+
         }
+
+
 
         protected override void OnRegisteredParameterReceived(RegisteredParameter parameter)
         {
@@ -194,37 +223,6 @@ ng.ClientSecret);
                     }).Wait();
                     break;
             }
-        }
-    }
-
-    public class CustomModuleSetting : ModuleSetting
-    {
-        public string DefaultValue { get; }
-
-        public CustomModuleSetting(string title, string description, Type controlType, string defaultValue = "")
-            : base(title, description, controlType)
-        {
-            DefaultValue = defaultValue;
-        }
-
-        public override void SetDefault()
-        {
-
-        }
-
-        public override bool IsDefault()
-        {
-            return true; // Adjust as required
-        }
-
-        public override bool Deserialise(object? ingestValue)
-        {
-            return true; // Implement deserialization logic if required
-        }
-
-        public override object? GetRawValue()
-        {
-            return DefaultValue;
         }
     }
 }
