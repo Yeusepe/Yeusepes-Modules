@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
 using VRCOSC.App.SDK.Modules;
@@ -151,11 +151,25 @@ namespace YeusepesModules.OSCQR
 
             CreateGroup("Saved QR Codes", OSCQRSettings.SavedQRCodes);
             CreateGroup("Capture settings", OSCQRSettings.SaveImagesToggle, OSCQRSettings.SelectedGraphicsCard, OSCQRSettings.SelectedDisplay);
-
-            SetRuntimeView(typeof(SavedQRCodesRuntimeView));
+            
+            try
+            {
+                var resourceLocator = new Uri("/YeusepesModules;component/OSCQR/SavedQRCodesRuntimeView.xaml", UriKind.Relative);                
+                SetRuntimeView(typeof(SavedQRCodesRuntimeView));
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Error loading resource: {ex.Message}");
+            }
+            
 
             #endregion
 
+            
+        }
+
+        protected override Task<bool> OnModuleStart()
+        {
             // Initialize screen capture service
             screenCaptureService = new DX11ScreenCaptureService();
 
@@ -163,13 +177,13 @@ namespace YeusepesModules.OSCQR
             if (!TryFindVRChatWindow())
             {
                 Log("VRChat window not found or could not determine GPU/Display.");
-                return;
+                return Task.FromResult(false);
             }
 
             if (screenCaptureService == null)
             {
                 Log("Error: screenCaptureService could not be initialized.");
-                return;
+                return Task.FromResult(false);
             }
 
             Log($"Automatically selected GPU: {selectedGraphicsCard?.Name}");
@@ -186,10 +200,7 @@ namespace YeusepesModules.OSCQR
             }
 
             LogDebug($"Restored {savedQRCodes.Count} QR Codes from persistence.");
-        }
 
-        protected override Task<bool> OnModuleStart()
-        {
             InitializeGraphicsAndDisplay();
             SendParameter(OSCQRParameter.Error, false);
             return Task.FromResult(true);
@@ -772,10 +783,10 @@ namespace YeusepesModules.OSCQR
                 var barcodeReader = new BarcodeReader
                 {
                     AutoRotate = true,
-                    TryInverted = true,
                     Options = new DecodingOptions
                     {
                         TryHarder = true,
+                        TryInverted = true,
                         PureBarcode = false,
                         PossibleFormats = new List<BarcodeFormat> { BarcodeFormat.QR_CODE },
                         ReturnCodabarStartEnd = false
