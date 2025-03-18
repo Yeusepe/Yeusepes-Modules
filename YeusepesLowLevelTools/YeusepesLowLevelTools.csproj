@@ -6,4 +6,28 @@
     <Nullable>enable</Nullable>
   </PropertyGroup>
 
+  <ItemGroup>
+    <None Remove="Natives\concrt140.dll" />
+    <None Remove="Natives\cvextern.dll" />
+    <None Remove="Natives\libusb-1.0.dll" />
+    <None Remove="Natives\msvcp140.dll" />
+    <None Remove="Natives\System.Drawing.Common.dll" />
+    <None Remove="Natives\System.Memory.dll" />
+    <None Remove="Natives\vcruntime140.dll" />
+    <None Remove="Natives\vcruntime140_1.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Natives\concrt140.dll" />
+    <EmbeddedResource Include="Natives\cvextern.dll">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Natives\libusb-1.0.dll" />
+    <EmbeddedResource Include="Natives\msvcp140.dll" />
+    <EmbeddedResource Include="Natives\System.Drawing.Common.dll" />
+    <EmbeddedResource Include="Natives\System.Memory.dll" />
+    <EmbeddedResource Include="Natives\vcruntime140.dll" />
+    <EmbeddedResource Include="Natives\vcruntime140_1.dll" />
+  </ItemGroup>
+
 </Project>

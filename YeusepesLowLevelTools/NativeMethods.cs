@@ -1,8 +1,11 @@
 ﻿using System;
 using System.Diagnostics;
 using System.Drawing;
+using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security;
+using System.IO;
+
 
 namespace YeusepesLowLevelTools
 {
@@ -12,6 +15,7 @@ namespace YeusepesLowLevelTools
         public const int SHOWMINIMIZED = 2;
         public const int SHOWMAXIMIZED = 3;
         public const int SW_RESTORE = 9; // Restore window if minimized
+
 
         [DllImport("user32.dll")]
         public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
@@ -46,6 +50,11 @@ namespace YeusepesLowLevelTools
         {
             var process = Process.GetProcessesByName("VRChat").FirstOrDefault();
             return process?.MainWindowHandle ?? IntPtr.Zero;
+        }
+
+        public static IntPtr FindWindowByTitle(string title)
+        {
+            return FindWindow(null, title);
         }
 
         // Get the window rectangle
@@ -188,4 +197,86 @@ namespace YeusepesLowLevelTools
             }
         }
     }
+
+
+    public static class EarlyLoader
+    {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetDllDirectory(string lpPathName);
+
+        /// <summary>
+        /// Initializes the native libraries:
+        /// 1. Extracts cvextern.dll from embedded resources into the designated folder.
+        /// 2. Calls SetDllDirectory on that folder so the DLL (and its dependencies) can be found.
+        /// </summary>
+        public static void InitializeNativeLibraries(string dllFileName, Action<string> log)
+        {
+            try
+            {
+                // Define the folder where you'll extract the native DLL.
+                string documentsFolder = Path.GetTempPath();
+                // string documentsFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "YeusepesModules");
+                string extractionFolder = Path.Combine(documentsFolder, "YeusepesNativeDlls");
+                log($"Extraction folder: {extractionFolder}");
+
+                // Create the folder if it doesn't exist.
+                if (!Directory.Exists(extractionFolder))
+                {
+                    Directory.CreateDirectory(extractionFolder);
+                    log("Created extraction folder.");
+                }
+                else
+                {
+                    log("Extraction folder already exists.");
+                }
+
+                // Define the DLL file name and the target path.                
+                string extractedDllPath = Path.Combine(extractionFolder, dllFileName);
+
+                // If the DLL isn't already extracted, extract it from the embedded resource.
+                if (!File.Exists(extractedDllPath))
+                {
+                    Assembly assembly = Assembly.GetExecutingAssembly();
+                    // Ensure the resource name matches your embedded resource.
+                    string resourceName = "YeusepesLowLevelTools.Natives." + dllFileName;
+                    log($"Attempting to extract resource: {resourceName}");
+
+                    using (Stream? stream = assembly.GetManifestResourceStream(resourceName))
+                    {
+                        if (stream == null)
+                        {
+                            throw new Exception($"Embedded resource '{resourceName}' not found. Available resources:\n{string.Join("\n", assembly.GetManifestResourceNames())}");
+                        }
+                        using (FileStream fs = new FileStream(extractedDllPath, FileMode.Create, FileAccess.Write))
+                        {
+                            stream.CopyTo(fs);
+                        }
+                    }
+                    log($"Extracted {dllFileName} to {extractedDllPath}");
+                }
+                else
+                {
+                    log($"{dllFileName} already exists at {extractedDllPath}");
+                }
+
+                // Now, add the extraction folder to the DLL search path.
+                bool result = SetDllDirectory(extractionFolder);
+                if (!result)
+                {
+                    int error = Marshal.GetLastWin32Error();
+                    log($"SetDllDirectory failed with error code: {error}");
+                }
+                else
+                {
+                    log($"Successfully added '{extractionFolder}' to the DLL search path.");
+                }
+            }
+            catch (Exception ex)
+            {
+                log("Error during native library initialization: " + ex.Message);
+                throw;
+            }
+        }
+    }
+
 }
