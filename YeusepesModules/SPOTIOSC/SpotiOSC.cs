@@ -13,6 +13,7 @@ using YeusepesModules.Common;
 using YeusepesModules.SPOTIOSC.Utils.Events;
 using System.Text.Json;
 using YeusepesModules.Common.ScreenUtilities;
+using VRCOSC.App.Settings;
 
 
 namespace YeusepesModules.SPOTIOSC
@@ -88,6 +89,7 @@ namespace YeusepesModules.SPOTIOSC
             YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("libusb-1.0.dll", message => Log(message));                               
             YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("cvextern.dll", message => Log(message));                               
             screenUtilities = new ScreenUtilities(CreateCustomSetting, LogDebug, GetSettingValue<string>, (parameter, name, mode, title, description) => RegisterParameter<bool>(parameter, name, mode, title, description));
+
             /// ThreadPool.SetMinThreads(100, 100); // Set a higher minimum thread pool size
             encodingUtilities = new EncodingUtilities
             {
@@ -198,7 +200,17 @@ namespace YeusepesModules.SPOTIOSC
 
 
         protected override async Task<bool> OnModuleStart()
-        {            
+        {
+            _cts = new CancellationTokenSource();
+
+            // Reinitialize the HttpClient if it was disposed in a previous stop.
+            if (_httpClient == null)
+            {
+                _httpClient = new HttpClient();
+            }
+
+            encodingUtilities.IsDebug = SettingsManager.GetInstance().GetValue<bool>(VRCOSCSetting.EnableAppDebug);
+            
             Log("Starting Spotify Cookie Manager...");
 
             // Validate tokens and fetch profile

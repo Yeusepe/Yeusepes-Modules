@@ -30,21 +30,36 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests.Profiles
                 var profileRequest = new ProfileAttributesRequest(httpClient, accessToken, clientToken);
                 string responseBody = await profileRequest.FetchAsync();
 
+                logDebug("Response received: " + responseBody);
+
                 // Parse the JSON response
                 using (JsonDocument jsonDocument = JsonDocument.Parse(responseBody))
                 {
-                    if (jsonDocument.RootElement.TryGetProperty("data", out var dataElement) &&
-                        dataElement.TryGetProperty("me", out var meElement) &&
-                        meElement.TryGetProperty("profile", out var profileElement))
+                    if (jsonDocument.RootElement.TryGetProperty("data", out JsonElement dataElement) &&
+                        dataElement.TryGetProperty("me", out JsonElement meElement) &&
+                        meElement.TryGetProperty("profile", out JsonElement profileElement))
                     {
-                        string userName = profileElement.GetProperty("name").GetString();
-                        string userId = profileElement.GetProperty("username").GetString();
-                        log($"Fetched user: {userName} ({userId})");
-                        return true;
+                        if (profileElement.TryGetProperty("name", out JsonElement nameProperty) &&
+                            profileElement.TryGetProperty("username", out JsonElement usernameProperty))
+                        {
+                            string userName = nameProperty.GetString();
+                            string userId = usernameProperty.GetString();
+                            log($"Fetched user: {userName} ({userId})");
+                            return true;
+                        }
+                        else
+                        {
+                            log("Profile element is missing 'name' or 'username' properties.");
+                        }
+                    }
+                    else
+                    {
+                        log("Failed to extract user profile attributes: Missing 'data', 'me', or 'profile' in response.");
                     }
                 }
 
-                log("Failed to extract user profile attributes.");
+                // Optionally log the full response for debugging
+                logDebug("Full response body: " + responseBody);
                 return false;
             }
             catch (UnauthorizedAccessException)
@@ -59,6 +74,7 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests.Profiles
                 return false;
             }
         }
+
     }
 
 }

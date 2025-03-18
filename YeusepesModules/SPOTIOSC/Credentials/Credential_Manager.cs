@@ -224,34 +224,8 @@ namespace YeusepesModules.SPOTIOSC.Credentials
         {
             return !string.IsNullOrEmpty(LoadAccessToken()) &&
                    !string.IsNullOrEmpty(LoadClientToken());
-        }
+        }      
 
-        /// <summary>
-        /// Deletes all stored tokens.
-        /// </summary>
-        public static void DeleteTokens()
-        {
-            try
-            {
-                if (File.Exists(AccessTokenFile))
-                {
-                    File.Delete(AccessTokenFile);
-                    Logger.Log("Access token deleted.");
-                }
-                if (File.Exists(ClientTokenFile))
-                {
-                    File.Delete(ClientTokenFile);
-                    Logger.Log("Client token deleted.");
-                }
-                ClearSecureString(ref AccessToken);
-                ClearSecureString(ref ClientToken);
-                Logger.Log("All tokens cleared from memory and storage.");
-            }
-            catch (Exception ex)
-            {
-                Logger.Log($"Error deleting tokens: {ex.Message}");
-            }
-        }
 
         #endregion
 
@@ -743,16 +717,55 @@ namespace YeusepesModules.SPOTIOSC.Credentials
 
         /// <summary>
         /// Clears the contents of a SecureString and reinitializes it.
+        /// If the SecureString is read-only, simply reassign a new instance.
         /// </summary>
         private static void ClearSecureString(ref SecureString secureStr)
         {
-            if (secureStr != null)
+            try
             {
-                secureStr.Clear();
-                secureStr.Dispose();
-                secureStr = new SecureString();
+                if (secureStr != null && !secureStr.IsReadOnly())
+                {
+                    secureStr.Clear();
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Error clearing secure token: {ex.Message}");
+            }
+            // Always assign a new SecureString instance.
+            secureStr = new SecureString();
+        }
+
+        /// <summary>
+        /// Deletes all stored tokens and resets the in-memory SecureStrings.
+        /// </summary>
+        public static void DeleteTokens()
+        {
+            try
+            {
+                if (File.Exists(AccessTokenFile))
+                {
+                    File.Delete(AccessTokenFile);
+                    Logger.Log("Access token deleted.");
+                }
+                if (File.Exists(ClientTokenFile))
+                {
+                    File.Delete(ClientTokenFile);
+                    Logger.Log("Client token deleted.");
+                }
+                ClearSecureString(ref AccessToken);
+                ClearSecureString(ref ClientToken);
+                Logger.Log("All tokens cleared from memory and storage.");
+            }
+            catch (Exception ex)
+            {
+                Logger.Log($"Error deleting tokens: {ex.Message}");
             }
         }
+
+
+
+
 
         /// <summary>
         /// Recursively deletes a directory by first removing read-only attributes.
