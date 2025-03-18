@@ -1,0 +1,175 @@
+﻿<UserControl x:Class="YeusepesModules.SPOTIOSC.UI.NowPlayingRuntimeView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:local="clr-namespace:YeusepesModules.SPOTIOSC.UI"
+             mc:Ignorable="d">
+    <UserControl.Resources>
+        <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter" />
+        <local:ColorBrightnessToForegroundConverter x:Key="ColorBrightnessToForegroundConverter" />
+        <GeometryGroup x:Key="JamIcon">
+            <Geometry>
+                M55.249 125.265C55.249 134.257 62.4886 141.497 71.4804 141.497C80.4722 141.497 74.4315 141.266 75.8149 140.897V109.587C74.4315 109.218 72.9559 108.988 71.4804 108.988C62.4886 108.988 55.249 116.227 55.249 125.219V125.265Z
+            </Geometry>
+            <Geometry>
+                M71.4795 38.7134C65.485 38.7134 60.9199 43.0479 60.9199 49.273C60.9199 55.4981 65.485 59.9709 71.4795 59.9709C77.474 59.9709 74.984 59.5098 76.4596 58.7259C77.2435 53.3308 78.6729 48.4891 80.7941 44.2468C79.0879 40.8345 75.6296 38.7134 71.4795 38.7134Z
+            </Geometry>
+            <Geometry>
+                M75.8138 162.754C74.3844 162.938 72.9549 163.031 71.4793 163.031C50.6829 163.031 33.6677 146.246 33.6677 125.219C33.6677 104.192 50.6829 87.4073 71.4793 87.4073C92.2757 87.4073 74.3844 87.4995 75.8138 87.684V69.2854C74.4305 69.562 72.9549 69.7465 71.4793 69.7465C59.9975 69.7465 51.0057 60.7547 51.0057 49.3651C51.0057 37.9755 60.3664 29.2143 71.4793 29.2143C82.5922 29.2143 82.8689 31.6582 86.604 35.716C94.3046 27.2315 105.925 22.6664 120.773 22.6664H142.353C141.246 8.37174 132.762 0.947754 117.453 0.947754H25.4137C9.04401 0.947754 0.375 9.52454 0.375 25.9864V161.509C0.375 178.201 9.04401 186.778 25.4137 186.778H75.8138V162.8V162.754Z
+            </Geometry>
+            <Geometry>
+                M223.926 37.6992H120.774C101.084 37.6992 91.0776 47.7055 91.0776 67.8563V226.988C91.0776 247 101.084 257.053 120.774 257.053H223.926C243.754 257.053 253.622 247.047 253.622 226.988V67.8563C253.622 47.7055 243.708 37.6992 223.926 37.6992ZM157.801 73.0669C161.859 70.1158 166.885 68.4096 172.327 68.4096C185.284 68.4096 195.751 78.0009 196.996 90.5433C197.089 91.3733 197.135 92.2494 197.135 93.0794C197.135 95.6617 196.766 98.1517 196.028 100.503C195.797 101.287 195.521 102.025 195.198 102.809C194.875 103.547 194.552 104.285 194.137 104.976C189.941 112.723 181.779 117.934 172.28 117.934C158.585 117.934 147.565 107.051 147.565 93.1255C147.565 79.1998 151.576 77.5398 157.755 73.0669H157.801ZM212.951 200.197C205.942 215.644 190.402 226.296 172.28 226.296C151.161 226.296 133.454 211.771 128.889 191.897C128.797 191.528 128.751 191.159 128.659 190.79C128.382 189.315 128.151 187.839 127.967 186.363C127.829 184.842 127.736 183.32 127.736 181.752C127.736 180.185 127.829 178.663 127.967 177.141C128.105 175.619 128.336 174.144 128.659 172.668C128.751 172.299 128.797 171.93 128.889 171.562C133.454 151.641 151.115 137.116 172.28 137.116C190.402 137.116 205.988 147.722 212.951 163.261C215.487 168.887 216.87 175.112 216.87 181.752C216.87 188.392 215.487 194.571 212.951 200.151V200.197Z
+            </Geometry>
+            <Geometry>
+                M159.691 93.1256C159.691 100.042 165.271 105.806 172.28 105.806C179.381 105.806 184.961 100.042 184.961 93.1256C184.961 86.2089 179.289 80.5371 172.28 80.5371C165.271 80.5371 159.691 85.8861 159.691 93.1256Z
+            </Geometry>
+            <Geometry>
+                M191.186 181.799C191.186 171.009 183.071 162.755 172.28 162.755C161.721 162.755 153.467 171.009 153.467 181.799C153.467 192.589 161.905 200.705 172.28 200.705C183.071 200.705 191.186 192.266 191.186 181.799Z
+            </Geometry>
+            <!-- Include the other geometries as needed -->
+        </GeometryGroup>
+        <Style x:Key="NowPlayingTextBlock"
+               TargetType="TextBlock">
+            <Setter Property="FontFamily"
+                    Value="/YeusepesModules;component/Resources/Fonts/CircularStd-Book.ttf#Circular Std Book" />
+            <Setter Property="FontSize"
+                    Value="12" />
+            <Setter Property="Foreground"
+                    Value="{Binding DominantColor, Converter={StaticResource ColorBrightnessToForegroundConverter}}"/>
+        </Style>
+
+        <Style x:Key="NowPlayingTitleTextBlock"
+               TargetType="TextBlock"
+               BasedOn="{StaticResource NowPlayingTextBlock}">
+            <Setter Property="FontFamily"
+                    Value="/YeusepesModules;component/Resources/Fonts/CircularStd-Book.ttf#Circular Std Book" />
+            <Setter Property="FontSize"
+                    Value="17" />
+            <Setter Property="FontWeight"
+                    Value="SemiBold" />
+            <Setter Property="Foreground"
+                    Value="{Binding DominantColor, Converter={StaticResource ColorBrightnessToForegroundConverter}}"/>
+        </Style>
+    </UserControl.Resources>
+    <StackPanel>
+        <!-- Border for rounded corners -->
+        <Border CornerRadius="10"
+                ClipToBounds="True">
+            <Border.Background>
+                <SolidColorBrush Color="{Binding DominantColor}" />
+            </Border.Background>
+
+
+
+            <!-- Main content inside the border -->
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Album artwork and text on the left -->
+                <StackPanel Grid.Column="0"
+                            Margin="10"
+                            Orientation="Horizontal"
+                            VerticalAlignment="Center">
+                    <Border Width="60"
+                            Height="60"
+                            Margin="10"
+                            CornerRadius="10"
+                            Background="Transparent">
+                        <Border.Clip>
+                            <RectangleGeometry Rect="0,0,60,60"
+                                               RadiusX="10"
+                                               RadiusY="10" />
+                        </Border.Clip>
+                        <Image Source="{Binding AlbumArtworkUrl}"
+                               Stretch="UniformToFill" />
+                    </Border>
+
+                    <StackPanel Orientation="Vertical"
+                                VerticalAlignment="Center"
+                                Margin="10">
+                        <TextBlock Text="{Binding TrackName}"
+                                   Style="{StaticResource NowPlayingTitleTextBlock}" />
+                        <TextBlock Text="{Binding ArtistNames}"
+                                   Style="{StaticResource NowPlayingTextBlock}"/>
+                    </StackPanel>
+                </StackPanel>
+                
+                <Viewbox Grid.Column="2"
+                         Width="30"
+                         Height="50"
+                         Margin="10,10,20,10"
+                         HorizontalAlignment="Right"
+                         Visibility="{Binding IsInJam, Converter={StaticResource BooleanToVisibilityConverter}}">
+                    <Path Data="{StaticResource JamIcon}"
+                          Fill="{Binding DominantColor, Converter={StaticResource ColorBrightnessToForegroundConverter}}" />
+                </Viewbox>
+            </Grid>
+        </Border>
+        <!-- Bar at the bottom -->
+        <Border Background="#1DB954"
+                Height="70"
+                CornerRadius="0,0,10,10"
+                Margin="0,-35,0,0"
+                VerticalAlignment="Center"
+                HorizontalAlignment="Stretch"
+                Panel.ZIndex="-1"
+                Visibility="{Binding IsInJam, Converter={StaticResource BooleanToVisibilityConverter}}">
+            <Grid Margin="10,30,10,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <!-- For the jam name -->
+                    <ColumnDefinition Width="*" />
+                    <!-- Spacer -->
+                    <ColumnDefinition Width="Auto" />
+                    <!-- For the participant images -->
+                </Grid.ColumnDefinitions>
+
+                <!-- TextBlock for jam name -->
+                <TextBlock Grid.Column="0"
+                           Text="{Binding JamOwnerName, StringFormat='{}{0}\'s Jam'}"
+                           VerticalAlignment="Center"
+                           Foreground="Black"
+                           FontWeight="Bold"
+                           FontSize="14" />
+
+                <!-- ItemsControl for participant images -->
+                <ItemsControl Grid.Column="2"
+                              ItemsSource="{Binding JamParticipantImages}"
+                              MaxHeight="50"
+                              Margin="0,5,0,0"
+                              MaxWidth="300">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <Border Width="20"
+                                    Height="20"
+                                    CornerRadius="10"
+                                    Margin="5"
+                                    Background="Transparent">
+                                <Border.Clip>
+                                    <EllipseGeometry Center="10,10"
+                                                     RadiusX="10"
+                                                     RadiusY="10" />
+                                </Border.Clip>
+                                <Image Source="{Binding}"
+                                       Stretch="UniformToFill" />
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </Grid>
+        </Border>
+
+
+    </StackPanel>
+
+</UserControl>

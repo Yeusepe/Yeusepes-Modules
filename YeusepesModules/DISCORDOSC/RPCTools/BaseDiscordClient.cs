@@ -20,8 +20,7 @@ namespace DISCORDOSC.RPCTools
             if (_pipeClient == null || !_pipeClient.IsConnected)
             {
                 _pipeClient = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut);
-                _pipeClient.Connect();
-                Console.WriteLine("Connected to the pipe.");
+                _pipeClient.Connect();                
             }
         }
 

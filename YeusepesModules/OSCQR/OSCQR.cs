@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
 using VRCOSC.App.SDK.Modules;
@@ -248,7 +248,7 @@ namespace YeusepesModules.OSCQR
         }
 
 
-        private bool TryFindVRChatWindow()
+        public bool TryFindVRChatWindow()
         {
             IntPtr vrChatWindowHandle = NativeMethods.GetVRChatWindowHandle();
             if (vrChatWindowHandle == IntPtr.Zero)

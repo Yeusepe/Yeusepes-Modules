@@ -10,7 +10,8 @@ namespace YeusepesModules.OSCQR.UI
     {
         public SavedQRCodesRuntimeView(OSCQR module)
         {
-            InitializeComponent();
+            Uri resourceLocater = new Uri("/YeusepesModules;component/oscqr/ui/savedqrcodesruntimeview.xaml", UriKind.Relative);
+            System.Windows.Application.LoadComponent(this, resourceLocater);
             DataContext = new SavedQRCodesRuntimeViewModel(module);
         }
 

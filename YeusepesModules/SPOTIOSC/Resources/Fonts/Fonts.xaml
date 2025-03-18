@@ -1,0 +1,9 @@
+﻿<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <FontFamily x:Key="CircularStd2">pack://application:,,,/YeusepesModules;component/Resources/Fonts/circular-std-2.ttf#Circular Std</FontFamily>
+    <FontFamily x:Key="CircularStd3">pack://application:,,,/YeusepesModules;component/Resources/Fonts/circular-std-3.ttf#Circular Std</FontFamily>
+    <FontFamily x:Key="CircularStd4">pack://application:,,,/YeusepesModules;component/Resources/Fonts/circular-std-4.ttf#Circular Std</FontFamily>
+    <FontFamily x:Key="CircularStd5">pack://application:,,,/YeusepesModules;component/Resources/Fonts/circular-std-5.ttf#Circular Std</FontFamily>
+    <FontFamily x:Key="CircularStd6">pack://application:,,,/YeusepesModules;component/Resources/Fonts/circular-std-6.ttf#Circular Std</FontFamily>
+    <FontFamily x:Key="CircularStd7">pack://application:,,,/YeusepesModules;component/Resources/Fonts/circular-std-7.ttf#Circular Std</FontFamily>
+</ResourceDictionary>

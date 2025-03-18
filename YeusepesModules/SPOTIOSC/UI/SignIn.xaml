@@ -1,0 +1,426 @@
+﻿<UserControl x:Class="YeusepesModules.SPOTIOSC.UI.SignIn"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <GeometryGroup x:Key="Signed_in">
+            <EllipseGeometry Center="340,340"
+                             RadiusX="330"
+                             RadiusY="330" />
+            <RectangleGeometry Rect="742.662,379.865,524.838,167.27"
+                               RadiusX="48.9189"
+                               RadiusY="48.9189" />
+            <RectangleGeometry Rect="1287.5,379.865,383.838,167.27"
+                               RadiusX="48.9189"
+                               RadiusY="48.9189" />
+        </GeometryGroup>
+        <GeometryGroup x:Key="Button">
+            <RectangleGeometry Rect="0,0,2011.65,416"
+                               RadiusX="100"
+                               RadiusY="100" />
+        </GeometryGroup>
+        <GeometryGroup x:Key="crown">
+            <Geometry>
+                M5.01562 20.75L5.36719 22.1562C5.8125 23.9844 6.78516 24.9219 8.71875 24.9219H21.3398C23.2852 24.9219 24.2461 24.0078 24.7031 22.1562L25.0547 20.75H5.01562ZM4.62891 19.1445H25.4531L27.6562 10.1211L26.6953 9.57031L21.293 13.5078C20.8945 13.7891 20.625 13.6836 20.4023 13.3672L15.3164 5.67969L14.7539 5.65625L9.62109 13.4023C9.42188 13.707 9.1875 13.8008 8.78906 13.5195L3.49219 9.65234L2.36719 9.94531L4.62891 19.1445ZM2.80078 12.4648C4.34766 12.4648 5.58984 11.2109 5.58984 9.65234C5.58984 8.12891 4.34766 6.86328 2.80078 6.86328C1.25391 6.86328 0 8.11719 0 9.65234C0 11.2109 1.26562 12.4648 2.80078 12.4648ZM15.0352 7.58984C16.5703 7.58984 17.8242 6.33594 17.8242 4.78906C17.8242 3.26562 16.5703 2 15.0352 2C13.4766 2 12.2344 3.25391 12.2344 4.78906C12.2344 6.33594 13.4883 7.58984 15.0352 7.58984ZM27.2578 12.4648C28.793 12.4648 30.0586 11.2109 30.0586 9.65234C30.0586 8.11719 28.8047 6.86328 27.2578 6.86328C25.7227 6.86328 24.4688 8.12891 24.4688 9.65234C24.4688 11.2109 25.7227 12.4648 27.2578 12.4648Z
+            </Geometry>
+        </GeometryGroup>
+
+        <GeometryGroup x:Key="Logos">
+            <Geometry>
+                M227.999 80C157.309 80 100 137.309 100 208.001C100 278.696 157.309 336 227.999 336C298.697 336 356 278.696 356 208.001C356 137.313 298.697 80.0061 227.998 80.0061L227.999 80ZM286.699 264.614C284.406 268.374 279.484 269.566 275.724 267.258C245.671 248.901 207.839 244.743 163.284 254.923C158.99 255.901 154.71 253.211 153.732 248.916C152.749 244.621 155.429 240.341 159.733 239.363C208.491 228.223 250.315 233.019 284.055 253.639C287.815 255.947 289.007 260.854 286.699 264.614ZM302.366 229.761C299.477 234.456 293.332 235.939 288.64 233.05C254.234 211.902 201.787 205.777 161.092 218.13C155.814 219.724 150.24 216.75 148.638 211.481C147.048 206.203 150.024 200.639 155.293 199.035C201.778 184.929 259.568 191.762 299.08 216.042C303.772 218.931 305.255 225.076 302.366 229.762V229.761ZM303.711 193.468C262.457 168.964 194.394 166.711 155.007 178.666C148.682 180.584 141.993 177.013 140.077 170.688C138.16 164.36 141.727 157.676 148.057 155.753C193.271 142.027 268.434 144.679 315.929 172.876C321.631 176.252 323.495 183.6 320.117 189.281C316.755 194.97 309.388 196.846 303.717 193.468H303.711Z
+            </Geometry>
+            <Geometry>
+                M1813.58 293.289H1791.64L1809.69 253.464L1777.17 186.57H1800.35L1820.73 231.373L1839.56 186.57H1861.65L1813.58 293.289Z
+            </Geometry>
+            <Geometry>
+                M1763.35 167.591C1760.45 167.591 1757.9 168.42 1755.73 170.08C1753.65 171.635 1752.62 174.332 1752.62 178.169V186.57H1769.88V204.304H1752.62V263.109H1731.77V204.304H1719.01V186.57H1731.77V177.858C1731.77 169.25 1734.26 162.353 1739.24 157.168C1744.32 151.982 1751.11 149.389 1759.62 149.389C1764.18 149.389 1767.6 149.908 1769.88 150.945V168.368C1768.12 167.85 1765.94 167.591 1763.35 167.591Z
+            </Geometry>
+            <Geometry>
+                M1705.73 263.109H1685.04V186.57H1705.73V263.109ZM1682.55 161.523C1682.55 157.997 1683.79 154.99 1686.28 152.501C1688.77 149.908 1691.78 148.611 1695.31 148.611C1698.83 148.611 1701.84 149.856 1704.33 152.345C1706.82 154.834 1708.06 157.894 1708.06 161.523C1708.06 164.946 1706.82 167.902 1704.33 170.391C1701.84 172.88 1698.83 174.124 1695.31 174.124C1691.78 174.124 1688.77 172.88 1686.28 170.391C1683.79 167.902 1682.55 164.946 1682.55 161.523Z
+            </Geometry>
+            <Geometry>
+                M1652.06 163.701V186.57H1667.46V204.927H1652.06V236.973C1652.06 240.189 1652.79 242.47 1654.24 243.818C1655.69 245.167 1657.97 245.841 1661.08 245.841C1663.89 245.841 1666.01 245.633 1667.46 245.219V262.331C1664.46 263.575 1660.57 264.198 1655.8 264.198C1648.33 264.198 1642.42 262.123 1638.06 257.975C1633.71 253.723 1631.53 247.915 1631.53 240.552V204.927H1617.68V186.57H1621.57C1625.41 186.57 1628.31 185.481 1630.28 183.303C1632.36 181.021 1633.39 178.065 1633.39 174.435V163.701H1652.06Z
+            </Geometry>
+            <Geometry>
+                M1556.54 240.863C1560.38 244.7 1564.99 246.619 1570.38 246.619C1575.78 246.619 1580.34 244.7 1584.07 240.863C1587.91 237.025 1589.83 231.684 1589.83 224.839C1589.83 217.994 1587.91 212.653 1584.07 208.816C1580.34 204.978 1575.78 203.06 1570.38 203.06C1564.99 203.06 1560.38 204.978 1556.54 208.816C1552.81 212.653 1550.94 217.994 1550.94 224.839C1550.94 231.684 1552.81 237.025 1556.54 240.863ZM1541.6 195.748C1549.28 188.074 1558.87 184.236 1570.38 184.236C1581.9 184.236 1591.44 188.074 1599.01 195.748C1606.68 203.423 1610.52 213.12 1610.52 224.839C1610.52 236.559 1606.68 246.256 1599.01 253.93C1591.44 261.605 1581.9 265.442 1570.38 265.442C1558.87 265.442 1549.28 261.605 1541.6 253.93C1534.03 246.256 1530.25 236.559 1530.25 224.839C1530.25 213.12 1534.03 203.423 1541.6 195.748Z
+            </Geometry>
+            <Geometry>
+                M1461.44 292.666H1440.75V186.57H1460.82V195.904C1462.68 192.792 1465.69 190.2 1469.84 188.125C1473.99 185.947 1478.81 184.858 1484.31 184.858C1495.2 184.858 1503.81 188.592 1510.13 196.059C1516.46 203.423 1519.62 212.964 1519.62 224.684C1519.62 236.403 1516.25 246.048 1509.51 253.619C1502.87 261.19 1494.21 264.976 1483.53 264.976C1473.37 264.976 1466 261.864 1461.44 255.641V292.666ZM1493.8 240.707C1497.43 236.766 1499.24 231.477 1499.24 224.839C1499.24 218.202 1497.43 212.964 1493.8 209.127C1490.27 205.29 1485.76 203.371 1480.26 203.371C1474.77 203.371 1470.2 205.341 1466.57 209.282C1462.94 213.12 1461.13 218.305 1461.13 224.839C1461.13 231.373 1462.94 236.61 1466.57 240.551C1470.2 244.493 1474.77 246.463 1480.26 246.463C1485.76 246.463 1490.27 244.544 1493.8 240.707Z
+            </Geometry>
+            <Geometry>
+                M1424.9 179.103L1405.61 185.014C1404.89 181.073 1402.92 177.495 1399.7 174.28C1396.49 171.065 1391.77 169.457 1385.54 169.457C1380.46 169.457 1376.31 170.857 1373.1 173.658C1369.88 176.354 1368.28 179.621 1368.28 183.458C1368.28 190.2 1372.27 194.348 1380.25 195.904L1395.66 198.86C1405.4 200.726 1412.98 204.616 1418.37 210.527C1423.76 216.439 1426.46 223.387 1426.46 231.373C1426.46 240.5 1422.83 248.485 1415.57 255.33C1408.41 262.072 1398.77 265.442 1386.63 265.442C1379.68 265.442 1373.41 264.405 1367.81 262.331C1362.21 260.257 1357.7 257.508 1354.27 254.086C1350.85 250.56 1348.16 246.878 1346.19 243.041C1344.32 239.1 1343.18 235.055 1342.76 230.906L1362.68 225.617C1363.19 231.529 1365.48 236.455 1369.52 240.396C1373.67 244.337 1379.42 246.307 1386.79 246.307C1392.39 246.307 1396.74 245.063 1399.86 242.574C1403.07 240.085 1404.68 236.818 1404.68 232.773C1404.68 229.558 1403.49 226.81 1401.1 224.528C1398.82 222.143 1395.55 220.535 1391.3 219.706L1375.9 216.594C1366.98 214.727 1359.93 211.046 1354.74 205.549C1349.56 200.052 1346.96 193.207 1346.96 185.014C1346.96 175.265 1350.7 167.072 1358.16 160.434C1365.74 153.797 1374.81 150.478 1385.39 150.478C1391.71 150.478 1397.37 151.36 1402.35 153.123C1407.32 154.886 1411.32 157.271 1414.32 160.279C1417.33 163.183 1419.66 166.19 1421.32 169.302C1422.98 172.413 1424.18 175.68 1424.9 179.103Z
+            </Geometry>
+            <Geometry>
+                M1240.55 218.15V263.109H1219.86V150.478H1240.55V192.948C1245.21 187.348 1252.11 184.547 1261.24 184.547C1270.57 184.547 1277.62 187.399 1282.39 193.104C1287.27 198.704 1289.71 205.964 1289.71 214.883V263.109H1269.02V218.461C1269.02 213.898 1267.82 210.216 1265.44 207.416C1263.16 204.616 1259.63 203.215 1254.86 203.215C1250.61 203.215 1247.18 204.616 1244.59 207.416C1242.1 210.216 1240.75 213.794 1240.55 218.15Z
+            </Geometry>
+            <Geometry>
+                M1190.68 163.701V186.57H1206.08V204.927H1190.68V236.973C1190.68 240.189 1191.4 242.47 1192.86 243.818C1194.31 245.167 1196.59 245.841 1199.7 245.841C1202.5 245.841 1204.63 245.633 1206.08 245.219V262.331C1203.07 263.575 1199.18 264.198 1194.41 264.198C1186.94 264.198 1181.03 262.123 1176.68 257.975C1172.32 253.723 1170.14 247.915 1170.14 240.552V204.927H1156.3V186.57H1160.19C1164.02 186.57 1166.93 185.481 1168.9 183.303C1170.97 181.021 1172.01 178.065 1172.01 174.435V163.701H1190.68Z
+            </Geometry>
+            <Geometry>
+                M1143.01 263.109H1122.32V186.57H1143.01V263.109ZM1119.83 161.523C1119.83 157.997 1121.08 154.99 1123.57 152.501C1126.06 149.908 1129.06 148.611 1132.59 148.611C1136.12 148.611 1139.12 149.856 1141.61 152.345C1144.1 154.834 1145.35 157.894 1145.35 161.523C1145.35 164.946 1144.1 167.902 1141.61 170.391C1139.12 172.88 1136.12 174.124 1132.59 174.124C1129.06 174.124 1126.06 172.88 1123.57 170.391C1121.08 167.902 1119.83 164.946 1119.83 161.523Z
+            </Geometry>
+            <Geometry>
+                M1036.44 186.57H1058.22L1074.71 235.884L1088.87 186.57H1109.4L1085.45 263.109H1064.75L1046.86 210.838L1029.29 263.109H1008.28L983.86 186.57H1005.64L1019.8 235.729L1036.44 186.57Z
+            </Geometry>
+            <Geometry>
+                M884.444 219.083V263.109H863.754V186.57H883.822V196.059C886 192.326 889.111 189.474 893.156 187.503C897.2 185.533 901.453 184.547 905.912 184.547C914.935 184.547 921.78 187.399 926.447 193.104C931.218 198.704 933.603 205.964 933.603 214.883V263.109H912.913V218.461C912.913 213.898 911.72 210.216 909.335 207.416C907.053 204.616 903.527 203.215 898.756 203.215C894.4 203.215 890.926 204.719 888.333 207.727C885.74 210.734 884.444 214.52 884.444 219.083Z
+            </Geometry>
+            <Geometry>
+                M841.602 263.109H820.912V186.57H841.602V263.109ZM818.423 161.523C818.423 157.997 819.667 154.99 822.156 152.501C824.645 149.908 827.653 148.611 831.179 148.611C834.705 148.611 837.713 149.856 840.202 152.345C842.691 154.834 843.936 157.894 843.936 161.523C843.936 164.946 842.691 167.902 840.202 170.391C837.713 172.88 834.705 174.124 831.179 174.124C827.653 174.124 824.645 172.88 822.156 170.391C819.667 167.902 818.423 164.946 818.423 161.523Z
+            </Geometry>
+            <Geometry>
+                M712.317 219.083V263.109H691.627V186.57H711.695V196.059C713.873 192.326 716.985 189.474 721.029 187.503C725.074 185.533 729.326 184.547 733.786 184.547C742.809 184.547 749.654 187.399 754.321 193.104C759.091 198.704 761.477 205.964 761.477 214.883V263.109H740.786V218.461C740.786 213.898 739.594 210.216 737.208 207.416C734.927 204.616 731.4 203.215 726.63 203.215C722.274 203.215 718.799 204.719 716.207 207.727C713.614 210.734 712.317 214.52 712.317 219.083Z
+            </Geometry>
+            <Geometry>
+                M593.358 267.309L612.027 262.331C612.753 266.583 614.723 270.057 617.938 272.754C621.153 275.45 625.146 276.799 629.917 276.799C643.503 276.799 650.296 269.694 650.296 255.486V249.886C648.533 252.686 645.836 255.019 642.207 256.886C638.577 258.753 634.169 259.686 628.983 259.686C618.82 259.686 610.315 256.16 603.47 249.108C596.729 242.055 593.358 233.188 593.358 222.506C593.358 212.135 596.729 203.319 603.47 196.059C610.212 188.8 618.716 185.17 628.983 185.17C634.584 185.17 639.251 186.207 642.984 188.281C646.718 190.251 649.311 192.689 650.763 195.593V186.57H670.675V254.864C670.675 266.376 667.357 275.917 660.719 283.488C654.082 291.163 644.022 295 630.539 295C620.479 295 612.027 292.304 605.182 286.911C598.44 281.518 594.499 274.984 593.358 267.309ZM632.561 241.952C637.851 241.952 642.155 240.189 645.473 236.662C648.896 233.136 650.607 228.417 650.607 222.506C650.607 216.698 648.844 212.031 645.318 208.505C641.895 204.978 637.643 203.215 632.561 203.215C627.272 203.215 622.864 204.978 619.338 208.505C615.916 212.031 614.204 216.698 614.204 222.506C614.204 228.417 615.916 233.136 619.338 236.662C622.761 240.189 627.168 241.952 632.561 241.952Z
+            </Geometry>
+            <Geometry>
+                M576.652 263.109H555.962V186.57H576.652V263.109ZM553.473 161.523C553.473 157.997 554.717 154.99 557.206 152.501C559.695 149.908 562.703 148.611 566.229 148.611C569.755 148.611 572.763 149.856 575.252 152.345C577.741 154.834 578.986 157.894 578.986 161.523C578.986 164.946 577.741 167.902 575.252 170.391C572.763 172.88 569.755 174.124 566.229 174.124C562.703 174.124 559.695 172.88 557.206 170.391C554.717 167.902 553.473 164.946 553.473 161.523Z
+            </Geometry>
+            <Geometry>
+                M538.139 179.103L518.849 185.014C518.123 181.073 516.153 177.495 512.938 174.28C509.723 171.065 505.004 169.457 498.781 169.457C493.699 169.457 489.551 170.857 486.336 173.658C483.121 176.354 481.513 179.621 481.513 183.458C481.513 190.2 485.506 194.348 493.492 195.904L508.893 198.86C518.642 200.726 526.213 204.616 531.606 210.527C536.999 216.439 539.695 223.387 539.695 231.373C539.695 240.5 536.065 248.485 528.805 255.33C521.649 262.072 512.004 265.442 499.87 265.442C492.921 265.442 486.647 264.405 481.046 262.331C475.446 260.257 470.934 257.508 467.512 254.086C464.089 250.56 461.393 246.878 459.422 243.041C457.556 239.1 456.415 235.055 456 230.906L475.913 225.617C476.431 231.529 478.713 236.455 482.758 240.396C486.906 244.337 492.662 246.307 500.025 246.307C505.626 246.307 509.982 245.063 513.093 242.574C516.308 240.085 517.916 236.818 517.916 232.773C517.916 229.558 516.723 226.81 514.338 224.528C512.056 222.143 508.789 220.535 504.537 219.706L489.136 216.594C480.217 214.727 473.164 211.046 467.979 205.549C462.793 200.052 460.2 193.207 460.2 185.014C460.2 175.265 463.934 167.072 471.401 160.434C478.972 153.797 488.047 150.478 498.625 150.478C504.952 150.478 510.604 151.36 515.582 153.123C520.56 154.886 524.553 157.271 527.561 160.279C530.569 163.183 532.902 166.19 534.561 169.302C536.221 172.413 537.413 175.68 538.139 179.103Z
+            </Geometry>
+        </GeometryGroup>
+        <Style TargetType="Button"
+               x:Key="CustomButtonStyle">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Grid>
+                                <!-- Rectangle Background -->
+                                <Path x:Name="RectanglePath"
+                                      Data="{StaticResource Button}"
+                                      Fill="#1c1c1c"
+                                      Stretch="Uniform"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center" />
+                                <!-- Logos -->
+                                <Path x:Name="LogosPath"
+                                      Data="{StaticResource Logos}"
+                                      Fill="#1DB954"
+                                      Stretch="Uniform"
+                                      HorizontalAlignment="Center"
+                                      VerticalAlignment="Center"
+                                      Margin="20" />
+                            </Grid>
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                            <!-- Visual States for Hover Effects -->
+                            <VisualStateManager.VisualStateGroups>
+                                <VisualStateGroup x:Name="CommonStates">
+                                    <VisualState x:Name="Normal" />
+                                    <VisualState x:Name="MouseOver">
+                                        <Storyboard>
+                                            <ColorAnimation Storyboard.TargetName="RectanglePath"
+                                                            Storyboard.TargetProperty="Fill.Color"
+                                                            To="#1DB954"
+                                                            Duration="0:0:0.2" />
+                                            <ColorAnimation Storyboard.TargetName="LogosPath"
+                                                            Storyboard.TargetProperty="Fill.Color"
+                                                            To="White"
+                                                            Duration="0:0:0.2" />
+                                        </Storyboard>
+                                    </VisualState>
+                                </VisualStateGroup>
+                            </VisualStateManager.VisualStateGroups>
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <!-- Default Properties -->
+            <Setter Property="Background"
+                    Value="Transparent" />
+            <Setter Property="BorderBrush"
+                    Value="Transparent" />
+            <Setter Property="FocusVisualStyle"
+                    Value="{x:Null}" />
+        </Style>
+        <Style TargetType="Button"
+               x:Key="YourAccountButtonStyle">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <!-- Rectangle with Rounded Corners -->
+                            <Border Background="{TemplateBinding Background}"
+                                    CornerRadius="48.9189"
+                                    HorizontalAlignment="Stretch"
+                                    VerticalAlignment="Stretch" />
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <!-- Default Properties -->
+            <Setter Property="Background"
+                    Value="#383838" />
+            <Setter Property="Foreground"
+                    Value="White" />
+            <Setter Property="BorderBrush"
+                    Value="Transparent" />
+            <Setter Property="FocusVisualStyle"
+                    Value="{x:Null}" />
+            <!-- Triggers for Hover Effect -->
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver"
+                         Value="True">
+                    <Trigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <ColorAnimation Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
+                                                To="White"
+                                                Duration="0:0:0.5">
+                                    <ColorAnimation.EasingFunction>
+                                        <CubicEase EasingMode="EaseOut" />
+                                    </ColorAnimation.EasingFunction>
+                                </ColorAnimation>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </Trigger.EnterActions>
+                    <Trigger.ExitActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <ColorAnimation Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
+                                                To="#383838"
+                                                Duration="0:0:0.5">
+                                    <ColorAnimation.EasingFunction>
+                                        <CubicEase EasingMode="EaseOut" />
+                                    </ColorAnimation.EasingFunction>
+                                </ColorAnimation>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </Trigger.ExitActions>
+                    <Setter Property="Foreground"
+                            Value="Black" />
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+        <Style TargetType="Button"
+               x:Key="SignOutButtonStyle">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <!-- Rectangle with Rounded Corners -->
+                            <Border Background="{TemplateBinding Background}"
+                                    CornerRadius="48.9189"
+                                    HorizontalAlignment="Stretch"
+                                    VerticalAlignment="Stretch" />
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Grid>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+            <!-- Default Properties -->
+            <Setter Property="Background"
+                    Value="#383838" />
+            <Setter Property="Foreground"
+                    Value="White" />
+            <Setter Property="BorderBrush"
+                    Value="Transparent" />
+            <Setter Property="FocusVisualStyle"
+                    Value="{x:Null}" />
+            <!-- Triggers for Hover Effect -->
+            <Style.Triggers>
+                <Trigger Property="IsMouseOver"
+                         Value="True">
+                    <Trigger.EnterActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <ColorAnimation Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
+                                                To="#E74A4A"
+                                                Duration="0:0:0.5">
+                                    <ColorAnimation.EasingFunction>
+                                        <CubicEase EasingMode="EaseOut" />
+                                    </ColorAnimation.EasingFunction>
+                                </ColorAnimation>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </Trigger.EnterActions>
+                    <Trigger.ExitActions>
+                        <BeginStoryboard>
+                            <Storyboard>
+                                <ColorAnimation Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
+                                                To="#383838"
+                                                Duration="0:0:0.5">
+                                    <ColorAnimation.EasingFunction>
+                                        <CubicEase EasingMode="EaseOut" />
+                                    </ColorAnimation.EasingFunction>
+                                </ColorAnimation>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </Trigger.ExitActions>
+                </Trigger>
+            </Style.Triggers>
+        </Style>
+
+    </UserControl.Resources>
+    <Viewbox Stretch="Uniform"
+             Margin="0,-40,0,10">
+        <Grid>
+            <Grid x:Name="SignedOutState"
+                  Visibility="Visible">
+                <Button VerticalAlignment="Center"
+                        Style="{StaticResource CustomButtonStyle}"
+                        Click="OnSignInClick"
+                        >
+                    <Grid>
+                        <!-- Path for the GeometryGroup -->
+                        <Path Data="{StaticResource Button}"
+                              Stretch="Uniform"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Center" />
+                        <Path Data="{StaticResource Logos}"
+                              Stretch="Uniform"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Center"
+                              Margin="10" />
+                        <!-- Text overlay -->
+                    </Grid>
+                </Button>
+            </Grid>
+            <Grid x:Name="SignedInState"
+                  HorizontalAlignment="Stretch"
+                  VerticalAlignment="Stretch"
+                  Margin="-200,0,0,0"
+                  Visibility="Hidden">
+                <StackPanel Orientation="Horizontal"
+                            HorizontalAlignment="Center"
+                            VerticalAlignment="Center">
+                    <!-- Circle (Main Icon Background) -->
+                    <Grid>
+                        <Ellipse Width="600"
+                                 Height="600"
+                                 Fill="#D9D9D9" />
+                        <Ellipse Width="600"
+                                 Height="600">
+                            <Ellipse.Fill>
+                                <ImageBrush x:Name="ProfileImageBrush"
+                                            Stretch="UniformToFill" />
+                            </Ellipse.Fill>
+                        </Ellipse>
+                    </Grid>
+                    <Rectangle Width="50" />
+                    <StackPanel HorizontalAlignment="Left"
+                                VerticalAlignment="Center"
+                                Margin="20,0,0,0">
+                        <!-- Text Content -->
+                        <StackPanel Orientation="Horizontal"
+                                    Margin="20,40,0,0">
+                            <TextBlock Text="Hey, "
+                                       x:Name="HeyText"
+                                       Foreground="White"
+                                       FontSize="155.567"
+                                       FontWeight="Medium" />
+                            <TextBlock Text="{Binding Path=DisplayName}"
+                                       x:Name="UserName"
+                                       Foreground="White"
+                                       FontSize="155.567"
+                                       FontWeight="Bold" />
+                            <TextBlock Text="!"
+                                       x:Name="ExclamationText"
+                                       Foreground="White"
+                                       FontSize="155.567"
+                                       FontWeight="Bold" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal"
+                                    Margin="30,0,50,10">
+                            <TextBlock Text="Your plan is: "
+                                       x:Name="SignedInAsText"
+                                       Foreground="White"
+                                       FontSize="70.239"
+                                       FontWeight="Regular" />
+                            <StackPanel Orientation="Horizontal"
+                                        VerticalAlignment="Center">
+                                <TextBlock x:Name="PlanText"
+                                           Foreground="White"
+                                           FontSize="70.239"
+                                           FontWeight="Bold" />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Buttons -->
+                        <StackPanel Orientation="Horizontal"
+                                    HorizontalAlignment="Stretch"
+                                    VerticalAlignment="Bottom"
+                                    Margin="0,20,0,40">
+                            <!-- Your Account Button -->
+                            <Button Style="{StaticResource YourAccountButtonStyle}"
+                                    Click="OnYourAccountClick">
+                                <Grid>
+                                    <TextBlock Text="Your Account"
+                                               x:Name="YourAccountText"
+                                               FontSize="70"
+                                               Margin="60,0,60,0"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Grid>
+                            </Button>
+                            <Rectangle Width="50"
+                                       Height="180" />
+                            <Button Style="{StaticResource SignOutButtonStyle}"
+                                    Click="OnSignOutClick">
+                                <Grid>
+                                    <TextBlock Text="Sign Out"
+                                               x:Name="SignOutText"
+                                               FontSize="70"
+                                               Margin="60,0,60,0"
+                                               HorizontalAlignment="Center"
+                                               VerticalAlignment="Center" />
+                                </Grid>
+                            </Button>
+                        </StackPanel>
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+            <!-- Spinner Overlay -->            
+            <Grid x:Name="SpinnerOverlay" Visibility="Collapsed" Background="#80000000">
+                <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                    <Canvas Width="250" Height="250">
+                        <!-- The circular spinner -->
+                        <Path x:Name="SpinnerArc"
+                  Data="M125,15 A110,110 0 1 1 124.99,15"
+                  StrokeThickness="40"
+                  StrokeStartLineCap="Round"
+                  StrokeEndLineCap="Round">
+                            <Path.Stroke>
+                                <!-- Gradient from #1DB954 to Transparent -->
+                                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0" MappingMode="RelativeToBoundingBox">
+                                    <GradientStop Color="#1DB954" Offset="0"/>
+                                    <GradientStop Color="Transparent" Offset="1"/>
+                                </LinearGradientBrush>
+                            </Path.Stroke>
+                            <Path.RenderTransform>
+                                <RotateTransform x:Name="SpinnerRotateTransform" CenterX="125" CenterY="125"/>
+                            </Path.RenderTransform>
+                        </Path>
+                    </Canvas>
+                    <TextBlock x:Name="SpinnerText"
+                   Text="Signing in..."
+                   Foreground="White"
+                   FontSize="70"
+                   HorizontalAlignment="Center"
+                   Margin="0,20,0,0"/>
+                </StackPanel>
+                <!-- Continuous rotation animation -->
+                <Grid.Triggers>
+                    <EventTrigger RoutedEvent="Grid.Loaded">
+                        <BeginStoryboard>
+                            <Storyboard RepeatBehavior="Forever">
+                                <DoubleAnimation Storyboard.TargetName="SpinnerRotateTransform"
+                                     Storyboard.TargetProperty="Angle"
+                                     From="0" To="360" Duration="0:0:1"/>
+                            </Storyboard>
+                        </BeginStoryboard>
+                    </EventTrigger>
+                </Grid.Triggers>
+            </Grid>
+
+
+
+        </Grid>
+    </Viewbox>
+</UserControl>

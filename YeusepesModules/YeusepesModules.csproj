@@ -1,49 +1,98 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
 	<PropertyGroup>
-		<TargetFramework>net8.0-windows10.0.22621.0</TargetFramework>
+		<!-- Updated target framework and Windows SDK version -->
+		<TargetFramework>net8.0-windows10.0.26100.0</TargetFramework>
 		<UseWPF>true</UseWPF>
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<GenerateAssemblyInfo>false</GenerateAssemblyInfo>
 		<LangVersion>latestmajor</LangVersion>
-		<WindowsSdkPackageVersion>10.0.22621.52</WindowsSdkPackageVersion>
+		<WindowsSdkPackageVersion>10.0.26100.1</WindowsSdkPackageVersion>
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+		<UserSecretsId>95a0142d-ef1a-437e-961e-1322c4a8427d</UserSecretsId>
 		<UseWinUI>true</UseWinUI>
+		<Platforms>AnyCPU;x64</Platforms>
+	</PropertyGroup>
+
+	<PropertyGroup>
+		<UseRidGraph>true</UseRidGraph>
 	</PropertyGroup>
 
 	<Target Name="PostBuild" AfterTargets="Build">
-		<!-- Ensure the target directory exists -->
+		<!-- Ensure the destination directories exist -->
 		<MakeDir Directories="$(APPDATA)\vrcosc-v2-Dev\packages\local" />
+		<MakeDir Directories="$(APPDATA)\VRCOSC\packages\local" />
 
-		<!-- Define files to exclude -->
-		<ItemGroup>
-			<ExcludedFiles Include="&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)FontAwesome6.Core.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)FontAwesome6.Fonts.Net.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)FontAwesome6.Shared.Net.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)HidSharp.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)JsonSubTypes.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)LibreHardwareMonitorLib.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)MathParser.org-mXparser.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)MeaMod.DNS.dll;&#xD;&#xA;																	&#xD;&#xA;				$(TargetDir)Microsoft.Windows.SDK.NET.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Microsoft.Xaml.Behaviors.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)NAudio.Core.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)NAudio.Wasapi.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Newtonsoft.Json.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)NuGet.Versioning.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Octokit.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)OpenVR.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)openvr_api.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)PInvoke.Kernel32.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)PInvoke.User32.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)PInvoke.Windows.Core.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)PInvoke.Windows.ShellScalingApi.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Polly.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Semver.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)System.CodeDom.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)System.IO.Ports.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)System.Management.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Validation.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Velopack.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)VRChat.API.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)VRCOSC.App.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)VRCOSC.App.pdb;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Whisper.net.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)WindowsInput.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)WinRT.Runtime.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Xceed.Wpf.AvalonDock.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Xceed.Wpf.AvalonDock.Themes.Aero.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Xceed.Wpf.AvalonDock.Themes.Metro.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Xceed.Wpf.AvalonDock.Themes.VS2010.dll;&#xD;&#xA;				&#xD;&#xA;				$(TargetDir)Xceed.Wpf.Toolkit.dll" />
+		<ItemGroup>			
+			<IncludedFiles Include="$(TargetDir)Emgu.CV.dll" />						
+			<IncludedFiles Include="$(TargetDir)System.Private.Windows.Core.dll" />			
+			<IncludedFiles Include="$(TargetDir)System.Drawing.Common.dll" />			
+			<IncludedFiles Include="$(TargetDir)HPPH.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.Configuration.Abstractions.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.Configuration.Binder.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.Configuration.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.DependencyInjection.Abstractions.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.DependencyInjection.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.Diagnostics.Abstractions.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.Diagnostics.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.Http.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.Logging.Abstractions.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.Logging.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.Options.ConfigurationExtensions.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.Options.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.Primitives.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Web.WebView2.Core.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Web.WebView2.WinForms.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Web.WebView2.Wpf.dll" />
+			<IncludedFiles Include="$(TargetDir)PuppeteerSharp.dll" />
+			<IncludedFiles Include="$(TargetDir)RestSharp.dll" />
+			<IncludedFiles Include="$(TargetDir)ScreenCapture.NET.dll" />
+			<IncludedFiles Include="$(TargetDir)ScreenCapture.NET.DX11.dll" />
+			<IncludedFiles Include="$(TargetDir)SharpGen.Runtime.COM.dll" />
+			<IncludedFiles Include="$(TargetDir)SharpGen.Runtime.dll" />
+			<IncludedFiles Include="$(TargetDir)System.Diagnostics.DiagnosticSource.dll" />
+			<IncludedFiles Include="$(TargetDir)System.IO.Pipelines.dll" />
+			<IncludedFiles Include="$(TargetDir)System.Text.Encodings.Web.dll" />
+			<IncludedFiles Include="$(TargetDir)System.Text.Json.dll" />
+			<IncludedFiles Include="$(TargetDir)Vortice.Direct3D11.dll" />
+			<IncludedFiles Include="$(TargetDir)Vortice.DirectX.dll" />
+			<IncludedFiles Include="$(TargetDir)Vortice.DXGI.dll" />
+			<IncludedFiles Include="$(TargetDir)Vortice.Mathematics.dll" />
+			<IncludedFiles Include="$(TargetDir)YeusepesLowLevelTools.dll" />
+			<IncludedFiles Include="$(TargetDir)YeusepesModules.dll" />
+			<IncludedFiles Include="$(TargetDir)zxing.dll" />
+			<IncludedFiles Include="$(TargetDir)ZXing.Windows.Compatibility.dll" />
+			
 		</ItemGroup>
 
-		<!-- Copy only non-excluded files -->
-		<ItemGroup>
-			<FilteredDependencies Include="$(TargetDir)*.dll" Exclude="@(ExcludedFiles)" />
-		</ItemGroup>
 
-		<Copy SourceFiles="@(FilteredDependencies)" DestinationFolder="$(APPDATA)\VRCOSC-Dev\packages\local" />
-		<Copy SourceFiles="@(FilteredDependencies)" DestinationFolder="$(APPDATA)\VRCOSC\packages\local" />
+		<!-- Copy the explicitly included files to both destinations -->
+		<Copy SourceFiles="@(IncludedFiles)" DestinationFolder="$(APPDATA)\VRCOSC-Dev\packages\local" />
+		<Copy SourceFiles="@(IncludedFiles)" DestinationFolder="$(APPDATA)\VRCOSC\packages\local" />
 	</Target>
 
 	<ItemGroup>
+		<PackageReference Include="Emgu.CV" Version="4.10.0.5680" />		
+		<PackageReference Include="Emgu.CV.runtime.mini.windows" Version="4.10.0.5680" />
+		<PackageReference Include="Emgu.CV.runtime.windows" Version="4.10.0.5680" />
+		<PackageReference Include="Emgu.runtime.windows.msvc.rt.x64" Version="19.42.34435" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="6.0.1" />
 		<PackageReference Include="Microsoft.Extensions.Http" Version="9.0.0" />
 		<PackageReference Include="Microsoft.Extensions.Primitives" Version="9.0.0" />
+		<PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2903.40" />
+		<PackageReference Include="PuppeteerSharp" Version="20.0.5" />
+		<PackageReference Include="RestSharp" Version="112.1.0" />
 		<PackageReference Include="ScreenCapture.NET.DX11" Version="3.0.0" />
-		<PackageReference Include="Selenium.WebDriver" Version="4.27.0" />
-		<PackageReference Include="Selenium.WebDriver.ChromeDriver" Version="131.0.6778.20400" />
+		<PackageReference Include="System.Drawing.Common" Version="9.0.2" />
+		<PackageReference Include="System.Memory" Version="4.6.0" />
+		<PackageReference Include="System.Private.ServiceModel" Version="4.10.3" />
+		<PackageReference Include="VolcanicArts.VRCOSC.SDK" Version="2025.212.0" />
 		<PackageReference Include="ZXing.Net" Version="0.16.9" />
 		<PackageReference Include="ZXing.Net.Bindings.Windows.Compatibility" Version="0.16.12" />
 	</ItemGroup>
 
-
-
 	<ItemGroup>
-		<ProjectReference Include="..\Plugins\VRCOSC.App\VRCOSC.App.csproj" />
 		<ProjectReference Include="..\Plugins\YeusepesLowLevelTools\YeusepesLowLevelTools.csproj" />
 	</ItemGroup>
 
