@@ -10,8 +10,7 @@
 		<LangVersion>latestmajor</LangVersion>
 		<WindowsSdkPackageVersion>10.0.26100.1</WindowsSdkPackageVersion>
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
-		<UserSecretsId>95a0142d-ef1a-437e-961e-1322c4a8427d</UserSecretsId>
-		<UseWinUI>true</UseWinUI>
+		<UserSecretsId>95a0142d-ef1a-437e-961e-1322c4a8427d</UserSecretsId>		
 		<Platforms>AnyCPU;x64</Platforms>
 	</PropertyGroup>
 
@@ -63,7 +62,7 @@
 			<IncludedFiles Include="$(TargetDir)YeusepesModules.dll" />
 			<IncludedFiles Include="$(TargetDir)zxing.dll" />
 			<IncludedFiles Include="$(TargetDir)ZXing.Windows.Compatibility.dll" />
-			
+			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.Configuration.UserSecrets.dll" />
 		</ItemGroup>
 
 
@@ -93,7 +92,7 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<ProjectReference Include="..\Plugins\YeusepesLowLevelTools\YeusepesLowLevelTools.csproj" />
+		<ProjectReference Include="..\YeusepesLowLevelTools\YeusepesLowLevelTools.csproj" />
 	</ItemGroup>
 
 </Project>

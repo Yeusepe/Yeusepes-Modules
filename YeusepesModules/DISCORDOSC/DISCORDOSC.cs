@@ -4,6 +4,7 @@ using VRCOSC.App.SDK.Modules;
 using VRCOSC.App.SDK.Modules.Attributes.Settings;
 using VRCOSC.App.SDK.Parameters;
 using YeusepesModules.Common;
+using Microsoft.Extensions.Configuration;
 
 
 #pragma warning disable CA1416 // Validate platform compatibility
@@ -19,6 +20,7 @@ namespace YeusepesModules.DISCORDOSC
         private string clientId;
         private string clientSecret;
         BaseDiscordClient client;
+        private IConfiguration config;
 
         public enum DISCORDOSCParameter
         {
@@ -65,11 +67,13 @@ namespace YeusepesModules.DISCORDOSC
 
             CreateGroup("Discord App Secrets", DiscordSetting.ClientId, DiscordSetting.ClientSecret, DiscordSetting.IMG);
             #endregion
+            
+            config = new ConfigurationBuilder()
+                        .AddUserSecrets<DISCORDOSC>()
+                        .Build();
 
-
-
-            clientId = "";
-            clientSecret = "";
+            clientId = config["Discord:ClientId"];
+            clientSecret = config["Discord:ClientSecret"];
 
             base.OnPreLoad();
         }
