@@ -87,6 +87,7 @@ namespace YeusepesModules.IDC.Encoder
                 await Task.Delay(MillisecondsDelay);
             }
 
+            sendParameter(EncodingParameter.CharIn, 255);
             isEncoding = false;
         }
 
