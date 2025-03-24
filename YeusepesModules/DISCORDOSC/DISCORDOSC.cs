@@ -72,9 +72,6 @@ namespace YeusepesModules.DISCORDOSC
                         .AddUserSecrets<DISCORDOSC>()
                         .Build();
 
-            clientId = config["Discord:ClientId"];
-            clientSecret = config["Discord:ClientSecret"];
-
             base.OnPreLoad();
         }
 
@@ -95,8 +92,8 @@ namespace YeusepesModules.DISCORDOSC
 
             if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
             {
-                clientId = "";
-                clientSecret = "";
+                clientId = config["Discord:ClientId"];                
+                clientSecret = config["Discord:ClientSecret"];                
                 LogDebug("ClientId was empty or clientSecret was empty. Using defaults.");
             }
 

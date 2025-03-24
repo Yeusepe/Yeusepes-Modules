@@ -63,6 +63,11 @@
 			<IncludedFiles Include="$(TargetDir)zxing.dll" />
 			<IncludedFiles Include="$(TargetDir)ZXing.Windows.Compatibility.dll" />
 			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.Configuration.UserSecrets.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.FileProviders.Physical.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.FileProviders.Abstractions.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.Configuration.Json.dll" />
+			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.Configuration.FileExtensions.dll" />
+
 		</ItemGroup>
 
 
@@ -89,6 +94,9 @@
 		<PackageReference Include="VolcanicArts.VRCOSC.SDK" Version="2025.212.0" />
 		<PackageReference Include="ZXing.Net" Version="0.16.9" />
 		<PackageReference Include="ZXing.Net.Bindings.Windows.Compatibility" Version="0.16.12" />
+		<PackageReference Include="Microsoft.Extensions.FileProviders.Physical" Version="6.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="6.0.0" />
+		<PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="6.0.0" />
 	</ItemGroup>
 
 	<ItemGroup>
