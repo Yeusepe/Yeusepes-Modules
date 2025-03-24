@@ -633,13 +633,11 @@ namespace YeusepesModules.SPOTIOSC
 
         private async void HandleJoinJam()
         {
-            try
+            await ExecuteWithErrorHandlingAsync(async () =>
             {
-                // Retrieve the join session ID using the session token.
                 string joinSessionId = await SpotifyJamRequests.GetJoinSessionIdAsync(SpotifyJamRequests._shareableUrl, spotifyUtilities);
                 spotifyUtilities.LogDebug($"Join session ID retrieved: {joinSessionId}");
 
-                // Now attempt to join the jam using the retrieved session ID.
                 bool joinResult = await SpotifyJamRequests.JoinSpotifyJam(joinSessionId, spotifyRequestContext, spotifyUtilities);
                 if (joinResult)
                 {
@@ -649,12 +647,9 @@ namespace YeusepesModules.SPOTIOSC
                 {
                     spotifyUtilities.Log("Failed to join the jam session.");
                 }
-            }
-            catch (Exception ex)
-            {
-                spotifyUtilities.Log($"Error while joining the jam: {ex.Message}");
-            }
+            });
         }
+
 
 
         private void HandleEvents(JsonElement payload)
@@ -910,5 +905,54 @@ namespace YeusepesModules.SPOTIOSC
                 return false;
             }
         }
+
+        // Helper logging function that wraps the original Log method.
+        private void LogWithError(string message, bool isError = false, Exception ex = null)
+        {
+            // Append exception message if provided.
+            string fullMessage = message;
+            if (ex != null)
+            {
+                fullMessage += $": {ex.Message}";
+            }
+
+            // Log the message using your existing Log method.
+            Log(fullMessage);
+
+            // If it's an error, send the error parameter.
+            if (isError)
+            {
+                SendParameter(SpotiParameters.Error, true);
+            }
+        }
+
+        // Helper method to wrap actions with error handling.
+        private void ExecuteWithErrorHandling(Action action)
+        {
+            try
+            {
+                action();
+            }
+            catch (Exception ex)
+            {
+                LogWithError("An error occurred while executing action", true, ex);
+                // Optionally, rethrow or further handle the exception.
+            }
+        }
+
+        // Async version for asynchronous methods.
+        private async Task ExecuteWithErrorHandlingAsync(Func<Task> asyncAction)
+        {
+            try
+            {
+                await asyncAction();
+            }
+            catch (Exception ex)
+            {
+                LogWithError("An error occurred during asynchronous execution", true, ex);
+                // Optionally, rethrow or further handle the exception.
+            }
+        }
+
     }
 }
