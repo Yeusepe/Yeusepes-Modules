@@ -48,32 +48,54 @@ namespace YeusepesModules.SPOTIOSC.UI
 
         private async Task InitializeUIAsync()
         {
-            if (CredentialManager.IsUserSignedIn())
+            // Show spinner overlay and set the spinner cursor
+            Dispatcher.Invoke(() =>
             {
-                Logger.Log("User already signed in. Skipping authentication.");                
-                using var httpClient = new HttpClient();
-                var profileRequest = new SpotifyProfileRequest(httpClient, CredentialManager.LoadAccessToken(), CredentialManager.LoadClientToken());
-                                
-                var userProfile = await profileRequest.GetUserProfileAsync();
+                SpinnerOverlay.Visibility = Visibility.Visible;
+                CursorManager.SetSpinnerCursor();
+            });
 
-                if (userProfile == null)
+            try
+            {
+                if (CredentialManager.IsUserSignedIn())
                 {
-                    Logger.Log("Failed to fetch user profile.");
-                    DisplaySignedOutState();
+                    Logger.Log("User already signed in. Skipping authentication.");
+                    using var httpClient = new HttpClient();
+                    var profileRequest = new SpotifyProfileRequest(httpClient, CredentialManager.LoadAccessToken(), CredentialManager.LoadClientToken());
+
+                    var userProfile = await profileRequest.GetUserProfileAsync();
+
+                    if (userProfile == null)
+                    {
+                        Logger.Log("Failed to fetch user profile.");
+                        DisplaySignedOutState();
+                        return;
+                    }
+
+                    Logger.Log($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}, {userProfile.Images?.FirstOrDefault()?.Url}");
+
+                    UpdateUIWithUserProfile(userProfile.DisplayName, userProfile.Product, userProfile.Images?.FirstOrDefault()?.Url);
+                    Dispatcher.Invoke(() => DisplaySignedInState());
                     return;
                 }
 
-                Logger.Log($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}, {userProfile.Images?.FirstOrDefault()?.Url}");
-
-                UpdateUIWithUserProfile(userProfile.DisplayName, userProfile.Product, userProfile.Images?.FirstOrDefault()?.Url);
-                Dispatcher.Invoke(() => DisplaySignedInState());
-                return;
+                DisplaySignedOutState();
             }
-
-
-            DisplaySignedOutState();
-            return;
+            catch (Exception ex)
+            {
+                Logger.Log($"Error initializing UI: {ex.Message}");
+            }
+            finally
+            {
+                // Hide spinner overlay and restore cursor
+                Dispatcher.Invoke(() =>
+                {
+                    SpinnerOverlay.Visibility = Visibility.Collapsed;
+                    CursorManager.RestoreCursor();
+                });
+            }
         }
+
 
 
         private void DisplaySignedInState()
