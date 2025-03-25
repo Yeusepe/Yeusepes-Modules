@@ -1,15 +1,10 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Drawing;
+﻿using System.Drawing;
 using System.Drawing.Imaging;
-using System.Threading.Tasks;
 using VRCOSC.App.SDK.Modules;
 using VRCOSC.App.SDK.Modules.Attributes.Settings;
 using VRCOSC.App.SDK.Parameters;
 using YeusepesModules.Common.ScreenUtilities;
-using ZXing;
-using ZXing.Common;
-using ZXing.Windows.Compatibility;
+using ZBar;
 using HPPH;
 using YeusepesModules.OSCQR.UI;
 
@@ -45,12 +40,16 @@ namespace YeusepesModules.OSCQR
             Error
         }
 
+
         #endregion
 
         #region Module Setup
 
         protected override void OnPreLoad()
         {
+            YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("libiconv.dll", message => Log(message));
+            YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("libzbar.dll", message => Log(message));
+
             // Register our module parameters.
             RegisterParameter<bool>(
                 OSCQRParameter.StartRecording,
@@ -204,14 +203,12 @@ namespace YeusepesModules.OSCQR
                     // Attempt to scan for a QR code.
                     string qrResult = ScanQRCode(processedBitmap);
                     if (!string.IsNullOrEmpty(qrResult))
-                    {
-                        Log($"QR Code Detected: {qrResult}");
+                    {                        
                         SendParameter(OSCQRParameter.QRCodeFound, true);
                         lastDetectedQRCode = qrResult;
                     }
                     else
-                    {
-                        Log("No QR Code detected.");
+                    {                        
                         SendParameter(OSCQRParameter.QRCodeFound, false);
                     }
                 }
@@ -271,27 +268,27 @@ namespace YeusepesModules.OSCQR
         public static string ScanQRCode(Bitmap bitmap)
         {
             if (bitmap == null)
-                throw new ArgumentNullException(nameof(bitmap), "Bitmap is null.");
+                throw new ArgumentNullException(nameof(bitmap));
 
             try
             {
-                var reader = new BarcodeReader
-                {
-                    AutoRotate = true,
-                    Options = new DecodingOptions
-                    {
-                        TryHarder = true,
-                        PossibleFormats = new List<BarcodeFormat> { BarcodeFormat.QR_CODE }
-                    }
-                };
-                var result = reader.Decode(bitmap);
-                return result?.Text ?? string.Empty;
+                // Force a 24‑bit RGB copy (ZBarSharp will convert it to Y800 internally)
+                using var rgb = new Bitmap(bitmap.Width, bitmap.Height, PixelFormat.Format24bppRgb);
+                using (var g = Graphics.FromImage(rgb))
+                    g.DrawImage(bitmap, 0, 0, bitmap.Width, bitmap.Height);
+
+                using var scanner = new ImageScanner { Cache = true };
+                var symbols = scanner.Scan(rgb);
+                return symbols.FirstOrDefault()?.Data ?? string.Empty;
             }
             catch (Exception ex)
             {
-                throw new InvalidOperationException("Error scanning QR code from bitmap.", ex);
+                // Log the full inner exception message (and stacktrace if you like)
+                throw new InvalidOperationException($"ZBar scan failed: {ex.GetBaseException().Message}");                
             }
         }
+
+
 
         private void SaveCurrentQRCode()
         {
@@ -338,7 +335,7 @@ namespace YeusepesModules.OSCQR
 
                 try
                 {
-                    int bytesPerPixel = Image.GetPixelFormatSize(bitmap.PixelFormat) / 8;
+                    int bytesPerPixel = System.Drawing.Image.GetPixelFormatSize(bitmap.PixelFormat) / 8;
                     int totalBytes = bitmapData.Stride * height;
                     byte[] pixelBuffer = new byte[totalBytes];
 
