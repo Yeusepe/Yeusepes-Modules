@@ -134,7 +134,7 @@ namespace YeusepesModules.Common.ScreenUtilities
             }
         }
 
-        private void StartCapture()
+        public void StartCapture()
         {
             sendBoolParameter(ScreenUtilitiesParameters.Error, false);
             if (screenCaptureService == null)
@@ -353,7 +353,7 @@ namespace YeusepesModules.Common.ScreenUtilities
 
 
 
-        private void RunCaptureLoop()
+        public void RunCaptureLoop()
         {
             try
             {
@@ -624,7 +624,7 @@ namespace YeusepesModules.Common.ScreenUtilities
             }
         }
 
-        private void StopCapture()
+        public void StopCapture()
         {
             isCapturing = false;
             // Wait for the thread, if it takes too long, abort it
