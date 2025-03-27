@@ -1,0 +1,9 @@
+﻿<Window x:Class="YeusepesModules.SPOTIOSC.UI.SignInWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:su="clr-namespace:YeusepesModules.Common.ScreenUtilities"
+        Title="Sign In" Height="400" Width="600">
+    <Grid Name="MainGrid">
+        <su:ScreenUtilitySelector x:Name="ScreenSelector" Loaded="ScreenSelector_Loaded" />
+    </Grid>
+</Window>

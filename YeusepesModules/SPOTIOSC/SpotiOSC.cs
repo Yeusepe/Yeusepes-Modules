@@ -22,6 +22,7 @@ namespace YeusepesModules.SPOTIOSC
     [ModuleDescription("A module to control your Spotify Through OSC.")]
     [ModuleType(ModuleType.Integrations)]
     [ModuleInfo("https://github.com/Yeusepe/Yeusepes-Modules/wiki/SPOTIOSC")]
+    [ModuleSettingsWindow(typeof(SignInWindow))]
     public class SpotiOSC : Module
     {
         private static SecureString AccessToken;
@@ -57,7 +58,7 @@ namespace YeusepesModules.SPOTIOSC
             return this;
         }
 
-        private enum SpotiSettings
+        public enum SpotiSettings
         {
             SignInButton,
             PopUpJam
@@ -131,6 +132,7 @@ namespace YeusepesModules.SPOTIOSC
 
 
             #endregion
+
             #region Settings
 
             // Create a custom setting for the button

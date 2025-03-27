@@ -16,6 +16,7 @@ using YeusepesLowLevelTools;
 using System.Windows.Data;
 using Octokit;
 using static YeusepesLowLevelTools.Loader;
+using System.Reflection;
 
 namespace YeusepesModules.SPOTIOSC.UI
 {
@@ -25,7 +26,7 @@ namespace YeusepesModules.SPOTIOSC.UI
         private readonly string _tempFontDirectory = Path.GetTempPath();
         public bool IsPremium { get; set; }
 
-        public SignIn(Module module, ModuleSetting setting)
+        public SignIn(VRCOSC.App.SDK.Modules.Module module, ModuleSetting setting)
         {
             Uri resourceLocater = new Uri("/YeusepesModules;component/spotiosc/ui/signin.xaml", UriKind.Relative);
             System.Windows.Application.LoadComponent(this, resourceLocater);
@@ -59,7 +60,7 @@ namespace YeusepesModules.SPOTIOSC.UI
             {
                 if (CredentialManager.IsUserSignedIn())
                 {
-                    Logger.Log("User already signed in. Skipping authentication.");
+                    ////Logger.Log("User already signed in. Skipping authentication.");
                     using var httpClient = new HttpClient();
                     var profileRequest = new SpotifyProfileRequest(httpClient, CredentialManager.LoadAccessToken(), CredentialManager.LoadClientToken());
 
@@ -67,12 +68,12 @@ namespace YeusepesModules.SPOTIOSC.UI
 
                     if (userProfile == null)
                     {
-                        Logger.Log("Failed to fetch user profile.");
+                        ////Logger.Log("Failed to fetch user profile.");
                         DisplaySignedOutState();
                         return;
                     }
 
-                    Logger.Log($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}, {userProfile.Images?.FirstOrDefault()?.Url}");
+                    ////Logger.Log($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}, {userProfile.Images?.FirstOrDefault()?.Url}");
 
                     UpdateUIWithUserProfile(userProfile.DisplayName, userProfile.Product, userProfile.Images?.FirstOrDefault()?.Url);
                     Dispatcher.Invoke(() => DisplaySignedInState());
@@ -83,7 +84,7 @@ namespace YeusepesModules.SPOTIOSC.UI
             }
             catch (Exception ex)
             {
-                Logger.Log($"Error initializing UI: {ex.Message}");
+                ////Logger.Log($"Error initializing UI: {ex.Message}");
             }
             finally
             {
@@ -128,7 +129,7 @@ namespace YeusepesModules.SPOTIOSC.UI
 
         private void UpdateUIWithUserProfile(string name, string plan, string imageUrl)
         {
-            Logger.Log($"Updating UI with profile: {name}, {plan}, {imageUrl}");
+            //////Logger.Log($"Updating UI with profile: {name}, {plan}, {imageUrl}");
 
             UserName.Text = name;
             PlanText.Text = NativeMethods.CapitalizeFirstLetter(plan);
@@ -156,7 +157,7 @@ namespace YeusepesModules.SPOTIOSC.UI
                 }
                 catch (Exception ex)
                 {
-                    Logger.Log($"Error loading profile image: {ex.Message}");
+                    ////Logger.Log($"Error loading profile image: {ex.Message}");
                 }
             }
         }
@@ -192,7 +193,7 @@ namespace YeusepesModules.SPOTIOSC.UI
                 SignOutText.FontFamily = boldFontFamily;
                 SpinnerText.FontFamily = boldFontFamily;
 
-                Logger.Log("Fonts successfully applied.");
+                ////Logger.Log("Fonts successfully applied.");
             }
             catch (Exception ex)
             {
@@ -214,14 +215,14 @@ namespace YeusepesModules.SPOTIOSC.UI
                 // Check if the file already exists
                 if (File.Exists(tempFontPath))
                 {
-                    Logger.Log($"Font already exists: {tempFontPath}");
+                    ////Logger.Log($"Font already exists: {tempFontPath}");
                     return; // Skip downloading if the file already exists
                 }
 
                 // Save the font data
                 await File.WriteAllBytesAsync(tempFontPath, fontData);
 
-                Logger.Log($"Font downloaded and saved to: {tempFontPath}");
+                ////Logger.Log($"Font downloaded and saved to: {tempFontPath}");
             }
             catch (Exception ex)
             {
@@ -231,6 +232,9 @@ namespace YeusepesModules.SPOTIOSC.UI
 
         private async void OnSignInClick(object sender, RoutedEventArgs e)
         {
+            // Check if the parent window is still alive.
+            var parentWindow = Window.GetWindow(this);
+
             // Show spinner overlay
             SpinnerOverlay.Visibility = Visibility.Visible;
             CursorManager.SetSpinnerCursor();
@@ -250,20 +254,21 @@ namespace YeusepesModules.SPOTIOSC.UI
                 }
                 else
                 {
-                    Logger.Log("Failed to sign in.");
+                    // Handle login failure if necessary
                 }
             }
             catch (Exception ex)
             {
-                Logger.Log($"Error signing in: {ex.Message}");
+                // Optionally log or handle the exception
             }
             finally
             {
-                // Hide spinner overlay
+                // Hide spinner overlay and restore cursor
                 SpinnerOverlay.Visibility = Visibility.Collapsed;
                 CursorManager.RestoreCursor();
             }
         }
+
 
 
         private void OnYourAccountClick(object sender, RoutedEventArgs e)
@@ -290,13 +295,14 @@ namespace YeusepesModules.SPOTIOSC.UI
                 // Sign out logic
                 CredentialManager.SignOut(); // Assuming this method clears stored tokens or cookies
                 DisplaySignedOutState(); // Update the UI to show the signed-out state
-                Logger.Log("User signed out successfully.");
+                ////Logger.Log("User signed out successfully.");
             }
             catch (Exception ex)
             {
                 MessageBox.Show($"Failed to sign out: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
+
 
     }
 }
