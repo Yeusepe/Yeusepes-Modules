@@ -35,6 +35,10 @@ namespace YeusepesLowLevelTools
 
         [DllImport("user32.dll", SetLastError = true)]
         public static extern bool IsIconic(IntPtr hWnd);
+        
+        [DllImport("gdi32.dll")]
+        public static extern bool DeleteObject(IntPtr hObject);
+
 
         [StructLayout(LayoutKind.Sequential)]
         public struct RECT
@@ -93,6 +97,7 @@ namespace YeusepesLowLevelTools
 
             return char.ToUpper(input[0]) + input.Substring(1).ToLower();
         }
+
 
     }
 
@@ -277,6 +282,7 @@ namespace YeusepesLowLevelTools
                 throw;
             }
         }
+
     }
 
 }
