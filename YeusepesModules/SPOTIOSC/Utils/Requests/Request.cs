@@ -168,25 +168,25 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
         {
             try
             {
-                //Logger.Log("Starting full token flow to refresh access token...");
+                ////Logger.Log("Starting full token flow to refresh access token...");
                 await CredentialManager.AuthenticateAsync();
 
                 // Check if a new access token was loaded
                 string newAccessToken = CredentialManager.LoadAccessToken();
                 if (!string.IsNullOrEmpty(newAccessToken))
                 {
-                    //Logger.Log("Access token successfully refreshed and loaded.");
+                    ////Logger.Log("Access token successfully refreshed and loaded.");
                     return true;
                 }
                 else
                 {
-                    //Logger.Log("Failed to load refreshed access token.");
+                    ////Logger.Log("Failed to load refreshed access token.");
                     return false;
                 }
             }
             catch (Exception ex)
             {
-                //Logger.Log($"Error while refreshing access token: {ex.Message}");
+                ////Logger.Log($"Error while refreshing access token: {ex.Message}");
                 return false;
             }
         }

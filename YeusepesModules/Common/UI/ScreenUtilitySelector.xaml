@@ -1,0 +1,16 @@
+﻿<UserControl x:Class="YeusepesModules.Common.ScreenUtilities.ScreenUtilitySelector"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Height="Auto" Width="Auto">
+    <DockPanel>
+        <!-- Scrollable area for display squares -->
+        <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <WrapPanel x:Name="DisplaysWrapPanel" Margin="5" />
+        </ScrollViewer>
+        <!-- Dropdown for selecting the GPU -->
+        <ComboBox x:Name="GPUComboBox"
+              DockPanel.Dock="Top"
+              Margin="5"
+              SelectionChanged="GPUComboBox_SelectionChanged" />
+    </DockPanel>
+</UserControl>

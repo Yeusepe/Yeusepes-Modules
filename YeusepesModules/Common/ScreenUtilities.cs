@@ -14,6 +14,8 @@ using YeusepesModules.IDC.Encoder;
 using VRCOSC.App.SDK.Parameters;
 using HPPH;
 using System.Drawing.Imaging;
+using System.Windows.Media.Imaging;
+using System.Windows;
 
 namespace YeusepesModules.Common.ScreenUtilities
 {
@@ -29,6 +31,10 @@ namespace YeusepesModules.Common.ScreenUtilities
         private readonly Func<Enum, String> GetSettingValue;
         Action<ScreenUtilitiesParameters, bool> sendBoolParameter;
         Action<HPPH.IImage> whatDoInCapture;
+
+        private ScreenUtilitySelector screenSelector;
+
+        private Dictionary<string, ICaptureZone> _captureZones = new Dictionary<string, ICaptureZone>();
 
         private bool isCapturing = false;
 
@@ -52,28 +58,19 @@ namespace YeusepesModules.Common.ScreenUtilities
             Default
         }
 
-        public ScreenUtilities(Action<Enum, ModuleSetting> createCustomSetting, Action<string> log, Func<Enum, String> getSettingValue, Action<Enum, string, ParameterMode, string, string> registerBoolParameter)
+        public ScreenUtilities(Action<Enum, ModuleSetting> createCustomSetting, Action<string> log, Func<Enum, string> getSettingValue, Action<Enum, string, ParameterMode, string, string> registerBoolParameter)
         {
             Log = log;
             GetSettingValue = getSettingValue;
 
-            createCustomSetting(
-               ScreenUtilitiesSettings.SelectedGraphicsCard,
-               new StringModuleSetting(
-                   "Graphics Card",
-                   "Select or type the name of your GPU. Suggestions will appear as you type.",
-                   typeof(GraphicsCardSettingView), // The view class now supports the required constructor
-                   "Default" // Default value
-               )
-           );
-
+            // Use the new ScreenUtilitySelector component as the setting view.
             createCustomSetting(
                 ScreenUtilitiesSettings.SelectedDisplay,
                 new StringModuleSetting(
-                    "Display",
-                    "Select or type the name of your display. Suggestions will appear as you type.",
-                    typeof(DisplaySettingView), // The custom view class
-                    "Default" // Default value
+                    "Screen Selector",
+                    "Select your GPU and Display.",
+                    typeof(ScreenUtilitySelector),
+                    "Default"
                 )
             );
 
@@ -81,8 +78,132 @@ namespace YeusepesModules.Common.ScreenUtilities
             registerBoolParameter(ScreenUtilitiesParameters.StartRecording, "ScreenUtilities/StartRecording", ParameterMode.Write, "Start Recording", "Start or stop screen recording");
             registerBoolParameter(ScreenUtilitiesParameters.Error, "ScreenUtilities/Error", ParameterMode.Read, "Error", "Indicates an error occurred during screen capture");
 
-            // Initialize screen capture service
+            // Initialize screen capture service.
             screenCaptureService = new DX11ScreenCaptureService();
+
+            screenSelector = new ScreenUtilitySelector();
+
+            // At some point you need to obtain the instantiated ScreenUtilitySelector.
+            // For example, if your framework calls a method when the view is ready:
+            // this.screenSelector = GetSettingView(ScreenUtilitiesSettings.SelectedDisplay) as ScreenUtilitySelector;
+            // And then subscribe to its events:
+            // After screenCaptureService is initialized in your ScreenUtilities constructor or OnModuleStart:
+            if (screenSelector != null)
+            {
+                // Actively get GPU names from your capture service.
+                var gpuList = GetGraphicsCards(); // your existing method
+                                                  // Get displays using your capture service.
+                var displayList = GetDisplays();  // your existing method
+
+                // Update the selector's lists.
+                screenSelector.RefreshLists(gpuList, displayList);
+
+                screenSelector.LiveCaptureProvider = (displayName) =>
+                {
+                    // Get the first available graphics card.
+                    var defaultCardNullable = screenCaptureService?.GetGraphicsCards().FirstOrDefault();
+                    if (defaultCardNullable == null)
+                    {
+                        Log("No graphics card found.");
+                        return null;
+                    }
+                    GraphicsCard defaultCard = defaultCardNullable.Value;
+
+                    // Get the list of displays for this graphics card.
+                    var displays = screenCaptureService.GetDisplays(defaultCard);
+                    var disp = displays.FirstOrDefault(d => d.DeviceName == displayName);
+                    if (disp == null || string.IsNullOrEmpty(disp.DeviceName))
+                    {
+                        Log($"Display '{displayName}' not found or invalid.");
+                        return null;
+                    }
+
+                    // Get the screen capture for this display.
+                    var screenCapture = screenCaptureService.GetScreenCapture(disp);
+                    if (screenCapture == null)
+                    {
+                        Log("Screen capture service returned null for the display.");
+                        return null;
+                    }
+
+                    // Call CaptureScreen to initialize internal properties.
+                    screenCapture.CaptureScreen();
+
+                    // Wait a short period to allow the display property to be updated.
+                    System.Threading.Thread.Sleep(50);
+
+                    if (screenCapture.Display == null)
+                    {
+                        Log("Screen capture's Display is still null after CaptureScreen.");
+                        return null;
+                    }
+
+                    // Cache the capture zone: register it only once per display.
+                    if (!_captureZones.TryGetValue(displayName, out ICaptureZone captureZone) || captureZone == null)
+                    {
+                        try
+                        {
+                            // Register the capture zone. 
+                            // Depending on your setup, this might need to be called on the UI thread.
+                            // If so, wrap in Dispatcher.Invoke:
+                            System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                            {
+                                captureZone = screenCapture.RegisterCaptureZone(0, 0, screenCapture.Display.Width, screenCapture.Display.Height);
+                            });
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"Exception during RegisterCaptureZone: {ex.Message}");
+                            return null;
+                        }
+                        if (captureZone == null)
+                        {
+                            Log("Failed to register capture zone.");
+                            return null;
+                        }
+                        _captureZones[displayName] = captureZone;
+                    }
+
+                    // Now update the capture.
+                    screenCapture.CaptureScreen();
+
+                    // Lock the capture zone to retrieve the image.
+                    using (var zoneLock = captureZone.Lock())
+                    {
+                        var image = captureZone.Image;
+                        if (image == null)
+                        {
+                            Log("No image captured.");
+                            return null;
+                        }
+
+                        // Convert the IImage to a Bitmap using your helper.
+                        Bitmap bmp = TransformIImageToBitmap(image);
+
+                        // Convert the Bitmap to a WPF BitmapSource.
+                        IntPtr hBitmap = bmp.GetHbitmap();
+                        try
+                        {
+                            BitmapSource bmpSource = System.Windows.Interop.Imaging.CreateBitmapSourceFromHBitmap(
+                                hBitmap,
+                                IntPtr.Zero,
+                                Int32Rect.Empty,
+                                BitmapSizeOptions.FromEmptyOptions());
+                            return bmpSource;
+                        }
+                        finally
+                        {
+                            NativeMethods.DeleteObject(hBitmap);
+                        }
+                    }
+                };
+
+
+
+
+
+            }
+
         }
 
         public void SetWhatDoInCapture(Action<HPPH.IImage> whatDoInCapture)
@@ -92,14 +213,6 @@ namespace YeusepesModules.Common.ScreenUtilities
 
         public Task<bool> OnModuleStart()
         {
-            /*
-            // Automatically determine GPU and display
-            if (!TryFindVRChatWindow())
-            {
-                Log("VRChat window not found or could not determine GPU/Display.");
-                return Task.FromResult(false);
-            }*/
-
             if (screenCaptureService == null)
             {
                 Log("Error: screenCaptureService could not be initialized.");
@@ -212,7 +325,7 @@ namespace YeusepesModules.Common.ScreenUtilities
                 return false;
             }
 
-            var vrChatCenter = new Point(windowRect.Left + windowRect.Width / 2, windowRect.Top + windowRect.Height / 2);
+            var vrChatCenter = new System.Drawing.Point(windowRect.Left + windowRect.Width / 2, windowRect.Top + windowRect.Height / 2);
 
             var screen = Screen.AllScreens.FirstOrDefault(s => s.Bounds.Contains(vrChatCenter));
             if (screen == null)
@@ -318,13 +431,17 @@ namespace YeusepesModules.Common.ScreenUtilities
 
         public string GetSelectedDisplay()
         {
-            Log($"Selected Display: {GetSettingValue(ScreenUtilitiesSettings.SelectedDisplay)}");
-            return GetSettingValue(ScreenUtilitiesSettings.SelectedDisplay); // Retrieve the saved string
+            string display = screenSelector?.SelectedDisplay ?? "Default";
+            Log($"Selected Display from selector: {display}");
+            return display;
         }
+
         public string GetSelectedGraphicsCard()
         {
-            Log($"Selected GPU: {GetSettingValue(ScreenUtilitiesSettings.SelectedGraphicsCard)}");
-            return GetSettingValue(ScreenUtilitiesSettings.SelectedGraphicsCard);
+            // If you prefer, read directly from the screenSelector.
+            string gpu = screenSelector?.SelectedGPU ?? "Default";
+            Log($"Selected GPU from selector: {gpu}");
+            return gpu;
         }
 
         public List<string> GetGraphicsCards()
@@ -623,6 +740,90 @@ namespace YeusepesModules.Common.ScreenUtilities
                 Log("VRChat window brought to the front successfully.");
             }
         }
+
+        public BitmapSource CaptureImageForDisplay(string displayName)
+        {
+            // Get the first available graphics card.
+            var defaultCardNullable = screenCaptureService?.GetGraphicsCards().FirstOrDefault();
+            if (defaultCardNullable == null)
+            {
+                Log("No graphics card found.");
+                return null;
+            }
+            GraphicsCard defaultCard = defaultCardNullable.Value;
+
+            // Get the list of displays for the selected graphics card.
+            var displays = screenCaptureService.GetDisplays(defaultCard);
+            var disp = displays.FirstOrDefault(d => d.DeviceName == displayName);
+            if (disp == null || string.IsNullOrEmpty(disp.DeviceName))
+            {
+                Log($"Display '{displayName}' not found or invalid.");
+                return null;
+            }
+
+            // Get the screen capture for this display.
+            var screenCapture = screenCaptureService.GetScreenCapture(disp);
+            if (screenCapture == null)
+            {
+                Log("Screen capture service returned null for the display.");
+                return null;
+            }
+
+            // Capture the screen to initialize properties.
+            screenCapture.CaptureScreen();
+            // Optionally wait briefly if needed (this delay is on the background thread).
+            Task.Delay(50).Wait();
+
+            if (screenCapture.Display == null)
+            {
+                Log("Screen capture's Display is still null after CaptureScreen.");
+                return null;
+            }
+
+            // (Optional) Cache or re-register the capture zone.
+            // For simplicity, here we register it each time.
+            ICaptureZone captureZone = screenCapture.RegisterCaptureZone(0, 0, screenCapture.Display.Width, screenCapture.Display.Height);
+            if (captureZone == null)
+            {
+                Log("Failed to register capture zone.");
+                return null;
+            }
+
+            // Update the capture.
+            screenCapture.CaptureScreen();
+
+            // Lock the capture zone to retrieve the image.
+            using (var zoneLock = captureZone.Lock())
+            {
+                var image = captureZone.Image;
+                if (image == null)
+                {
+                    Log("No image captured.");
+                    return null;
+                }
+
+                // Convert the captured IImage to a Bitmap.
+                Bitmap bmp = TransformIImageToBitmap(image);
+
+                // Convert the Bitmap to a WPF BitmapSource.
+                IntPtr hBitmap = bmp.GetHbitmap();
+                try
+                {
+                    BitmapSource bmpSource = System.Windows.Interop.Imaging.CreateBitmapSourceFromHBitmap(
+                        hBitmap,
+                        IntPtr.Zero,
+                        Int32Rect.Empty,
+                        BitmapSizeOptions.FromEmptyOptions());
+                    return bmpSource;
+                }
+                finally
+                {
+                    NativeMethods.DeleteObject(hBitmap);
+                }
+            }
+        }
+
+
 
         public void StopCapture()
         {

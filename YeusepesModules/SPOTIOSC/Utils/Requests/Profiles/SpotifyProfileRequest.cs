@@ -20,7 +20,7 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
             var request = CreateRequest(HttpMethod.Get, UserProfileUrl);
             var response = await SendAsync(request);
 
-            Logger.Log($"User profile response: {response ?? "Response is null or empty"}");
+            //Logger.Log($"User profile response: {response ?? "Response is null or empty"}");
 
             if (string.IsNullOrEmpty(response))
             {
@@ -37,8 +37,8 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
             }
             catch (JsonException ex)
             {
-                Logger.Log($"Deserialization error: {ex.Message}");
-                Logger.Log($"Response content: {response}");
+                //Logger.Log($"Deserialization error: {ex.Message}");
+                //Logger.Log($"Response content: {response}");
                 throw;
             }
         }
