@@ -20,8 +20,8 @@ namespace YeusepesModules.SPOTIOSC.UI
 
             // Defer UI initialization until SourceInitialized.
             SourceInitialized += SignInWindow_SourceInitialized;
+            ScreenSelector.ScreenUtilities = _module.screenUtilities;
             ScreenSelector.LiveCaptureProvider = _module.screenUtilities.CaptureImageForDisplay;
-            ScreenSelector.RefreshLists(_module.screenUtilities.GetGraphicsCards(), _module.screenUtilities.GetDisplays());
             // When the window closes, invalidate the comparer.
             Closed += SignInWindow_Closed;
         }
@@ -31,7 +31,7 @@ namespace YeusepesModules.SPOTIOSC.UI
             // The module's OnPreLoad should have registered settings by now.
             var customSetting = _module.GetSetting(SpotiOSC.SpotiSettings.SignInButton);
             var signInControl = new SignIn(_module, customSetting);
-            MainGrid.Children.Add(signInControl);
+            MainGrid.Children.Insert(0, signInControl);
         }
 
         private void SignInWindow_Closed(object sender, EventArgs e)
@@ -42,5 +42,10 @@ namespace YeusepesModules.SPOTIOSC.UI
 
         // IManagedWindow implementation.
         public object GetComparer() => _comparer;
+
+        private void ScreenSelector_Loaded(object sender, RoutedEventArgs e)
+        {
+
+        }
     }
 }

@@ -2,8 +2,20 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:su="clr-namespace:YeusepesModules.Common.ScreenUtilities"
-        Title="Sign In" Height="400" Width="600">
-    <Grid Name="MainGrid">
-        <su:ScreenUtilitySelector x:Name="ScreenSelector" Loaded="ScreenSelector_Loaded" />
-    </Grid>
+        Title="Sign In"
+        Height="800"
+        Width="700"
+        Background="#121212">
+
+    <!-- Make everything scrollable -->
+    <ScrollViewer VerticalScrollBarVisibility="Auto"
+                  HorizontalScrollBarVisibility="Disabled">
+        <StackPanel Name="MainGrid"
+                    Margin="20, 50, 20, 20"
+                    Orientation="Vertical">
+            <!-- SignIn control will be inserted here at runtime -->
+            <su:ScreenUtilitySelector x:Name="ScreenSelector"
+                                     Loaded="ScreenSelector_Loaded" />
+        </StackPanel>
+    </ScrollViewer>
 </Window>

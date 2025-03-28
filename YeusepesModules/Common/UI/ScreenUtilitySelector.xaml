@@ -1,16 +1,83 @@
 ﻿<UserControl x:Class="YeusepesModules.Common.ScreenUtilities.ScreenUtilitySelector"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             Height="Auto" Width="Auto">
-    <DockPanel>
+             Height="Auto" Width="Auto"
+             Background="#212121"
+             Margin="20"
+             >
+    
+    <StackPanel Orientation="Vertical">
+        <Button x:Name="AdvancedSettingsButton"
+        Margin="5"
+        Padding="8"
+        Background="Transparent"
+        BorderBrush="Transparent"
+        Foreground="White"
+        HorizontalContentAlignment="Stretch"
+        Click="AdvancedSettingsButton_Click"
+        FocusVisualStyle="{x:Null}">
+            <Button.Style>
+                <Style TargetType="Button">
+                    <Setter Property="Background" Value="Transparent"/>
+                    <Setter Property="BorderBrush" Value="Transparent"/>
+                    <Setter Property="FontWeight" Value="Normal"/>
+                    <Setter Property="Cursor" Value="Hand"/>
+                    <Style.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="FontWeight" Value="Bold"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter Property="Background" Value="Transparent"/>
+                        </Trigger>
+                    </Style.Triggers>
+                </Style>
+            </Button.Style>
+            <Grid>
+                <TextBlock Text="Advanced Display Settings"
+                   VerticalAlignment="Center"
+                   FontSize="14"/>
+                <TextBlock x:Name="ArrowIcon"
+                   Text="▼"
+                   HorizontalAlignment="Right"
+                   VerticalAlignment="Center"
+                   FontSize="14"/>
+            </Grid>
+        </Button>
+
+
+
+        <StackPanel x:Name="AdvancedPanel" Visibility="Collapsed" Margin="10">
+        <!-- Label for display selection -->
+        <TextBlock Text="Manually Select Capture Display"
+                   FontSize="16"
+                   FontWeight="SemiBold"
+                   Foreground="White"
+                   Margin="5"/>
+
         <!-- Scrollable area for display squares -->
         <ScrollViewer VerticalScrollBarVisibility="Auto">
             <WrapPanel x:Name="DisplaysWrapPanel" Margin="5" />
         </ScrollViewer>
-        <!-- Dropdown for selecting the GPU -->
-        <ComboBox x:Name="GPUComboBox"
-              DockPanel.Dock="Top"
-              Margin="5"
-              SelectionChanged="GPUComboBox_SelectionChanged" />
-    </DockPanel>
+
+        <!-- Label for GPU selection -->
+        <TextBlock Text="Manually Select Graphics Card"
+                   FontSize="16"
+                   FontWeight="SemiBold"
+                   Foreground="White"
+                   Margin="5"/>
+
+        <!-- Rounded-border container around ComboBox -->
+        <Border CornerRadius="5"
+                BorderBrush="Gray"
+                BorderThickness="1"
+                Margin="5"
+                Background="White">
+            <ComboBox x:Name="GPUComboBox"
+                      Padding="8"
+                      FontSize="14"
+                      MinWidth="200"
+                      SelectionChanged="GPUComboBox_SelectionChanged"/>
+        </Border>
+        </StackPanel>
+    </StackPanel>
 </UserControl>

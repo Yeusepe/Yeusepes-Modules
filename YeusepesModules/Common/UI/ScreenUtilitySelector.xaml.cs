@@ -14,6 +14,15 @@ namespace YeusepesModules.Common.ScreenUtilities
 {
     public partial class ScreenUtilitySelector : UserControl
     {
+        public event EventHandler AdvancedSettingsClicked;
+
+        public ScreenUtilities ScreenUtilities
+        {
+            get => screenUtilities;
+            set => screenUtilities = value;
+        }
+
+
         // Dependency properties for binding if needed.
         public static readonly DependencyProperty SelectedGPUProperty =
             DependencyProperty.Register("SelectedGPU", typeof(string), typeof(ScreenUtilitySelector), new PropertyMetadata("Default"));
@@ -38,7 +47,7 @@ namespace YeusepesModules.Common.ScreenUtilities
 
         // Events so external code can subscribe to selection changes.
         public event EventHandler<string> GPUSelectionChanged;
-        public event EventHandler<string> DisplaySelectionChanged;                
+        public event EventHandler<string> DisplaySelectionChanged;
 
         // The list of display view controls.
         private readonly List<DisplayView> displayViews = new List<DisplayView>();
@@ -47,7 +56,7 @@ namespace YeusepesModules.Common.ScreenUtilities
 
         // Parameterless constructor used by XAML.
         public ScreenUtilitySelector()
-        {            
+        {
             InitializeComponent();
             InitializeControl();
 
@@ -73,7 +82,7 @@ namespace YeusepesModules.Common.ScreenUtilities
 
         private void ScreenUtilitySelector_Loaded(object sender, RoutedEventArgs e)
         {
-            UpdateDisplayPreviews();
+
         }
 
         private void UpdateDisplayPreviews()
@@ -129,7 +138,12 @@ namespace YeusepesModules.Common.ScreenUtilities
             DisplaysWrapPanel.Children.Clear();
             displayViews.Clear();
 
-            foreach (var display in displays)
+            // Only show non‑empty, non‑default (active) displays
+            var activeDisplays = displays
+                .Where(d => !string.IsNullOrWhiteSpace(d) && d != "Default")
+                .ToList();
+
+            foreach (var display in activeDisplays)
             {
                 var displayView = new DisplayView(display);
                 displayView.MouseLeftButtonUp += DisplayView_MouseLeftButtonUp;
@@ -137,12 +151,10 @@ namespace YeusepesModules.Common.ScreenUtilities
                 DisplaysWrapPanel.Children.Add(displayView);
             }
 
-            // Set default selection if available.
-            if (displayViews.Count > 0)
-            {
+            if (displayViews.Any())
                 SetSelectedDisplay(displayViews[0]);
-            }
         }
+
 
         private void GPUComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
@@ -218,6 +230,26 @@ namespace YeusepesModules.Common.ScreenUtilities
             return BitmapSource.Create(width, height, 96, 96, pixelFormat, null, pixelData, rawStride);
         }
 
+        private void AdvancedSettingsButton_Click(object sender, RoutedEventArgs e)
+        {
+            if (AdvancedPanel.Visibility == Visibility.Visible)
+            {
+                AdvancedPanel.Visibility = Visibility.Collapsed;
+                ArrowIcon.Text = "▼";
+            }
+            else
+            {
+                AdvancedPanel.Visibility = Visibility.Visible;
+                ArrowIcon.Text = "▲";
+
+                // Populate lists only on expand
+                RefreshLists(screenUtilities.GetGraphicsCards(), screenUtilities.GetDisplays());
+            }
+
+            AdvancedSettingsClicked?.Invoke(this, EventArgs.Empty);
+        }
+
+
         private void UpdateUI(Action uiAction)
         {
             if (Application.Current.Dispatcher.CheckAccess())
@@ -243,15 +275,14 @@ namespace YeusepesModules.Common.ScreenUtilities
         public DisplayView(string displayName)
         {
             DisplayName = displayName;
-            Width = 200;
-            Height = 200;
             Margin = new Thickness(5);
             BorderThickness = new Thickness(2);
             BorderBrush = Brushes.Transparent;
 
-            LiveImage = new Image { Stretch = Stretch.UniformToFill };
+            LiveImage = new Image { Stretch = Stretch.Uniform };
             Child = LiveImage;
         }
+
 
         /// <summary>
         /// Update the live view image.
@@ -260,6 +291,14 @@ namespace YeusepesModules.Common.ScreenUtilities
         public void UpdateLiveView(BitmapSource bitmapSource)
         {
             LiveImage.Source = bitmapSource;
+            if (bitmapSource != null)
+            {
+                const double targetHeight = 150; // pick a uniform height
+                double aspect = (double)bitmapSource.PixelWidth / bitmapSource.PixelHeight;
+                Width = aspect * targetHeight;
+                Height = targetHeight;
+            }
         }
+
     }
 }
