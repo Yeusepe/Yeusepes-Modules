@@ -5,9 +5,6 @@
     <Compile Update="Common\UI\ScreenUtilitySelector.xaml.cs">
       <SubType>Code</SubType>
     </Compile>
-    <Compile Update="OSCQR\UI\SavedQRCodesWindow.xaml.cs">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Update="SPOTIOSC\UI\NowPlayingView.xaml.cs">
       <SubType>Code</SubType>
     </Compile>

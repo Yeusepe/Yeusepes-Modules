@@ -107,9 +107,10 @@ namespace YeusepesModules.OSCQR
             // we pass a dummy lambda (or one that simply logs) so that parameter registration
             // isn’t attempted after the module is loaded.
             screenUtilities = new ScreenUtilities(
-                CreateCustomSetting,
                 LogDebug,
                 GetSettingValue<string>,
+                SetSettingValue,
+                CreateTextBox,
                 (parameter, name, mode, title, description) =>
                 {
                     // Simply log the attempt. Parameters for ScreenUtilities were already registered.
