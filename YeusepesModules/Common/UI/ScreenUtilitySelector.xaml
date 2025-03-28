@@ -8,7 +8,7 @@
     
     <StackPanel Orientation="Vertical">
         <Button x:Name="AdvancedSettingsButton"
-        Margin="5"
+        Margin="10,5,10,5"
         Padding="8"
         Background="Transparent"
         BorderBrush="Transparent"
@@ -20,8 +20,20 @@
                 <Style TargetType="Button">
                     <Setter Property="Background" Value="Transparent"/>
                     <Setter Property="BorderBrush" Value="Transparent"/>
-                    <Setter Property="FontWeight" Value="Normal"/>
+                    <Setter Property="BorderThickness" Value="0"/>
                     <Setter Property="Cursor" Value="Hand"/>
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                                    <ContentPresenter HorizontalAlignment="Stretch"
+                                              VerticalAlignment="Center"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
                     <Style.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter Property="FontWeight" Value="Bold"/>
@@ -32,16 +44,26 @@
                     </Style.Triggers>
                 </Style>
             </Button.Style>
-            <Grid>
+            <Grid HorizontalAlignment="Stretch">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
                 <TextBlock Text="Advanced Display Settings"
-                   VerticalAlignment="Center"
-                   FontSize="14"/>
+               VerticalAlignment="Center"                           
+               FontSize="16"
+               Grid.Column="0"
+               HorizontalAlignment="Left"/>
+
                 <TextBlock x:Name="ArrowIcon"
-                   Text="▼"
-                   HorizontalAlignment="Right"
-                   VerticalAlignment="Center"
-                   FontSize="14"/>
+               Text="▼"
+               VerticalAlignment="Center"
+               FontSize="14"
+               Grid.Column="1"
+               HorizontalAlignment="Right"/>
             </Grid>
+
         </Button>
 
 
@@ -49,8 +71,7 @@
         <StackPanel x:Name="AdvancedPanel" Visibility="Collapsed" Margin="10">
         <!-- Label for display selection -->
         <TextBlock Text="Manually Select Capture Display"
-                   FontSize="16"
-                   FontWeight="SemiBold"
+                   FontSize="16"                   
                    Foreground="White"
                    Margin="5"/>
 
@@ -61,23 +82,93 @@
 
         <!-- Label for GPU selection -->
         <TextBlock Text="Manually Select Graphics Card"
-                   FontSize="16"
-                   FontWeight="SemiBold"
+                   FontSize="16"                   
                    Foreground="White"
                    Margin="5"/>
 
-        <!-- Rounded-border container around ComboBox -->
-        <Border CornerRadius="5"
-                BorderBrush="Gray"
-                BorderThickness="1"
-                Margin="5"
-                Background="White">
-            <ComboBox x:Name="GPUComboBox"
-                      Padding="8"
-                      FontSize="14"
-                      MinWidth="200"
-                      SelectionChanged="GPUComboBox_SelectionChanged"/>
-        </Border>
+            <!-- ComboBox with dark (#212121) dropdown -->
+            <Border CornerRadius="5"
+        BorderBrush="Gray"
+        BorderThickness="3"
+        Margin="5"
+        Background="Transparent">
+                <ComboBox x:Name="GPUComboBox"
+          Padding="8"
+          FontSize="14"
+          MinWidth="200"
+          Foreground="White"
+          Background="Transparent"
+          BorderThickness="0"
+          SelectionChanged="GPUComboBox_SelectionChanged">
+                    <ComboBox.Style>
+                        <Style TargetType="ComboBox">
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ComboBox">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <!-- This takes up the available space -->
+                                                <ColumnDefinition Width="Auto" />
+                                                <!-- This fits the Path -->
+                                            </Grid.ColumnDefinitions>
+                                            <!-- ToggleButton (arrow) -->
+                                            <ToggleButton Name="ToggleButton"
+                                          Grid.Column="2"
+                                          Background="#212121"
+                                          BorderBrush="Transparent"
+                                          BorderThickness="0"
+                                          Focusable="False"
+                                          ClickMode="Press"
+                                          IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
+                                           <Path Data="M 0 0 L 4 4 L 8 0 Z"
+                                            Fill="White"
+                                            HorizontalAlignment="Right"
+                                            VerticalAlignment="Center"/>
+                                            </ToggleButton>
+
+                                            <!-- Selected‑item presenter -->
+                                            <ContentPresenter Name="ContentSite"
+                                              IsHitTestVisible="False"
+                                              Content="{TemplateBinding SelectionBoxItem}"
+                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                              Margin="10,0,23,0"
+                                              VerticalAlignment="Center"
+                                              HorizontalAlignment="Left"/>
+
+                                            <!-- Popup for dropdown -->
+                                            <Popup Name="Popup"
+                                   Placement="Bottom"
+                                   IsOpen="{TemplateBinding IsDropDownOpen}"
+                                   AllowsTransparency="True"
+                                   Focusable="False"
+                                   PopupAnimation="Fade">
+                                                <Border Background="#212121"
+                                        BorderBrush="Gray"
+                                        BorderThickness="1"
+                                        MinWidth="{TemplateBinding ActualWidth}">
+                                                    <ScrollViewer MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                                                  VerticalScrollBarVisibility="Auto">
+                                                        <ItemsPresenter/>
+                                                    </ScrollViewer>
+                                                </Border>
+                                            </Popup>
+                                        </Grid>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="HasItems" Value="False">
+                                                <Setter TargetName="Popup" Property="MinHeight" Value="95"/>
+                                            </Trigger>
+                                            <Trigger Property="IsEnabled" Value="False">
+                                                <Setter Property="Foreground" Value="Gray"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ComboBox.Style>
+                </ComboBox>
+            </Border>
         </StackPanel>
     </StackPanel>
 </UserControl>

@@ -14,6 +14,7 @@ using YeusepesModules.SPOTIOSC.Utils.Events;
 using System.Text.Json;
 using YeusepesModules.Common.ScreenUtilities;
 using VRCOSC.App.Settings;
+using static YeusepesModules.Common.ScreenUtilities.ScreenUtilities;
 
 
 namespace YeusepesModules.SPOTIOSC
@@ -88,8 +89,18 @@ namespace YeusepesModules.SPOTIOSC
         protected override void OnPreLoad()
         {
             YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("libusb-1.0.dll", message => Log(message));                               
-            YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("cvextern.dll", message => Log(message));                               
-            screenUtilities = new ScreenUtilities(CreateCustomSetting, LogDebug, GetSettingValue<string>, (parameter, name, mode, title, description) => RegisterParameter<bool>(parameter, name, mode, title, description));
+            YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("cvextern.dll", message => Log(message));
+            screenUtilities = new ScreenUtilities(
+                LogDebug,
+                GetSettingValue<string>,
+                SetSettingValue,
+                CreateTextBox,
+                (parameter, name, mode, title, description) =>
+                {
+                    // Simply log the attempt. Parameters for ScreenUtilities were already registered.
+                    LogDebug($"(ScreenUtilities) Skipped registering parameter: {parameter}");
+                }
+            );
 
             /// ThreadPool.SetMinThreads(100, 100); // Set a higher minimum thread pool size
             encodingUtilities = new EncodingUtilities
@@ -144,10 +155,9 @@ namespace YeusepesModules.SPOTIOSC
                     typeof(SignIn),
                     true
                 )
-            );
-            CreateGroup("Account Settings", SpotiSettings.SignInButton);
-            #endregion                                   
-                      
+            );            
+            #endregion
+
 
             Log("Registering parameters...");
             encoder.RegisterParameters((parameter, name, mode, title, description) =>

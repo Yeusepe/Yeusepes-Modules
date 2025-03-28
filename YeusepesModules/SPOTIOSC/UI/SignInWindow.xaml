@@ -13,9 +13,7 @@
         <StackPanel Name="MainGrid"
                     Margin="20, 50, 20, 20"
                     Orientation="Vertical">
-            <!-- SignIn control will be inserted here at runtime -->
-            <su:ScreenUtilitySelector x:Name="ScreenSelector"
-                                     Loaded="ScreenSelector_Loaded" />
+            <su:ScreenUtilitySelector x:Name="ScreenSelector" />
         </StackPanel>
     </ScrollViewer>
 </Window>

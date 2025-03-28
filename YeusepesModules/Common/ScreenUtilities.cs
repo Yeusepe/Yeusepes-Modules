@@ -16,6 +16,7 @@ using HPPH;
 using System.Drawing.Imaging;
 using System.Windows.Media.Imaging;
 using System.Windows;
+using VRCOSC.App.SDK.Providers.Hardware;
 
 namespace YeusepesModules.Common.ScreenUtilities
 {
@@ -27,12 +28,14 @@ namespace YeusepesModules.Common.ScreenUtilities
 
         private Thread? captureThread;
 
-        private Action<string> Log;
+        public Action<string> Log;
         private readonly Func<Enum, String> GetSettingValue;
-        Action<ScreenUtilitiesParameters, bool> sendBoolParameter;
-        Action<HPPH.IImage> whatDoInCapture;
+        private readonly Action<Enum, string> setSettingValue;
 
-        private ScreenUtilitySelector screenSelector;
+        ScreenUtilitySelector screenSelector;
+
+        Action<ScreenUtilitiesParameters, bool> sendBoolParameter;
+        Action<HPPH.IImage> whatDoInCapture;        
 
         private Dictionary<string, ICaptureZone> _captureZones = new Dictionary<string, ICaptureZone>();
 
@@ -58,30 +61,56 @@ namespace YeusepesModules.Common.ScreenUtilities
             Default
         }
 
-        public ScreenUtilities(Action<Enum, ModuleSetting> createCustomSetting, Action<string> log, Func<Enum, string> getSettingValue, Action<Enum, string, ParameterMode, string, string> registerBoolParameter)
+
+        public ScreenUtilities(Action<string> log, Func<Enum, string> getSettingValue, Action<Enum, string> setSettingValue, Action<Enum, string, string, string> createTextBox, Action<Enum, string, ParameterMode, string, string> registerBoolParameter)
         {
             Log = log;
             GetSettingValue = getSettingValue;
-
-            // Use the new ScreenUtilitySelector component as the setting view.
-            createCustomSetting(
-                ScreenUtilitiesSettings.SelectedDisplay,
-                new StringModuleSetting(
-                    "Screen Selector",
-                    "Select your GPU and Display.",
-                    typeof(ScreenUtilitySelector),
-                    "Default"
-                )
-            );
-
+            this.setSettingValue = setSettingValue;
+            
             sendBoolParameter = (parameter, value) => registerBoolParameter(parameter, value.ToString(), ParameterMode.Write, "Bool", "Bool");
             registerBoolParameter(ScreenUtilitiesParameters.StartRecording, "ScreenUtilities/StartRecording", ParameterMode.Write, "Start Recording", "Start or stop screen recording");
             registerBoolParameter(ScreenUtilitiesParameters.Error, "ScreenUtilities/Error", ParameterMode.Read, "Error", "Indicates an error occurred during screen capture");
 
             // Initialize screen capture service.
-            screenCaptureService = new DX11ScreenCaptureService();
+            screenCaptureService = new DX11ScreenCaptureService();            
 
-            screenSelector = new ScreenUtilitySelector();
+            createTextBox(ScreenUtilitiesSettings.SelectedGraphicsCard,
+            "Capture GPU", "Which GPU to capture", "Default");
+            createTextBox(ScreenUtilitiesSettings.SelectedDisplay,
+                          "Capture Display", "Which display to capture", "Default");
+
+
+            // 1️⃣ Read whatever’s already persisted (or fall back to "Default")
+            var savedGPU = GetSettingValue(ScreenUtilitiesSettings.SelectedGraphicsCard) ?? "Default";
+            var savedDisplay = GetSettingValue(ScreenUtilitiesSettings.SelectedDisplay) ?? "Default";                                    
+
+        }
+
+        public void AttachSelector(ScreenUtilitySelector selector)
+        {
+            screenSelector = selector;
+
+            selector.ScreenUtilities = this;
+            // Persist changes
+            screenSelector.GPUSelectionChanged += (_, gpu) =>
+            {
+                Log($"GPUSelectionChanged → new GPU = {gpu}");
+                setSettingValue(ScreenUtilitiesSettings.SelectedGraphicsCard, gpu);
+            };
+            screenSelector.DisplaySelectionChanged += (_, disp) =>
+            {
+                Log($"DisplaySelectionChanged → new disp = {disp}");
+                setSettingValue(ScreenUtilitiesSettings.SelectedDisplay, disp);
+            };
+
+            // Populate and apply saved values
+            selector.RefreshLists(GetGraphicsCards(), GetDisplays());
+            selector.SelectedGPU = GetSettingValue(ScreenUtilitiesSettings.SelectedGraphicsCard) ?? "Default";
+            selector.SelectedDisplay = GetSettingValue(ScreenUtilitiesSettings.SelectedDisplay) ?? "Default";
+
+            // Live preview
+            selector.LiveCaptureProvider = CaptureImageForDisplay;
 
             // At some point you need to obtain the instantiated ScreenUtilitySelector.
             // For example, if your framework calls a method when the view is ready:
@@ -197,13 +226,7 @@ namespace YeusepesModules.Common.ScreenUtilities
                         }
                     }
                 };
-
-
-
-
-
             }
-
         }
 
         public void SetWhatDoInCapture(Action<HPPH.IImage> whatDoInCapture)
@@ -431,16 +454,19 @@ namespace YeusepesModules.Common.ScreenUtilities
 
         public string GetSelectedDisplay()
         {
-            string display = screenSelector?.SelectedDisplay ?? "Default";
-            Log($"Selected Display from selector: {display}");
+            var saved = GetSettingValue(ScreenUtilitiesSettings.SelectedDisplay);
+            var display = !string.IsNullOrWhiteSpace(saved) ? saved : "Default";
+            Log($"Selected Display from settings: {display}");
             return display;
         }
+
 
         public string GetSelectedGraphicsCard()
         {
             // If you prefer, read directly from the screenSelector.
-            string gpu = screenSelector?.SelectedGPU ?? "Default";
-            Log($"Selected GPU from selector: {gpu}");
+            var saved = GetSettingValue(ScreenUtilitiesSettings.SelectedGraphicsCard);
+            var gpu = !string.IsNullOrWhiteSpace(saved) ? saved : "Default";
+            Log($"Selected GPU from settings: {gpu}");
             return gpu;
         }
 

@@ -22,19 +22,26 @@ namespace YeusepesModules.Common.ScreenUtilities
             set => screenUtilities = value;
         }
 
-
-        // Dependency properties for binding if needed.
         public static readonly DependencyProperty SelectedGPUProperty =
-            DependencyProperty.Register("SelectedGPU", typeof(string), typeof(ScreenUtilitySelector), new PropertyMetadata("Default"));
+            DependencyProperty.Register(
+                nameof(SelectedGPU),
+                typeof(string),
+                typeof(ScreenUtilitySelector),
+                new PropertyMetadata("Default", (d, e) => ((ScreenUtilitySelector)d).SetSelectedGPU((string)e.NewValue)));
+
+        public static readonly DependencyProperty SelectedDisplayProperty =
+            DependencyProperty.Register(
+                nameof(SelectedDisplay),
+                typeof(string),
+                typeof(ScreenUtilitySelector),
+                new PropertyMetadata("Default", (d, e) => ((ScreenUtilitySelector)d).SetSelectedDisplay((string)e.NewValue)));
+
 
         public string SelectedGPU
         {
             get { return (string)GetValue(SelectedGPUProperty); }
             set { SetValue(SelectedGPUProperty, value); }
         }
-
-        public static readonly DependencyProperty SelectedDisplayProperty =
-            DependencyProperty.Register("SelectedDisplay", typeof(string), typeof(ScreenUtilitySelector), new PropertyMetadata("Default"));
 
         public string SelectedDisplay
         {
@@ -51,6 +58,8 @@ namespace YeusepesModules.Common.ScreenUtilities
 
         // The list of display view controls.
         private readonly List<DisplayView> displayViews = new List<DisplayView>();
+
+
 
         ScreenUtilities screenUtilities;
 
@@ -138,22 +147,51 @@ namespace YeusepesModules.Common.ScreenUtilities
             DisplaysWrapPanel.Children.Clear();
             displayViews.Clear();
 
-            // Only show non‑empty, non‑default (active) displays
             var activeDisplays = displays
                 .Where(d => !string.IsNullOrWhiteSpace(d) && d != "Default")
                 .ToList();
 
             foreach (var display in activeDisplays)
             {
-                var displayView = new DisplayView(display);
-                displayView.MouseLeftButtonUp += DisplayView_MouseLeftButtonUp;
-                displayViews.Add(displayView);
-                DisplaysWrapPanel.Children.Add(displayView);
+                var view = new DisplayView(display);
+                view.MouseLeftButtonUp += DisplayView_MouseLeftButtonUp;
+                displayViews.Add(view);
+                DisplaysWrapPanel.Children.Add(view);
             }
 
-            if (displayViews.Any())
-                SetSelectedDisplay(displayViews[0]);
+            // Restore previous selection without firing the change event
+            RestoreSelectedDisplay();
         }
+
+        private void RestoreSelectedDisplay()
+        {
+            var view = displayViews.FirstOrDefault(v => v.DisplayName == SelectedDisplay);
+            if (view != null)
+            {
+                foreach (var v in displayViews)
+                    v.BorderBrush = Brushes.Transparent;
+                view.BorderBrush = Brushes.Blue;
+            }
+            else
+            {
+                ClearSelectedDisplay(raiseEvent: false);
+            }
+        }
+
+        private void ClearSelectedDisplay(bool raiseEvent = true)
+        {
+            foreach (var view in displayViews)
+                view.BorderBrush = Brushes.Transparent;
+
+            if (SelectedDisplay != "Default")
+            {
+                SelectedDisplay = "Default";
+                if (raiseEvent)
+                    DisplaySelectionChanged?.Invoke(this, SelectedDisplay);
+            }
+        }
+
+
 
 
         private void GPUComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -189,17 +227,19 @@ namespace YeusepesModules.Common.ScreenUtilities
         }
 
 
-        private void SetSelectedDisplay(DisplayView selectedView)
+        private void SetSelectedDisplay(DisplayView selectedView, bool raiseEvent = true)
         {
-            // Clear selection borders.
             foreach (var view in displayViews)
-            {
                 view.BorderBrush = Brushes.Transparent;
-            }
-            // Mark the selected view.
+
             selectedView.BorderBrush = Brushes.Blue;
-            SelectedDisplay = selectedView.DisplayName;
-            DisplaySelectionChanged?.Invoke(this, selectedView.DisplayName);
+
+            if (SelectedDisplay != selectedView.DisplayName)
+            {
+                SelectedDisplay = selectedView.DisplayName;
+                if (raiseEvent)
+                    DisplaySelectionChanged?.Invoke(this, SelectedDisplay);
+            }
         }
 
 
@@ -262,6 +302,24 @@ namespace YeusepesModules.Common.ScreenUtilities
             }
         }
 
+        public void SetSelectedGPU(string gpu)
+        {
+            if (GPUComboBox.ItemsSource != null && GPUComboBox.Items.Contains(gpu))
+                GPUComboBox.SelectedItem = gpu;
+        }
+
+        public void SetSelectedDisplay(string displayName)
+        {
+            var view = displayViews.FirstOrDefault(v => v.DisplayName == displayName);
+            if (view != null)
+                SetSelectedDisplay(view);
+            else
+                ClearSelectedDisplay();
+        }
+
+
+
+
     }
 
     /// <summary>
@@ -278,7 +336,6 @@ namespace YeusepesModules.Common.ScreenUtilities
             Margin = new Thickness(5);
             BorderThickness = new Thickness(2);
             BorderBrush = Brushes.Transparent;
-
             LiveImage = new Image { Stretch = Stretch.Uniform };
             Child = LiveImage;
         }

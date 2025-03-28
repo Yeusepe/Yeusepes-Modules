@@ -1,8 +1,10 @@
 ﻿using System;
 using System.ComponentModel;
+using System.Reflection;
 using System.Windows;
 using VRCOSC.App.SDK.Modules;
-using VRCOSC.App.UI.Core; // For IManagedWindow
+using VRCOSC.App.UI.Core;
+using YeusepesModules.Common.ScreenUtilities; // For IManagedWindow
 
 namespace YeusepesModules.SPOTIOSC.UI
 {
@@ -19,12 +21,10 @@ namespace YeusepesModules.SPOTIOSC.UI
             _comparer = _module;
 
             // Defer UI initialization until SourceInitialized.
-            SourceInitialized += SignInWindow_SourceInitialized;
-            ScreenSelector.ScreenUtilities = _module.screenUtilities;
-            ScreenSelector.LiveCaptureProvider = _module.screenUtilities.CaptureImageForDisplay;
+            SourceInitialized += SignInWindow_SourceInitialized;            
             // When the window closes, invalidate the comparer.
             Closed += SignInWindow_Closed;
-        }
+        }            
 
         private void SignInWindow_SourceInitialized(object? sender, EventArgs e)
         {
@@ -32,6 +32,7 @@ namespace YeusepesModules.SPOTIOSC.UI
             var customSetting = _module.GetSetting(SpotiOSC.SpotiSettings.SignInButton);
             var signInControl = new SignIn(_module, customSetting);
             MainGrid.Children.Insert(0, signInControl);
+            _module.screenUtilities.AttachSelector(ScreenSelector);
         }
 
         private void SignInWindow_Closed(object sender, EventArgs e)
