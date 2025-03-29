@@ -769,25 +769,48 @@ namespace YeusepesModules.Common.ScreenUtilities
 
         public BitmapSource CaptureImageForDisplay(string displayName)
         {
-            // Get the first available graphics card.
-            var defaultCardNullable = screenCaptureService?.GetGraphicsCards().FirstOrDefault();
-            if (defaultCardNullable == null)
+            // Get the GPU name from settings and available GPUs from the capture service.
+            string selectedGPUName = GetSelectedGraphicsCard();
+            var graphicsCards = screenCaptureService?.GetGraphicsCards();
+            if (graphicsCards == null || !graphicsCards.Any())
             {
                 Log("No graphics card found.");
                 return null;
             }
-            GraphicsCard defaultCard = defaultCardNullable.Value;
 
-            // Get the list of displays for the selected graphics card.
-            var displays = screenCaptureService.GetDisplays(defaultCard);
-            var disp = displays.FirstOrDefault(d => d.DeviceName == displayName);
-            if (disp == null || string.IsNullOrEmpty(disp.DeviceName))
+            // Determine which GPU to use – if a manual selection fails, fall back to the first available.
+            GraphicsCard targetGPU;
+            if (selectedGPUName == "Default")
             {
-                Log($"Display '{displayName}' not found or invalid.");
+                targetGPU = graphicsCards.First();
+            }
+            else
+            {
+                targetGPU = graphicsCards.FirstOrDefault(gc => gc.Name.Equals(selectedGPUName, StringComparison.OrdinalIgnoreCase));
+                if (targetGPU == null)
+                {
+                    Log($"Selected GPU '{selectedGPUName}' not found. Falling back to default GPU.");
+                    targetGPU = graphicsCards.First();
+                }
+            }
+
+            // Get the displays for the target GPU and find the display by name.
+            var displays = screenCaptureService.GetDisplays(targetGPU);
+            var disp = displays.FirstOrDefault(d => d.DeviceName.Equals(displayName, StringComparison.OrdinalIgnoreCase));
+            if (disp == null)
+            {
+                Log($"Display '{displayName}' not found.");
                 return null;
             }
 
-            // Get the screen capture for this display.
+            // Validate the display dimensions.
+            if (disp.Width <= 0 || disp.Height <= 0)
+            {
+                Log($"Display '{displayName}' has invalid dimensions: {disp.Width}x{disp.Height}");
+                return null;
+            }
+
+            // Get the screen capture for the display.
             var screenCapture = screenCaptureService.GetScreenCapture(disp);
             if (screenCapture == null)
             {
@@ -795,30 +818,40 @@ namespace YeusepesModules.Common.ScreenUtilities
                 return null;
             }
 
-            // Capture the screen to initialize properties.
+            // Perform an initial capture to update internal properties.
             screenCapture.CaptureScreen();
-            // Optionally wait briefly if needed (this delay is on the background thread).
-            Task.Delay(50).Wait();
+            // Wait briefly to allow the capture properties to update.
+            System.Threading.Thread.Sleep(50);
 
-            if (screenCapture.Display == null)
+            // Ensure that the screen capture’s Display property is valid.
+            if (screenCapture.Display == null || screenCapture.Display.Width <= 0 || screenCapture.Display.Height <= 0)
             {
-                Log("Screen capture's Display is still null after CaptureScreen.");
+                Log("Screen capture's Display is null or invalid after CaptureScreen.");
                 return null;
             }
 
-            // (Optional) Cache or re-register the capture zone.
-            // For simplicity, here we register it each time.
-            ICaptureZone captureZone = screenCapture.RegisterCaptureZone(0, 0, screenCapture.Display.Width, screenCapture.Display.Height);
+            // Register the capture zone on the UI thread.
+            ICaptureZone captureZone = null;
+            try
+            {
+                System.Windows.Application.Current.Dispatcher.Invoke(() =>
+                {
+                    captureZone = screenCapture.RegisterCaptureZone(0, 0, screenCapture.Display.Width, screenCapture.Display.Height);
+                });
+            }
+            catch (Exception ex)
+            {
+                Log($"Exception during RegisterCaptureZone: {ex.Message}");
+                return null;
+            }
             if (captureZone == null)
             {
                 Log("Failed to register capture zone.");
                 return null;
             }
 
-            // Update the capture.
+            // Update the capture zone by capturing the screen.
             screenCapture.CaptureScreen();
-
-            // Lock the capture zone to retrieve the image.
             using (var zoneLock = captureZone.Lock())
             {
                 var image = captureZone.Image;
@@ -827,19 +860,16 @@ namespace YeusepesModules.Common.ScreenUtilities
                     Log("No image captured.");
                     return null;
                 }
-
-                // Convert the captured IImage to a Bitmap.
+                // Convert the IImage to a Bitmap.
                 Bitmap bmp = TransformIImageToBitmap(image);
-
-                // Convert the Bitmap to a WPF BitmapSource.
                 IntPtr hBitmap = bmp.GetHbitmap();
                 try
                 {
                     BitmapSource bmpSource = System.Windows.Interop.Imaging.CreateBitmapSourceFromHBitmap(
-                        hBitmap,
-                        IntPtr.Zero,
-                        Int32Rect.Empty,
-                        BitmapSizeOptions.FromEmptyOptions());
+                         hBitmap,
+                         IntPtr.Zero,
+                         Int32Rect.Empty,
+                         BitmapSizeOptions.FromEmptyOptions());
                     return bmpSource;
                 }
                 finally
@@ -848,6 +878,7 @@ namespace YeusepesModules.Common.ScreenUtilities
                 }
             }
         }
+
 
 
 
