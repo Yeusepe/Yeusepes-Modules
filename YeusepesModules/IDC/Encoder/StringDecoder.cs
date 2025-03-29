@@ -5,6 +5,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using Emgu.CV;
 using Emgu.CV.CvEnum;
 using Emgu.CV.Structure;
@@ -46,6 +47,7 @@ namespace YeusepesModules.IDC.Encoder
             encodingUtilities.LogDebug("Starting decoding process.");
             try
             {
+                encodingUtilities.ScreenUtilities.BringVRChatToFront();
                 Bitmap screenshot = encodingUtilities.ScreenUtilities.TakeScreenshot();
                 if (screenshot != null)
                 {
@@ -79,7 +81,7 @@ namespace YeusepesModules.IDC.Encoder
 
                                 // Remove any null characters and trim whitespace.
                                 decodedText = decodedText.Replace("\0", "").Trim();
-                                
+                                decodedText = RemoveInvalidCharacters(decodedText);
                                 encodingUtilities.LogDebug($"Decoded text: {decodedText}");
                                 return decodedText;
                             }
@@ -1028,7 +1030,11 @@ namespace YeusepesModules.IDC.Encoder
 
 
 
-
+        public static string RemoveInvalidCharacters(string input)
+        {
+            // This regex replaces any character that is not a letter or a digit with an empty string.
+            return Regex.Replace(input, "[^A-Za-z0-9]", "");
+        }
 
 
         #endregion                

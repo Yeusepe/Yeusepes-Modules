@@ -739,7 +739,7 @@ namespace YeusepesModules.Common.ScreenUtilities
         }
 
 
-        private void BringVRChatToFront()
+        public void BringVRChatToFront()
         {
             IntPtr vrChatWindowHandle = NativeMethods.GetVRChatWindowHandle();
 
