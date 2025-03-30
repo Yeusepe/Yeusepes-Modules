@@ -5,7 +5,7 @@
              Background="#212121"
              Margin="20"
              >
-    
+
     <StackPanel Orientation="Vertical">
         <Button x:Name="AdvancedSettingsButton"
         Margin="10,5,10,5"
@@ -69,19 +69,19 @@
 
 
         <StackPanel x:Name="AdvancedPanel" Visibility="Collapsed" Margin="10">
-        <!-- Label for display selection -->
-        <TextBlock Text="Manually Select Capture Display"
+            <!-- Label for display selection -->
+            <TextBlock Text="Manually Select Capture Display"
                    FontSize="16"                   
                    Foreground="White"
                    Margin="5"/>
 
-        <!-- Scrollable area for display squares -->
-        <ScrollViewer VerticalScrollBarVisibility="Auto">
-            <WrapPanel x:Name="DisplaysWrapPanel" Margin="5" />
-        </ScrollViewer>
+            <!-- Scrollable area for display squares -->
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <WrapPanel x:Name="DisplaysWrapPanel" Margin="5" />
+            </ScrollViewer>
 
-        <!-- Label for GPU selection -->
-        <TextBlock Text="Manually Select Graphics Card"
+            <!-- Label for GPU selection -->
+            <TextBlock Text="Manually Select Graphics Card"
                    FontSize="16"                   
                    Foreground="White"
                    Margin="5"/>
@@ -106,37 +106,39 @@
                                 <Setter.Value>
                                     <ControlTemplate TargetType="ComboBox">
                                         <Grid>
-                                            <Grid.ColumnDefinitions>
-                                                <ColumnDefinition Width="*" />
-                                                <!-- This takes up the available space -->
-                                                <ColumnDefinition Width="Auto" />
-                                                <!-- This fits the Path -->
-                                            </Grid.ColumnDefinitions>
-                                            <!-- ToggleButton (arrow) -->
+                                            <!-- Entire control is clickable -->
                                             <ToggleButton Name="ToggleButton"
-                                          Grid.Column="2"
+                                          HorizontalAlignment="Stretch"
+                                          VerticalAlignment="Stretch"
                                           Background="#212121"
                                           BorderBrush="Transparent"
                                           BorderThickness="0"
                                           Focusable="False"
                                           ClickMode="Press"
                                           IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}">
-                                           <Path Data="M 0 0 L 4 4 L 8 0 Z"
-                                            Fill="White"
-                                            HorizontalAlignment="Right"
-                                            VerticalAlignment="Center"/>
+                                                <Grid>
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="Auto" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <!-- Selected item (text aligned left and white) -->
+                                                    <ContentPresenter Name="ContentSite"
+                                                      IsHitTestVisible="False"
+                                                      Content="{TemplateBinding SelectionBoxItem}"
+                                                      ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
+                                                      Margin="10,0,23,0"
+                                                      VerticalAlignment="Center"
+                                                      HorizontalAlignment="Left"
+                                                      />
+                                                    <!-- Dropdown arrow on the right -->
+                                                    <Path Data="M 0 0 L 4 4 L 8 0 Z"
+                                          Fill="White"
+                                          HorizontalAlignment="Right"
+                                          VerticalAlignment="Center"
+                                          Grid.Column="1"/>
+                                                </Grid>
                                             </ToggleButton>
-
-                                            <!-- Selected‑item presenter -->
-                                            <ContentPresenter Name="ContentSite"
-                                              IsHitTestVisible="False"
-                                              Content="{TemplateBinding SelectionBoxItem}"
-                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
-                                              Margin="10,0,23,0"
-                                              VerticalAlignment="Center"
-                                              HorizontalAlignment="Left"/>
-
-                                            <!-- Popup for dropdown -->
+                                            <!-- Popup for the dropdown items -->
                                             <Popup Name="Popup"
                                    Placement="Bottom"
                                    IsOpen="{TemplateBinding IsDropDownOpen}"
@@ -168,6 +170,7 @@
                         </Style>
                     </ComboBox.Style>
                 </ComboBox>
+
             </Border>
         </StackPanel>
     </StackPanel>

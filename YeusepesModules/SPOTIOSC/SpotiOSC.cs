@@ -75,7 +75,7 @@ namespace YeusepesModules.SPOTIOSC
 
 
         protected override void OnPreLoad()
-        {
+        {            
             YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("libusb-1.0.dll", message => Log(message));                               
             YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("cvextern.dll", message => Log(message));
             screenUtilities = ScreenUtilities.EnsureInitialized(
@@ -84,8 +84,7 @@ namespace YeusepesModules.SPOTIOSC
                 SetSettingValue,  // Function to save settings
                 CreateTextBox,    // Function to create a text box
                 (parameter, name, mode, title, description) =>
-                {
-                    // For example, register a bool parameter.
+                {                    
                     RegisterParameter<bool>(parameter, name, mode, title, description);
                 }
             );
@@ -172,7 +171,14 @@ namespace YeusepesModules.SPOTIOSC
         }
 
         protected override void OnPostLoad()
-        {
+        {            
+            var asm = System.Reflection.Assembly.GetExecutingAssembly();
+            var names = asm.GetManifestResourceNames();
+            foreach (var name in names)
+            {
+                Log(name);
+            }
+
             // Define variables
             var playVariable = CreateVariable<bool>(SpotiParameters.Play, "Play");
             var pauseVariable = CreateVariable<bool>(SpotiParameters.Pause, "Pause");

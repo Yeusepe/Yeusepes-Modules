@@ -58,8 +58,7 @@ namespace YeusepesModules.OSCQR
                 SetSettingValue,  // Function to save settings
                 CreateTextBox,    // Function to create a text box
                 (parameter, name, mode, title, description) =>
-                {
-                    // For example, register a bool parameter.
+                {                    
                     RegisterParameter<bool>(parameter, name, mode, title, description);
                 }
             );

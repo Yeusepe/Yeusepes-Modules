@@ -32,6 +32,12 @@ namespace YeusepesModules.IDC.Encoder
         public StringDecoder(EncodingUtilities encodingUtilities)
         {
             this.encodingUtilities = encodingUtilities;
+            picturesDir = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+            // Initialize fields that ProcessImage uses immediately:
+            debugFolder = Path.Combine(picturesDir, "Debug");
+            if (!Directory.Exists(debugFolder))
+                Directory.CreateDirectory(debugFolder);
+            candidateCirclesPath = Path.Combine(debugFolder, "candidate_circles.png");
         }
 
         public async Task<bool> OnModuleStart()
@@ -210,7 +216,7 @@ namespace YeusepesModules.IDC.Encoder
         /// <summary>
         /// Converts a hex string to a Bgr color.
         /// </summary>
-        private Bgr HexToBgr(string hex)
+        public Bgr HexToBgr(string hex)
         {
             hex = hex.Trim();
             encodingUtilities.LogDebug($"Hex value received: '{hex}'");
@@ -315,32 +321,6 @@ namespace YeusepesModules.IDC.Encoder
 
         #region Other Processing Functions
 
-        /// <summary>
-        /// Computes a grayscale distance map from the image to the target color.
-        /// Lower values mean the pixel is closer to the target color.
-        /// </summary>
-        private static Image<Gray, byte> ComputeColorDistanceMap(Image<Bgr, byte> image, Bgr targetColor)
-        {
-            Image<Gray, byte> distanceMap = new Image<Gray, byte>(image.Size);
-            for (int y = 0; y < image.Height; y++)
-            {
-                for (int x = 0; x < image.Width; x++)
-                {
-                    Bgr color = image[y, x];
-                    // Compute Euclidean distance in RGB space.
-                    double diff = Math.Sqrt(
-                        Math.Pow(color.Blue - targetColor.Blue, 2) +
-                        Math.Pow(color.Green - targetColor.Green, 2) +
-                        Math.Pow(color.Red - targetColor.Red, 2));
-                    // Optionally, scale the diff so that it fits in 0-255.
-                    // You might need to adjust this scaling factor.
-                    byte intensity = (byte)Math.Min(255, diff * 2);
-                    distanceMap.Data[y, x, 0] = intensity;
-                }
-            }
-            return distanceMap;
-        }
-
 
         /// <summary>
         /// Computes an Otsu threshold based on the candidate circle region (instead of outside it).
@@ -420,6 +400,12 @@ namespace YeusepesModules.IDC.Encoder
             int numLayers = 4, int designLogoRadius = 55, int designRingMargin = 10,
             string targetCircleHex = "#1EB955")
         {
+            // Ensure debugFolder is initialized even if OnModuleStart wasn't called.
+            if (string.IsNullOrEmpty(debugFolder))
+            {
+                debugFolder = Path.Combine(picturesDir, "Debug");
+                Directory.CreateDirectory(debugFolder);
+            }
             // If a target hex is provided, filter the image.
             if (!string.IsNullOrEmpty(targetCircleHex))
             {

@@ -4,7 +4,8 @@ using System.Reflection;
 using System.Windows;
 using VRCOSC.App.SDK.Modules;
 using VRCOSC.App.UI.Core;
-using YeusepesModules.Common.ScreenUtilities; // For IManagedWindow
+using YeusepesModules.Common.ScreenUtilities;
+using YeusepesModules.IDC; // For IManagedWindow
 
 namespace YeusepesModules.SPOTIOSC.UI
 {
@@ -33,6 +34,9 @@ namespace YeusepesModules.SPOTIOSC.UI
             var signInControl = new SignIn(_module, customSetting);
             MainGrid.Children.Insert(0, signInControl);
             _module.screenUtilities.AttachSelector(ScreenSelector);
+            // In SignInWindow.SourceInitialized or similar:
+            var decoderControl = new DecoderToleranceControl();
+            decoderControl.AttachDependencies(_module.encodingUtilities);           
         }
 
         private void SignInWindow_Closed(object sender, EventArgs e)
