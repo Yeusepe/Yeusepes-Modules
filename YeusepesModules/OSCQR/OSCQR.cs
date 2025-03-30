@@ -14,10 +14,11 @@ namespace YeusepesModules.OSCQR
     [ModuleDescription("A module to scan QR Codes using OSC.")]
     [ModuleType(ModuleType.Generic)]
     [ModuleInfo("https://github.com/Yeusepe/Yeusepes-Modules/wiki/OSCQR")]
+    [ModuleSettingsWindow(typeof(SavedQRCodesWindow))]
     public class OSCQR : Module
     {
         // Instance of the generic screen utilities
-        private ScreenUtilities screenUtilities;
+        public ScreenUtilities screenUtilities;
 
         // Runtime storage for detected QR codes
         private List<string> savedQRCodes = new List<string>();
@@ -49,6 +50,23 @@ namespace YeusepesModules.OSCQR
         {
             YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("libiconv.dll", message => Log(message));
             YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("libzbar.dll", message => Log(message));
+
+
+            // Instantiate the ScreenUtilities class.
+            // NOTE: Instead of passing a lambda that calls RegisterParameter,
+            // we pass a dummy lambda (or one that simply logs) so that parameter registration
+            // isn’t attempted after the module is loaded.
+            screenUtilities = new ScreenUtilities(
+                LogDebug,
+                GetSettingValue<string>,
+                SetSettingValue,
+                CreateTextBox,
+                (parameter, name, mode, title, description) =>
+                {
+                    // Simply log the attempt. Parameters for ScreenUtilities were already registered.
+                    LogDebug($"(ScreenUtilities) Skipped registering parameter: {parameter}");
+                }
+            );
 
             // Register our module parameters.
             RegisterParameter<bool>(
@@ -101,23 +119,7 @@ namespace YeusepesModules.OSCQR
                 "Enable or disable saving debug images.",
                 false
             );
-
-            // Instantiate the ScreenUtilities class.
-            // NOTE: Instead of passing a lambda that calls RegisterParameter,
-            // we pass a dummy lambda (or one that simply logs) so that parameter registration
-            // isn’t attempted after the module is loaded.
-            screenUtilities = new ScreenUtilities(
-                LogDebug,
-                GetSettingValue<string>,
-                SetSettingValue,
-                CreateTextBox,
-                (parameter, name, mode, title, description) =>
-                {
-                    // Simply log the attempt. Parameters for ScreenUtilities were already registered.
-                    LogDebug($"(ScreenUtilities) Skipped registering parameter: {parameter}");
-                }
-            );
-
+           
             // Provide a callback so that every time a new image is captured,
             // the OSCQR module runs its QR detection logic.
             screenUtilities.SetWhatDoInCapture((IImage image) =>

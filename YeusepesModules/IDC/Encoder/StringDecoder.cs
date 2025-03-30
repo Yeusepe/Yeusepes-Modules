@@ -1037,7 +1037,7 @@ namespace YeusepesModules.IDC.Encoder
         }
 
 
-        #endregion                
+        #endregion                  
 
         // (Optional) A helper method to save any debug image.
         private static void saveDebugImage(Image<Bgr, byte> image, string imageName)

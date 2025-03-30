@@ -24,22 +24,11 @@ namespace YeusepesModules.IDC.Encoder
 
 
     public class StringEncoder
-    {
-        
-        private const int bitChannels = 8;
-        private const int MillisecondsDelay = 150;
-        private const int MillisecondsMicroDelay = 100;        
+    {       
+        private const int MillisecondsDelay = 150;  
         EncodingUtilities encodingUtilities = new EncodingUtilities();
 
-        private readonly Dictionary<EncodingParameter, string> RegisteredParameters = new Dictionary<EncodingParameter, string>();
-        private readonly StringBuilder[] receivedBitGroups;
-
         public bool isEncoding = false;
-
-        private TaskCompletionSource<bool> bitResetTcs = new TaskCompletionSource<bool>();
-
-        private Queue<int> encodedQueue = new Queue<int>(); // Queue to store encoded values
-        private Action sendNextEncodedValue; // Callback to send the next value
 
 
         public StringEncoder(

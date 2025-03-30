@@ -100,7 +100,7 @@ namespace YeusepesModules.OSCQR.UI
 
     public partial class SavedQRCodesView : UserControl
     {
-        public SavedQRCodesView(OSCQR module, StringModuleSetting setting)
+        public SavedQRCodesView(OSCQR module, ModuleSetting setting)
         {
             InitializeComponent();
             DataContext = new SavedQRCodesViewModel(module.GetSavedQRCodes());

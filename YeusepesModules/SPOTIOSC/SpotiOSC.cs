@@ -14,7 +14,6 @@ using YeusepesModules.SPOTIOSC.Utils.Events;
 using System.Text.Json;
 using YeusepesModules.Common.ScreenUtilities;
 using VRCOSC.App.Settings;
-using static YeusepesModules.Common.ScreenUtilities.ScreenUtilities;
 
 
 namespace YeusepesModules.SPOTIOSC
@@ -41,23 +40,12 @@ namespace YeusepesModules.SPOTIOSC
 
         private HashSet<Enum> _activeParameterUpdates = new HashSet<Enum>();
 
-        private DateTime _lastEventTime = DateTime.MinValue;
-
         private readonly HashSet<string> _processedEventKeys = new();
         private readonly object _deduplicationLock = new();
-
-        private HashSet<string> _processedEventIds = new HashSet<string>();
-
-        private static string clientID = null;
 
         public ScreenUtilities screenUtilities;
         
         private CancellationTokenSource _cts = new CancellationTokenSource();
-
-        public Module GetModule()
-        {
-            return this;
-        }
 
         public enum SpotiSettings
         {
@@ -123,6 +111,15 @@ namespace YeusepesModules.SPOTIOSC
                 encodingUtilities
             );
 
+            spotifyUtilities = new SpotifyUtilities
+            {
+                Log = message => Log(message),
+                LogDebug = message => LogDebug(message),
+                SendParameter = (param, value) => SetParameterSafe(param, value),
+                Encoder = encoder
+            };
+
+            CredentialManager.SpotifyUtils = spotifyUtilities;
 
             #region Parameters
 
@@ -247,16 +244,9 @@ namespace YeusepesModules.SPOTIOSC
                     AccessToken = accessToken,
                     ClientToken = clientToken
                 };
-                // Initialize SpotifyUtilities
-                spotifyUtilities = new SpotifyUtilities
-                {
-                    Log = message => Log(message),
-                    LogDebug = message => LogDebug(message),
-                    SendParameter = (param, value) => SetParameterSafe(param, value),
-                    Encoder = encoder
-                };
+                
                 return true;
-            });
+            });            
 
             _playerEventSubscriber = new PlayerEventSubscriber(spotifyUtilities, spotifyRequestContext);
             _playerEventSubscriber.OnPlayerEventReceived += HandlePlayerEvent;

@@ -8,6 +8,7 @@ using System.IO;
 using VRCOSC.App.Utils;
 using PuppeteerSharp;
 using System.Text.RegularExpressions;
+using YeusepesModules.SPOTIOSC.Utils.Requests;
 
 namespace YeusepesModules.SPOTIOSC.Credentials
 {
@@ -29,6 +30,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
         public static SecureString ClientToken = new SecureString();
         private static string clientID = null;
 
+        public static SpotifyUtilities SpotifyUtils { get; set; }
         #endregion
 
         #region Public API
@@ -41,7 +43,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
         /// </summary>
         public static async Task LoginAsync()
         {
-            ////Logger("Starting headful login flow...");
+            SpotifyUtils?.Log("Starting headful login flow...");
 
             IBrowser browser = null;
             IPage loginPage = null;
@@ -61,35 +63,35 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                         "() => window.location.href.includes('/status?')",
                         new WaitForFunctionOptions { Timeout = 60000 }
                     );
-                    ////Logger("Login detected (URL contains '/status?').");
+                    SpotifyUtils?.Log("Login detected (URL contains '/status?').");
                     redirectDetected = true;
                 }
                 catch (Exception ex)
                 {
-                    ////Logger("Login status not detected within the timeout period.");
+                    SpotifyUtils?.Log("Login status not detected within the timeout period.");
                 }
 
 
                 if (!redirectDetected)
                 {
-                    ////Logger("Login status not detected within the timeout period.");
+                    SpotifyUtils?.Log("Login status not detected within the timeout period.");
                 }
                 else
                 {
-                    ////Logger("Closing login page...");
+                    SpotifyUtils?.Log("Closing login page...");
                     try
                     {
                         await loginPage.CloseAsync();
                     }
                     catch (Exception ex)
                     {
-                        ////Logger($"Error closing login page: {ex.Message}");
+                        SpotifyUtils?.Log($"Error closing login page: {ex.Message}");
                     }
                 }
             }
             catch (Exception ex)
             {
-                ////Logger($"Error during LoginAsync: {ex.Message}");
+                SpotifyUtils?.Log($"Error during LoginAsync: {ex.Message}");
                 throw;
             }
             finally
@@ -102,7 +104,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                     }
                     catch (Exception ex)
                     {
-                        ////Logger($"Error closing browser in LoginAsync: {ex.Message}");
+                        SpotifyUtils?.Log($"Error closing browser in LoginAsync: {ex.Message}");
                     }
                 }
             }
@@ -119,7 +121,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
         /// </summary>
         public static async Task AuthenticateAsync()
         {
-            ////Logger("Starting headless authentication flow...");
+            SpotifyUtils?.Log("Starting headless authentication flow...");
 
             IBrowser browser = null;
             IPage tokenPage = null;
@@ -137,7 +139,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             }
             catch (Exception ex)
             {
-                ////Logger($"Error during AuthenticateAsync: {ex.Message}");
+                SpotifyUtils?.Log($"Error during AuthenticateAsync: {ex.Message}");
                 throw;
             }
             finally
@@ -150,7 +152,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                     }
                     catch (Exception ex)
                     {
-                        ////Logger($"Error closing headless browser in AuthenticateAsync: {ex.Message}");
+                        SpotifyUtils?.Log($"Error closing headless browser in AuthenticateAsync: {ex.Message}");
                     }
                 }
             }
@@ -165,7 +167,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
         /// </summary>
         public static void SignOut()
         {
-            ////Logger("Signing out...");
+            SpotifyUtils?.Log("Signing out...");
 
             // Delete token files.
             try
@@ -173,17 +175,17 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                 if (File.Exists(AccessTokenFile))
                 {
                     File.Delete(AccessTokenFile);
-                    ////Logger("Access token file deleted.");
+                    SpotifyUtils?.Log("Access token file deleted.");
                 }
                 if (File.Exists(ClientTokenFile))
                 {
                     File.Delete(ClientTokenFile);
-                    ////Logger("Client token file deleted.");
+                    SpotifyUtils?.Log("Client token file deleted.");
                 }
             }
             catch (Exception ex)
             {
-                ////Logger($"Error deleting token files: {ex.Message}");
+                SpotifyUtils?.Log($"Error deleting token files: {ex.Message}");
             }
 
             // Clear secure strings.
@@ -194,7 +196,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             }
             catch (Exception ex)
             {
-                ////Logger($"Error clearing secure tokens: {ex.Message}");
+                SpotifyUtils?.Log($"Error clearing secure tokens: {ex.Message}");
             }
 
             // Thoroughly delete the persistent browser data directory.
@@ -204,16 +206,16 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                 if (Directory.Exists(UserDataDirectory))
                 {
                     DeleteDirectory(UserDataDirectory);
-                    ////Logger("User data directory sanitized successfully.");
+                    SpotifyUtils?.Log("User data directory sanitized successfully.");
                 }
                 else
                 {
-                    ////Logger("User data directory not found, nothing to sanitize.");
+                    SpotifyUtils?.Log("User data directory not found, nothing to sanitize.");
                 }
             }
             catch (Exception ex)
             {
-                ////Logger($"Error deleting user data directory: {ex.Message}");
+                SpotifyUtils?.Log($"Error deleting user data directory: {ex.Message}");
             }
         }
 
@@ -244,14 +246,14 @@ namespace YeusepesModules.SPOTIOSC.Credentials
 
             try
             {
-                ////Logger("Initializing browser fetcher...");
+                SpotifyUtils?.Log("Initializing browser fetcher...");
                 var browserFetcher = new BrowserFetcher();
-                ////Logger("Downloading supported Chromium version...");
+                SpotifyUtils?.Log("Downloading supported Chromium version...");
                 var installedBrowser = await browserFetcher.DownloadAsync();
                 string browserPath = installedBrowser.GetExecutablePath();
-                ////Logger($"Chromium downloaded to: {browserPath}");
+                SpotifyUtils?.Log($"Chromium downloaded to: {browserPath}");
 
-                ////Logger("Launching browser with persistence enabled...");
+                SpotifyUtils?.Log("Launching browser with persistence enabled...");
 
                 var launchArgs = new List<string>();
 
@@ -285,33 +287,33 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                     DumpIO = true
                 };
 
-                ////Logger("Attempting to launch the browser...");
+                SpotifyUtils?.Log("Attempting to launch the browser...");
                 var browser = await Puppeteer.LaunchAsync(launchOptions);
-                ////Logger("Browser launched successfully!");
+                SpotifyUtils?.Log("Browser launched successfully!");
                 return browser;
             }
             catch (PuppeteerSharp.ProcessException ex)
             {
-                ////Logger($"ProcessException: Failed to launch browser! {ex.Message}");
+                SpotifyUtils?.Log($"ProcessException: Failed to launch browser! {ex.Message}");
                 if (ex.InnerException != null)
                 {
-                    ////Logger($"Inner Exception: {ex.InnerException.Message}");
+                    SpotifyUtils?.Log($"Inner Exception: {ex.InnerException.Message}");
                 }
                 throw;
             }
             catch (UnauthorizedAccessException ex)
             {
-                ////Logger($"UnauthorizedAccessException: Permission issue detected! {ex.Message}");
+                SpotifyUtils?.Log($"UnauthorizedAccessException: Permission issue detected! {ex.Message}");
                 throw;
             }
             catch (IOException ex)
             {
-                ////Logger($"IOException: Error accessing files or directories! {ex.Message}");
+                SpotifyUtils?.Log($"IOException: Error accessing files or directories! {ex.Message}");
                 throw;
             }
             catch (Exception ex)
             {
-                ////Logger($"Exception: An unexpected error occurred! {ex.Message}");
+                SpotifyUtils?.Log($"Exception: An unexpected error occurred! {ex.Message}");
                 throw;
             }
         }
@@ -336,7 +338,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                 }
                 catch (Exception ex)
                 {
-                    ////Logger("Failed to override navigator.webdriver: " + ex.Message);
+                    SpotifyUtils?.Log("Failed to override navigator.webdriver: " + ex.Message);
                 }
 
                 // Set a standard user agent string.
@@ -365,12 +367,12 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                 }
                 catch (PuppeteerSharp.NavigationException ex)
                 {
-                    ////Logger($"Navigation exception ignored: {ex.Message}");
+                    SpotifyUtils?.Log($"Navigation exception ignored: {ex.Message}");
                 }
             }
             catch (Exception ex)
             {
-                ////Logger($"Error in InitializePageAsync: {ex.Message}");
+                SpotifyUtils?.Log($"Error in InitializePageAsync: {ex.Message}");
                 throw;
             }
             return page;
@@ -378,14 +380,14 @@ namespace YeusepesModules.SPOTIOSC.Credentials
 
         private static async Task NavigateAndCaptureJsonResponseAsync(IPage page, TaskCompletionSource<bool> tokenReady)
         {
-            ////Logger("Setting up request interception for token retrieval...");
+            SpotifyUtils?.Log("Setting up request interception for token retrieval...");
             try
             {
                 await page.SetRequestInterceptionAsync(true);
             }
             catch (Exception ex)
             {
-                ////Logger($"Error setting request interception: {ex.Message}");
+                SpotifyUtils?.Log($"Error setting request interception: {ex.Message}");
             }
 
             // Handler for all outgoing requests – simply passes them along.
@@ -398,7 +400,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                 }
                 catch (Exception ex)
                 {
-                    ////Logger($"Error in request handler: {ex.Message}");
+                    SpotifyUtils?.Log($"Error in request handler: {ex.Message}");
                 }
             };
             page.Request += requestHandler;
@@ -414,7 +416,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                         e.Response.Status == System.Net.HttpStatusCode.OK)
                     {
                         string responseBody = await e.Response.TextAsync();
-                        ////Logger($"JSON response captured: {responseBody}");
+                        SpotifyUtils?.Log($"JSON response captured: {responseBody}");
 
                         try
                         {
@@ -424,23 +426,23 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                             if (json.TryGetProperty("accessToken", out JsonElement tokenElement))
                             {
                                 string accessToken = tokenElement.GetString();
-                                ////Logger($"Access token found: {accessToken}");
+                                SpotifyUtils?.Log($"Access token found: {accessToken}");
                                 SaveAccessToken(accessToken);
                             }
                             else
                             {
-                                ////Logger("Access token not found in JSON response.");
+                                SpotifyUtils?.Log("Access token not found in JSON response.");
                             }
 
                             // Extract and save the client ID.
                             if (json.TryGetProperty("clientId", out JsonElement clientIDElement))
                             {
                                 clientID = clientIDElement.GetString();
-                                ////Logger($"ClientID found and saved: {clientID}");
+                                SpotifyUtils?.Log($"ClientID found and saved: {clientID}");
                             }
                             else
                             {
-                                ////Logger("ClientID not found in JSON response.");
+                                SpotifyUtils?.Log("ClientID not found in JSON response.");
                             }
 
                             // Signal that token (and clientID) capture is complete.
@@ -457,35 +459,35 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                             }
                             catch (Exception closeEx)
                             {
-                                ////Logger($"Error closing browser in response handler: {closeEx.Message}");
+                                SpotifyUtils?.Log($"Error closing browser in response handler: {closeEx.Message}");
                             }
                         }
                         catch (Exception ex)
                         {
-                            ////Logger($"Error parsing JSON response: {ex.Message}");
+                            SpotifyUtils?.Log($"Error parsing JSON response: {ex.Message}");
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    ////Logger($"Error in response handler: {ex.Message}");
+                    SpotifyUtils?.Log($"Error in response handler: {ex.Message}");
                 }
             };
             page.Response += responseHandler;
 
             // Navigate to the access token endpoint.
-            ////Logger("Navigating to access token endpoint...");
+            SpotifyUtils?.Log("Navigating to access token endpoint...");
             try
             {
                 await page.GoToAsync(AccessTokenEndpoint, WaitUntilNavigation.Networkidle0);
             }
             catch (PuppeteerSharp.NavigationException ex)
             {
-                ////Logger($"Navigation exception ignored: {ex.Message}");
+                SpotifyUtils?.Log($"Navigation exception ignored: {ex.Message}");
             }
             catch (Exception ex)
             {
-                ////Logger($"Unexpected error navigating to access token endpoint: {ex.Message}");
+                SpotifyUtils?.Log($"Unexpected error navigating to access token endpoint: {ex.Message}");
             }
         }
 
@@ -508,11 +510,11 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                     DataProtectionScope.CurrentUser
                 );
                 File.WriteAllBytes(AccessTokenFile, encryptedData);
-                ////Logger("Access token saved securely.");
+                SpotifyUtils?.Log("Access token saved securely.");
             }
             catch (Exception ex)
             {
-                ////Logger($"Error saving access token: {ex.Message}");
+                SpotifyUtils?.Log($"Error saving access token: {ex.Message}");
             }
         }
 
@@ -525,7 +527,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             {
                 if (!File.Exists(AccessTokenFile))
                 {
-                    ////Logger("Access token file not found.");
+                    SpotifyUtils?.Log("Access token file not found.");
                     return null;
                 }
                 var encryptedData = File.ReadAllBytes(AccessTokenFile);
@@ -533,12 +535,12 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                     ProtectedData.Unprotect(encryptedData, null, DataProtectionScope.CurrentUser)
                 );
                 NativeMethods.SaveToSecureString(accessToken, ref AccessToken);
-                ////Logger("Access token loaded successfully.");
+                SpotifyUtils?.Log("Access token loaded successfully.");
                 return accessToken;
             }
             catch (Exception ex)
             {
-                ////Logger($"Error loading access token: {ex.Message}");
+                SpotifyUtils?.Log($"Error loading access token: {ex.Message}");
                 return null;
             }
         }
@@ -557,11 +559,11 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                     DataProtectionScope.CurrentUser
                 );
                 File.WriteAllBytes(ClientTokenFile, encryptedData);
-                ////Logger("Client token securely saved.");
+                SpotifyUtils?.Log("Client token securely saved.");
             }
             catch (Exception ex)
             {
-                ////Logger($"Error saving client token: {ex.Message}");
+                SpotifyUtils?.Log($"Error saving client token: {ex.Message}");
             }
         }
 
@@ -574,7 +576,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             {
                 if (!File.Exists(ClientTokenFile))
                 {
-                    ////Logger("Client token file not found.");
+                    SpotifyUtils?.Log("Client token file not found.");
                     return null;
                 }
                 byte[] encryptedData = File.ReadAllBytes(ClientTokenFile);
@@ -582,12 +584,12 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                     ProtectedData.Unprotect(encryptedData, null, DataProtectionScope.CurrentUser)
                 );
                 NativeMethods.SaveToSecureString(clientToken, ref ClientToken);
-                ////Logger("Client token successfully loaded.");
+                SpotifyUtils?.Log("Client token successfully loaded.");
                 return clientToken;
             }
             catch (Exception ex)
             {
-                ////Logger($"Error loading client token: {ex.Message}");
+                SpotifyUtils?.Log($"Error loading client token: {ex.Message}");
                 return null;
             }
         }
@@ -601,14 +603,14 @@ namespace YeusepesModules.SPOTIOSC.Credentials
         /// </summary>
         public static async Task<bool> GetClientTokenAsync()
         {
-            ////Logger("Attempting to fetch client token...");
+            SpotifyUtils?.Log("Attempting to fetch client token...");
             using var httpClient = new HttpClient();
             string accessToken = LoadAccessToken();
             string deviceId = Guid.NewGuid().ToString();
 
             try
             {
-                ////Logger("Fetching Client Token...");
+                SpotifyUtils?.Log("Fetching Client Token...");
                 var optionsRequest = new HttpRequestMessage(HttpMethod.Options, ClientTokenEndpoint);
                 optionsRequest.Headers.Add("Accept", "*/*");
                 optionsRequest.Headers.Add("Accept-Language", "en-US,en;q=0.9");
@@ -621,11 +623,11 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                 HttpResponseMessage optionsResponse = await httpClient.SendAsync(optionsRequest);
                 if (!optionsResponse.IsSuccessStatusCode)
                 {
-                    ////Logger($"OPTIONS request failed: {optionsResponse.StatusCode}");
+                    SpotifyUtils?.Log($"OPTIONS request failed: {optionsResponse.StatusCode}");
                     return false;
                 }
-                ////Logger("OPTIONS request successful.");
-                ////Logger("Retrieving Client ID...");
+                SpotifyUtils?.Log("OPTIONS request successful.");
+                SpotifyUtils?.Log("Retrieving Client ID...");
 
                 var postBody = new
                 {
@@ -645,8 +647,8 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                     }
                 };
 
-                ////Logger("Client Token Request Body:");
-                ////Logger(JsonSerializer.Serialize(postBody));
+                SpotifyUtils?.Log("Client Token Request Body:");
+                SpotifyUtils?.Log(JsonSerializer.Serialize(postBody));
 
                 string postBodyJson = JsonSerializer.Serialize(postBody);
                 var postRequest = new HttpRequestMessage(HttpMethod.Post, ClientTokenEndpoint)
@@ -654,7 +656,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                     Content = new StringContent(postBodyJson, Encoding.UTF8, "application/json")
                 };
 
-                ////Logger("Sending POST request to client token endpoint...");
+                SpotifyUtils?.Log("Sending POST request to client token endpoint...");
                 postRequest.Headers.Add("Accept", "application/json");
                 postRequest.Headers.Add("Accept-Language", "en-US,en;q=0.9");
                 postRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
@@ -667,46 +669,46 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                 postRequest.Headers.Referrer = new Uri(SpotifyLoginUrl);
                 postRequest.Headers.Add("Referrer-Policy", "strict-origin-when-cross-origin");
 
-                ////Logger("Client Token Request Headers:");
+                SpotifyUtils?.Log("Client Token Request Headers:");
                 foreach (var header in postRequest.Headers)
                 {
-                    ////Logger($"{header.Key}: {string.Join(", ", header.Value)}");
+                    SpotifyUtils?.Log($"{header.Key}: {string.Join(", ", header.Value)}");
                 }
 
                 HttpResponseMessage postResponse = await httpClient.SendAsync(postRequest);
 
-                ////Logger("Client Token Response Headers:");
+                SpotifyUtils?.Log("Client Token Response Headers:");
                 foreach (var header in postResponse.Headers)
                 {
-                    ////Logger($"{header.Key}: {string.Join(", ", header.Value)}");
+                    SpotifyUtils?.Log($"{header.Key}: {string.Join(", ", header.Value)}");
                 }
 
-                ////Logger("Client Token Response Status Code:");
-                ////Logger(postResponse.StatusCode.ToString());
+                SpotifyUtils?.Log("Client Token Response Status Code:");
+                SpotifyUtils?.Log(postResponse.StatusCode.ToString());
                 if (postResponse.IsSuccessStatusCode)
                 {
                     string postResponseContent = await postResponse.Content.ReadAsStringAsync();
-                    ////Logger("Client Token Response Content:");
-                    ////Logger(postResponseContent);
+                    SpotifyUtils?.Log("Client Token Response Content:");
+                    SpotifyUtils?.Log(postResponseContent);
 
                     var tokenResponse = JsonSerializer.Deserialize<JsonElement>(postResponseContent);
                     if (tokenResponse.TryGetProperty("granted_token", out JsonElement grantedTokenElement) &&
                         grantedTokenElement.TryGetProperty("token", out JsonElement tokenElement))
                     {
                         string clientToken = tokenElement.GetString();
-                        ////Logger($"Client Token: {clientToken}");
+                        SpotifyUtils?.Log($"Client Token: {clientToken}");
                         SaveClientToken(clientToken);
                         NativeMethods.SaveToSecureString(clientToken, ref ClientToken);
                         return true;
                     }
-                    ////Logger("Client token not found in the response.");
+                    SpotifyUtils?.Log("Client token not found in the response.");
                 }
-                ////Logger(postBodyJson);
-                ////Logger("Client token not found in the response.");
+                SpotifyUtils?.Log(postBodyJson);
+                SpotifyUtils?.Log("Client token not found in the response.");
             }
             catch (Exception ex)
             {
-                ////Logger($"Error during client token retrieval: {ex.Message}");
+                SpotifyUtils?.Log($"Error during client token retrieval: {ex.Message}");
             }
             return false;
         }
@@ -730,7 +732,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             }
             catch (Exception ex)
             {
-                ////Logger($"Error clearing secure token: {ex.Message}");
+                SpotifyUtils?.Log($"Error clearing secure token: {ex.Message}");
             }
             // Always assign a new SecureString instance.
             secureStr = new SecureString();
@@ -746,20 +748,20 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                 if (File.Exists(AccessTokenFile))
                 {
                     File.Delete(AccessTokenFile);
-                    ////Logger("Access token deleted.");
+                    SpotifyUtils?.Log("Access token deleted.");
                 }
                 if (File.Exists(ClientTokenFile))
                 {
                     File.Delete(ClientTokenFile);
-                    ////Logger("Client token deleted.");
+                    SpotifyUtils?.Log("Client token deleted.");
                 }
                 ClearSecureString(ref AccessToken);
                 ClearSecureString(ref ClientToken);
-                ////Logger("All tokens cleared from memory and storage.");
+                SpotifyUtils?.Log("All tokens cleared from memory and storage.");
             }
             catch (Exception ex)
             {
-                ////Logger($"Error deleting tokens: {ex.Message}");
+                SpotifyUtils?.Log($"Error deleting tokens: {ex.Message}");
             }
         }
 

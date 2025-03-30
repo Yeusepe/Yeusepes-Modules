@@ -26,10 +26,14 @@ namespace YeusepesModules.SPOTIOSC.UI
         private readonly string _tempFontDirectory = Path.GetTempPath();
         public bool IsPremium { get; set; }
 
+        SpotifyUtilities spotifyUtilities;
+
         public SignIn(VRCOSC.App.SDK.Modules.Module module, ModuleSetting setting)
         {
             Uri resourceLocater = new Uri("/YeusepesModules;component/spotiosc/ui/signin.xaml", UriKind.Relative);
-            System.Windows.Application.LoadComponent(this, resourceLocater);
+            System.Windows.Application.LoadComponent(this, resourceLocater);            
+
+            spotifyUtilities = ((SpotiOSC)module).spotifyUtilities;
 
             CursorManager.SetSpinnerCursor();
             LoadFontFromUrl("https://raw.githubusercontent.com/Yeusepe/Yeusepes-Modules/refs/heads/main/Resources/Fonts/circular-std-2.ttf");
@@ -68,12 +72,12 @@ namespace YeusepesModules.SPOTIOSC.UI
 
                     if (userProfile == null)
                     {
-                        ////Logger.Log("Failed to fetch user profile.");
+                        spotifyUtilities.Log("Failed to fetch user profile.");
                         DisplaySignedOutState();
                         return;
                     }
 
-                    ////Logger.Log($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}, {userProfile.Images?.FirstOrDefault()?.Url}");
+                    spotifyUtilities.Log($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}, {userProfile.Images?.FirstOrDefault()?.Url}");
 
                     UpdateUIWithUserProfile(userProfile.DisplayName, userProfile.Product, userProfile.Images?.FirstOrDefault()?.Url);
                     Dispatcher.Invoke(() => DisplaySignedInState());
@@ -84,7 +88,7 @@ namespace YeusepesModules.SPOTIOSC.UI
             }
             catch (Exception ex)
             {
-                ////Logger.Log($"Error initializing UI: {ex.Message}");
+                spotifyUtilities.Log($"Error initializing UI: {ex.Message}");
             }
             finally
             {
@@ -129,7 +133,7 @@ namespace YeusepesModules.SPOTIOSC.UI
 
         private void UpdateUIWithUserProfile(string name, string plan, string imageUrl)
         {
-            //////Logger.Log($"Updating UI with profile: {name}, {plan}, {imageUrl}");
+            spotifyUtilities.Log($"Updating UI with profile: {name}, {plan}, {imageUrl}");
 
             UserName.Text = name;
             PlanText.Text = NativeMethods.CapitalizeFirstLetter(plan);
@@ -157,7 +161,7 @@ namespace YeusepesModules.SPOTIOSC.UI
                 }
                 catch (Exception ex)
                 {
-                    ////Logger.Log($"Error loading profile image: {ex.Message}");
+                    spotifyUtilities.Log($"Error loading profile image: {ex.Message}");
                 }
             }
         }
