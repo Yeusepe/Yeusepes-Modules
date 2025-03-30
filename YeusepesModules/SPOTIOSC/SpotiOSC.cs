@@ -78,15 +78,15 @@ namespace YeusepesModules.SPOTIOSC
         {
             YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("libusb-1.0.dll", message => Log(message));                               
             YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("cvextern.dll", message => Log(message));
-            screenUtilities = new ScreenUtilities(
-                LogDebug,
-                GetSettingValue<string>,
-                SetSettingValue,
-                CreateTextBox,
+            screenUtilities = ScreenUtilities.EnsureInitialized(
+                LogDebug,         // Logging delegate
+                GetSettingValue<String>,  // Function to retrieve settings
+                SetSettingValue,  // Function to save settings
+                CreateTextBox,    // Function to create a text box
                 (parameter, name, mode, title, description) =>
                 {
-                    // Simply log the attempt. Parameters for ScreenUtilities were already registered.
-                    LogDebug($"(ScreenUtilities) Skipped registering parameter: {parameter}");
+                    // For example, register a bool parameter.
+                    RegisterParameter<bool>(parameter, name, mode, title, description);
                 }
             );
 

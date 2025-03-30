@@ -52,19 +52,15 @@ namespace YeusepesModules.OSCQR
             YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("libzbar.dll", message => Log(message));
 
 
-            // Instantiate the ScreenUtilities class.
-            // NOTE: Instead of passing a lambda that calls RegisterParameter,
-            // we pass a dummy lambda (or one that simply logs) so that parameter registration
-            // isn’t attempted after the module is loaded.
-            screenUtilities = new ScreenUtilities(
-                LogDebug,
-                GetSettingValue<string>,
-                SetSettingValue,
-                CreateTextBox,
+            screenUtilities = ScreenUtilities.EnsureInitialized(
+                LogDebug,         // Logging delegate
+                GetSettingValue<String>,  // Function to retrieve settings
+                SetSettingValue,  // Function to save settings
+                CreateTextBox,    // Function to create a text box
                 (parameter, name, mode, title, description) =>
                 {
-                    // Simply log the attempt. Parameters for ScreenUtilities were already registered.
-                    LogDebug($"(ScreenUtilities) Skipped registering parameter: {parameter}");
+                    // For example, register a bool parameter.
+                    RegisterParameter<bool>(parameter, name, mode, title, description);
                 }
             );
 

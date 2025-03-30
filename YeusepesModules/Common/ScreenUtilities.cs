@@ -20,7 +20,7 @@ using VRCOSC.App.SDK.Providers.Hardware;
 
 namespace YeusepesModules.Common.ScreenUtilities
 {
-    public class ScreenUtilities
+    public sealed class ScreenUtilities
     {
         private IScreenCaptureService screenCaptureService;
         private GraphicsCard? selectedGraphicsCard;
@@ -40,6 +40,44 @@ namespace YeusepesModules.Common.ScreenUtilities
         private Dictionary<string, ICaptureZone> _captureZones = new Dictionary<string, ICaptureZone>();
 
         private bool isCapturing = false;
+
+        private static readonly object _syncLock = new object();
+
+        private static ScreenUtilities _instance;
+
+        public static ScreenUtilities Instance
+        {
+            get
+            {
+                if (_instance == null)
+                    throw new InvalidOperationException("ScreenUtilities is not initialized. Call Initialize() first.");
+                return _instance;
+            }
+        }
+
+        /// <summary>
+        /// Ensures that the ScreenUtilities singleton is initialized.
+        /// The first caller's dependencies will be used.
+        /// </summary>
+        public static ScreenUtilities EnsureInitialized(
+            Action<string> log,
+            Func<Enum, string> getSettingValue,
+            Action<Enum, string> setSettingValue,
+            Action<Enum, string, string, string> createTextBox,
+            Action<Enum, string, ParameterMode, string, string> registerBoolParameter)
+        {
+            if (_instance == null)
+            {
+                lock (_syncLock)
+                {
+                    if (_instance == null)
+                    {
+                        _instance = new ScreenUtilities(log, getSettingValue, setSettingValue, createTextBox, registerBoolParameter);
+                    }
+                }
+            }
+            return _instance;
+        }
 
         public enum ScreenUtilitiesSettings
         {
