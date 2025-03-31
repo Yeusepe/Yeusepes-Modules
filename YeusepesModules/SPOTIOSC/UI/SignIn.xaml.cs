@@ -53,8 +53,8 @@ namespace YeusepesModules.SPOTIOSC.UI
 
         private async Task InitializeUIAsync()
         {
-            // Show spinner overlay and set the spinner cursor
-            Dispatcher.Invoke(() =>
+            // Show spinner overlay on UI thread
+            await Dispatcher.InvokeAsync(() =>
             {
                 SpinnerOverlay.Visibility = Visibility.Visible;
                 CursorManager.SetSpinnerCursor();
@@ -64,27 +64,24 @@ namespace YeusepesModules.SPOTIOSC.UI
             {
                 if (CredentialManager.IsUserSignedIn())
                 {
-                    ////Logger.Log("User already signed in. Skipping authentication.");
                     using var httpClient = new HttpClient();
                     var profileRequest = new SpotifyProfileRequest(httpClient, CredentialManager.LoadAccessToken(), CredentialManager.LoadClientToken());
-
                     var userProfile = await profileRequest.GetUserProfileAsync();
 
                     if (userProfile == null)
                     {
                         spotifyUtilities.Log("Failed to fetch user profile.");
-                        DisplaySignedOutState();
+                        await Dispatcher.InvokeAsync(() => DisplaySignedOutState());
                         return;
                     }
 
-                    spotifyUtilities.Log($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}, {userProfile.Images?.FirstOrDefault()?.Url}");
-
+                    spotifyUtilities.Log($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}");
                     UpdateUIWithUserProfile(userProfile.DisplayName, userProfile.Product, userProfile.Images?.FirstOrDefault()?.Url);
-                    Dispatcher.Invoke(() => DisplaySignedInState());
+                    await Dispatcher.InvokeAsync(() => DisplaySignedInState());
                     return;
                 }
 
-                DisplaySignedOutState();
+                await Dispatcher.InvokeAsync(() => DisplaySignedOutState());
             }
             catch (Exception ex)
             {
@@ -92,14 +89,15 @@ namespace YeusepesModules.SPOTIOSC.UI
             }
             finally
             {
-                // Hide spinner overlay and restore cursor
-                Dispatcher.Invoke(() =>
+                // Hide spinner overlay on UI thread
+                await Dispatcher.InvokeAsync(() =>
                 {
                     SpinnerOverlay.Visibility = Visibility.Collapsed;
                     CursorManager.RestoreCursor();
                 });
             }
         }
+
 
 
 
