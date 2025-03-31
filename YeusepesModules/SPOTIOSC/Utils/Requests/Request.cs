@@ -481,6 +481,7 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
             }
         }
 
+        public bool IsLocal { get; internal set; }
 
         public void UpdateSingleColor()
         {

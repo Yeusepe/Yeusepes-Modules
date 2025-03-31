@@ -19,6 +19,13 @@ namespace YeusepesModules.SPOTIOSC.Utils
     public static class SpotifyJamRequests
     {
         private const string JamSessionEndpoint = "https://gue1-spclient.spotify.com/social-connect/v2/sessions/current_or_new?activate=true";
+        internal static int _maxMemberCount;
+        internal static bool _isListening;
+        internal static bool _isControlling;
+        internal static bool _queueOnlyMode;
+        internal static int _participantCount;
+        internal static bool _hostIsGroup;
+
         public static string _currentSessionId { get; set; }
         public static string _joinSessionToken { get; set; }
         public static string _shareableUrl { get; set; }

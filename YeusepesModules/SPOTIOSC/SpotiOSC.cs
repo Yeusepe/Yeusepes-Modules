@@ -55,6 +55,7 @@ namespace YeusepesModules.SPOTIOSC
         }
         public enum SpotiParameters
         {
+            // Pre‐existing control parameters
             Enabled,
             WantJam,
             InAJam,
@@ -65,42 +66,52 @@ namespace YeusepesModules.SPOTIOSC
             Pause,
             NextTrack,
             PreviousTrack,
-            ShuffleEnabled,
-            RepeatMode,
-            Volume,
-            PlaybackPosition,
-            CurrentTrackName,
-            CurrentTrackArtist,
-            AvailableDevices
+
+            // Playback state (from root level)
+            ShuffleEnabled,         // from "shuffle_state"
+            SmartShuffle,           // from "smart_shuffle"
+            RepeatMode,             // mapped from "repeat_state": off=0, track=1, context=2
+            Timestamp,              // from "timestamp" (modulo conversion to int)
+            PlaybackPosition,       // from "progress_ms"
+            IsPlaying,              // from "is_playing"
+
+            // Device details (state.device)
+            DeviceIsActive,         // from device.is_active
+            DeviceIsPrivate,        // from device.is_private_session
+            DeviceIsRestricted,     // from device.is_restricted
+            DeviceSupportsVolume,   // from device.supports_volume
+            DeviceVolumePercent,    // from device.volume_percent
+
+            // Context details (state.context)
+            ContextType,            // mapped from context.type (playlist=0, otherwise -1)
+
+            // Track details (state.item)
+            DiscNumber,             // from item.disc_number
+            TrackDurationMs,        // from item.duration_ms
+            IsExplicit,             // from item.explicit
+            IsLocal,                // from item.is_local
+            SongPopularity,         // from item.popularity
+            TrackNumber,            // from item.track_number
+
+            // Album details (item.album)
+            AlbumTotalTracks,       // from album.total_tracks
+            AlbumType,              // mapped from album.album_type (single=0, album=1, others=2)
+                                    // (Optional: You might also add numeric values for the first image’s height and width)           
+
+            // Actions (state.actions.disallows)
+            DisallowPausing,        // from actions.disallows.pausing
+            DisallowResuming,       // from actions.disallows.resuming (if present)
+            DisallowSkippingPrev,   // from actions.disallows.skipping_prev (if present)
+            
+            JamParticipantCount,    // count of session_members            
+            SessionMaxMemberCount,  // from session.maxMemberCount
+            SessionIsOwner,         // from session.is_session_owner
+            SessionIsListening,     // from session.is_listening
+            SessionIsControlling,   // from session.is_controlling
+            QueueOnlyMode,          // from session.queue_only_mode            
+            HostIsGroup             // from session.host_device_info.is_group
         }
 
-        // Define an enum for your state groups.
-        private enum SpotiState
-        {
-            DeviceState,
-            ShuffleState,
-            RepeatState,
-            PlaybackProgressState,
-            ContextState,
-            TrackInfoState,
-            AlbumInfoState,
-            ArtistInfoState,
-            JamState
-        }
-
-        // Map each enum value to the corresponding state key used in CreateState.
-        private readonly Dictionary<SpotiState, string> stateMapping = new Dictionary<SpotiState, string>
-        {
-        { SpotiState.DeviceState, "DeviceState" },
-        { SpotiState.ShuffleState, "ShuffleState" },
-        { SpotiState.RepeatState, "RepeatState" },
-        { SpotiState.PlaybackProgressState, "PlaybackProgressState" },
-        { SpotiState.ContextState, "ContextState" },
-        { SpotiState.TrackInfoState, "TrackInfoState" },
-        { SpotiState.AlbumInfoState, "AlbumInfoState" },
-        { SpotiState.ArtistInfoState, "ArtistInfoState" },
-        { SpotiState.JamState, "JamState" }
-        };
 
         protected override void OnPreLoad()
         {
@@ -167,11 +178,51 @@ namespace YeusepesModules.SPOTIOSC
             RegisterParameter<bool>(SpotiParameters.Play, "SpotiOSC/Play", ParameterMode.ReadWrite, "Play", "Triggers playback.");
             RegisterParameter<bool>(SpotiParameters.Pause, "SpotiOSC/Pause", ParameterMode.ReadWrite, "Pause", "Pauses playback.");
             RegisterParameter<bool>(SpotiParameters.NextTrack, "SpotiOSC/NextTrack", ParameterMode.Read, "Next Track", "Skips to the next track.");
-            RegisterParameter<bool>(SpotiParameters.PreviousTrack, "SpotiOSC/PreviousTrack", ParameterMode.Read, "Previous Track", "Skips to the previous track.");
-            RegisterParameter<bool>(SpotiParameters.ShuffleEnabled, "SpotiOSC/ShuffleEnabled", ParameterMode.ReadWrite, "Shuffle", "Enables or disables shuffle.");
-            RegisterParameter<int>(SpotiParameters.Volume, "SpotiOSC/Volume", ParameterMode.ReadWrite, "Volume", "Sets the playback volume (0-100).");
-            RegisterParameter<int>(SpotiParameters.PlaybackPosition, "SpotiOSC/PlaybackPosition", ParameterMode.ReadWrite, "Playback Position", "Sets the playback position in milliseconds.");
+            RegisterParameter<bool>(SpotiParameters.PreviousTrack, "SpotiOSC/PreviousTrack", ParameterMode.Read, "Previous Track", "Skips to the previous track.");                        
 
+            // Playback state (root)
+            RegisterParameter<bool>(SpotiParameters.ShuffleEnabled, "SpotiOSC/ShuffleEnabled", ParameterMode.ReadWrite, "Shuffle", "Shuffle state.");
+            RegisterParameter<bool>(SpotiParameters.SmartShuffle, "SpotiOSC/SmartShuffle", ParameterMode.ReadWrite, "Smart Shuffle", "Smart shuffle state.");
+            RegisterParameter<int>(SpotiParameters.RepeatMode, "SpotiOSC/RepeatMode", ParameterMode.ReadWrite, "Repeat Mode (Mapped)", "Mapped repeat state: off=0, track=1, context=2.");
+            RegisterParameter<int>(SpotiParameters.Timestamp, "SpotiOSC/Timestamp", ParameterMode.ReadWrite, "Timestamp", "Playback timestamp.");
+            RegisterParameter<int>(SpotiParameters.PlaybackPosition, "SpotiOSC/PlaybackPosition", ParameterMode.ReadWrite, "Playback Progress (ms)", "Playback progress in ms.");
+            RegisterParameter<bool>(SpotiParameters.IsPlaying, "SpotiOSC/IsPlaying", ParameterMode.Write, "Is Playing", "Whether playback is active.");
+
+            // Device details (state.device)
+            RegisterParameter<bool>(SpotiParameters.DeviceIsActive, "SpotiOSC/DeviceIsActive", ParameterMode.ReadWrite, "Device Active", "Device is active.");
+            RegisterParameter<bool>(SpotiParameters.DeviceIsPrivate, "SpotiOSC/DeviceIsPrivate", ParameterMode.ReadWrite, "Private Session", "Device is in a private session.");
+            RegisterParameter<bool>(SpotiParameters.DeviceIsRestricted, "SpotiOSC/DeviceIsRestricted", ParameterMode.ReadWrite, "Restricted Device", "Device is restricted.");
+            RegisterParameter<bool>(SpotiParameters.DeviceSupportsVolume, "SpotiOSC/DeviceSupportsVolume", ParameterMode.ReadWrite, "Volume Support", "Device supports volume.");
+            RegisterParameter<int>(SpotiParameters.DeviceVolumePercent, "SpotiOSC/DeviceVolumePercent", ParameterMode.ReadWrite, "Device Volume (%)", "Device volume percentage.");
+
+            // Context details (state.context)
+            RegisterParameter<int>(SpotiParameters.ContextType, "SpotiOSC/ContextType", ParameterMode.Write, "Context Type (Mapped)", "Mapped context type (playlist=0, else -1).");
+
+            // Track details (state.item)
+            RegisterParameter<int>(SpotiParameters.DiscNumber, "SpotiOSC/DiscNumber", ParameterMode.Write, "Disc Number", "Track disc number.");
+            RegisterParameter<int>(SpotiParameters.TrackDurationMs, "SpotiOSC/TrackDurationMs", ParameterMode.Write, "Track Duration (ms)", "Duration of the track in ms.");
+            RegisterParameter<bool>(SpotiParameters.IsExplicit, "SpotiOSC/IsExplicit", ParameterMode.Write, "Explicit", "Whether track is explicit.");
+            RegisterParameter<bool>(SpotiParameters.IsLocal, "SpotiOSC/IsLocal", ParameterMode.Write, "Is Local", "Whether track is local.");
+            RegisterParameter<int>(SpotiParameters.SongPopularity, "SpotiOSC/SongPopularity", ParameterMode.Write, "Song Popularity", "Popularity of the current song.");
+            RegisterParameter<int>(SpotiParameters.TrackNumber, "SpotiOSC/TrackNumber", ParameterMode.Write, "Track Number", "Track number.");
+
+            // Album details (item.album)
+            RegisterParameter<int>(SpotiParameters.AlbumTotalTracks, "SpotiOSC/AlbumTotalTracks", ParameterMode.Write, "Album Total Tracks", "Total number of tracks in the album.");
+            RegisterParameter<int>(SpotiParameters.AlbumType, "SpotiOSC/AlbumType", ParameterMode.Write, "Album Type (Mapped)", "Mapped album type: single=0, album=1, other=2.");            
+
+            // Actions (state.actions.disallows)
+            RegisterParameter<bool>(SpotiParameters.DisallowPausing, "SpotiOSC/DisallowPausing", ParameterMode.Write, "Disallow Pausing", "Whether pausing is disallowed.");
+            RegisterParameter<bool>(SpotiParameters.DisallowResuming, "SpotiOSC/DisallowResuming", ParameterMode.Write, "Disallow Resuming", "Whether resuming is disallowed.");
+            RegisterParameter<bool>(SpotiParameters.DisallowSkippingPrev, "SpotiOSC/DisallowSkippingPrev", ParameterMode.Write, "Disallow Skipping Prev", "Whether skipping to previous track is disallowed.");
+
+            // Session (jam) details (in session events)
+            RegisterParameter<int>(SpotiParameters.JamParticipantCount, "SpotiOSC/JamParticipantCount", ParameterMode.Write, "Jam Participant Count", "Number of participants in the session.");            
+            RegisterParameter<int>(SpotiParameters.SessionMaxMemberCount, "SpotiOSC/SessionMaxMemberCount", ParameterMode.Write, "Session Max Member Count", "Maximum allowed session members.");
+            RegisterParameter<bool>(SpotiParameters.SessionIsOwner, "SpotiOSC/SessionIsOwner", ParameterMode.Write, "Session Is Owner", "Whether the current user is the session owner.");
+            RegisterParameter<bool>(SpotiParameters.SessionIsListening, "SpotiOSC/SessionIsListening", ParameterMode.Write, "Session Is Listening", "Whether the session is listening.");
+            RegisterParameter<bool>(SpotiParameters.SessionIsControlling, "SpotiOSC/SessionIsControlling", ParameterMode.Write, "Session Is Controlling", "Whether the session is controlling.");
+            RegisterParameter<bool>(SpotiParameters.QueueOnlyMode, "SpotiOSC/QueueOnlyMode", ParameterMode.Write, "Queue Only Mode", "Whether the session is in queue-only mode.");            
+            RegisterParameter<bool>(SpotiParameters.HostIsGroup, "SpotiOSC/HostIsGroup", ParameterMode.Write, "Host Is Group", "Whether the host device is a group device.");
 
             #endregion
 
@@ -207,77 +258,44 @@ namespace YeusepesModules.SPOTIOSC
 
         protected override void OnPostLoad()
         {
-            // Create clip variables for device info
-            var deviceIdVar = CreateVariable<string>("DeviceId", "Device ID");
-            var deviceNameVar = CreateVariable<string>("DeviceName", "Device Name");
-            var isActiveDeviceVar = CreateVariable<bool>("IsActiveDevice", "Active Device");
-            var volumePercentVar = CreateVariable<int>("VolumePercent", "Volume (%)");
-
-            // Create clip variables for playback state
-            var shuffleStateVar = CreateVariable<bool>("ShuffleState", "Shuffle");
-            var smartShuffleVar = CreateVariable<bool>("SmartShuffle", "Smart Shuffle");
-            var repeatStateVar = CreateVariable<string>("RepeatState", "Repeat Mode");
-            var timestampVar = CreateVariable<string>("Timestamp", "Timestamp");
-            var progressMsVar = CreateVariable<int>("ProgressMs", "Progress (ms)");
-
-            // Create clip variables for context details
-            var contextUrlVar = CreateVariable<string>("ContextExternalUrl", "Context URL");
-            var contextHrefVar = CreateVariable<string>("ContextHref", "Context Href");
-            var contextTypeVar = CreateVariable<string>("ContextType", "Context Type");
-            var contextUriVar = CreateVariable<string>("ContextUri", "Context URI");
-
-            // Create clip variables for track details
+            // --- Media-related variables ---
             var trackNameVar = CreateVariable<string>("TrackName", "Track Name");
-            // (If you need a separate variable for track artist, create it here)
             var trackArtistVar = CreateVariable<string>("TrackArtist", "Track Artist");
             var trackDurationVar = CreateVariable<int>("TrackDurationMs", "Track Duration (ms)");
             var discNumberVar = CreateVariable<int>("DiscNumber", "Disc Number");
             var isExplicitVar = CreateVariable<bool>("IsExplicit", "Explicit");
             var popularityVar = CreateVariable<int>("Popularity", "Popularity");
-            var previewUrlVar = CreateVariable<string>("PreviewUrl", "Preview URL");
             var trackNumberVar = CreateVariable<int>("TrackNumber", "Track Number");
             var trackUriVar = CreateVariable<string>("TrackUri", "Track URI");
             var playingTypeVar = CreateVariable<string>("CurrentlyPlayingType", "Playing Type");
 
-            // Create clip variables for album details
             var albumNameVar = CreateVariable<string>("AlbumName", "Album Name");
             var albumArtworkUrlVar = CreateVariable<string>("AlbumArtworkUrl", "Album Artwork URL");
             var albumTypeVar = CreateVariable<string>("AlbumType", "Album Type");
             var albumReleaseDateVar = CreateVariable<string>("AlbumReleaseDate", "Album Release Date");
             var albumTotalTracksVar = CreateVariable<int>("AlbumTotalTracks", "Album Total Tracks");
 
-            // Create clip variable for artists (combined)
+            var shuffleStateVar = CreateVariable<bool>("ShuffleState", "Shuffle");
+            var smartShuffleVar = CreateVariable<bool>("SmartShuffle", "Smart Shuffle");
+            var repeatStateVar = CreateVariable<string>("RepeatState", "Repeat Mode");
+            var timestampVar = CreateVariable<string>("Timestamp", "Timestamp");
+            var progressMsVar = CreateVariable<int>("ProgressMs", "Progress (ms)");
+
             var artistsVar = CreateVariable<string>("Artists", "Artists");
 
-            // Device info state
-            CreateState("DeviceState", "Device State",
-                "ID: {0}, Name: {1}, Active: {2}, Volume: {3}%",
-                new[] { deviceIdVar, deviceNameVar, isActiveDeviceVar, volumePercentVar });
-            // Playback state
-            CreateState("ShuffleState", "Shuffle State",
-                "Shuffle: {0}, Smart Shuffle: {1}",
-                new[] { shuffleStateVar, smartShuffleVar });
-            CreateState("RepeatState", "Repeat State",
-                "Repeat mode: {0}",
-                new[] { repeatStateVar });
-            CreateState("PlaybackProgressState", "Playback Progress State",
-                "Timestamp: {0}, Progress: {1} ms",
-                new[] { timestampVar, progressMsVar });
-            CreateState("ContextState", "Context State",
-                "URL: {0}, Href: {1}, Type: {2}, URI: {3}",
-                new[] { contextUrlVar, contextHrefVar, contextTypeVar, contextUriVar });
-            // Track details state
-            CreateState("TrackInfoState", "Track Info",
-                "Name: {0}, Artist: {1}, Duration: {2} ms, Disc: {3}, Explicit: {4}, Popularity: {5}, Track#: {6}, URI: {7}, Type: {8}",
-                new[] { trackNameVar, trackArtistVar, trackDurationVar, discNumberVar, isExplicitVar, popularityVar, trackNumberVar, trackUriVar, playingTypeVar });
-            // Album details state
-            CreateState("AlbumInfoState", "Album Info",
-                "Album: {0}, Artwork: {1}, Type: {2}, Release: {3}, Total Tracks: {4}",
-                new[] { albumNameVar, albumArtworkUrlVar, albumTypeVar, albumReleaseDateVar, albumTotalTracksVar });
-            // Artists state
-            CreateState("ArtistInfoState", "Artist Info",
-                "Artists: {0}",
-                new[] { artistsVar });
+            // --- System-related variables ---
+            var deviceIdVar = CreateVariable<string>("DeviceId", "Device ID");
+            var deviceNameVar = CreateVariable<string>("DeviceName", "Device Name");
+            var isActiveDeviceVar = CreateVariable<bool>("IsActiveDevice", "Active Device");
+            var volumePercentVar = CreateVariable<int>("VolumePercent", "Volume (%)");
+
+            var contextUrlVar = CreateVariable<string>("ContextExternalUrl", "Context URL");
+            var contextHrefVar = CreateVariable<string>("ContextHref", "Context Href");
+            var contextTypeVar = CreateVariable<string>("ContextType", "Context Type");
+            var contextUriVar = CreateVariable<string>("ContextUri", "Context URI");
+
+            // --- Jam-related variable ---
+            var inAJamVar = CreateVariable<bool>("InAJam", "In a Jam");
 
             // --- Events for changes ---            
             CreateEvent("PlayEvent", "Play Event", "Playback started: {0}", new[] { trackNameVar });
@@ -286,61 +304,58 @@ namespace YeusepesModules.SPOTIOSC
             CreateEvent("VolumeEvent", "Volume Event", "Volume changed to {0}%.", new[] { volumePercentVar });
             CreateEvent("RepeatEvent", "Repeat Event", "Repeat mode set to {0}.", new[] { repeatStateVar });
             CreateEvent("ShuffleEvent", "Shuffle Event", "Shuffle is {0}.", new[] { shuffleStateVar });
-
-            // Create a clip variable for Jam status
-            var inAJamVar = CreateVariable<bool>("InAJam", "In a Jam");
-
-            // Create a state to display the jam status
-            CreateState("JamState", "Jam State",
-                "In a Jam: {0}",
-                new[] { inAJamVar });
-
             // Register a dedicated Jam event
-            CreateEvent("JamEvent", "Jam Event",
-                "Jam status updated: {0}",
-                new[] { inAJamVar });
+            CreateEvent("JamEvent", "Jam Event", "Jam status updated: {0}", new[] { inAJamVar });
 
+            string commonFormat =
+            "Track: {0} - {1}\n" +
+            "Album: {2}\n" +
+            "Device: {3} ({4}%)\n" +
+            "Playback: Shuffle: {5}, Repeat: {6}\n";
 
-            base.OnPostLoad();
+            // 1. Playing in a jam
+            CreateState("Playing_Jam_Explicit_Shuffle", "In a Jam!: Explicit Song + Shuffle",
+                "State: In a Jam! (Explicit, Shuffle)\n" + commonFormat,
+                new[] { trackNameVar, trackArtistVar, albumNameVar, deviceNameVar, volumePercentVar, shuffleStateVar, repeatStateVar});
+
+            CreateState("Playing_Jam_Explicit_NoShuffle", "In a Jam!: Explicit Song, No Shuffle",
+                "State: In a Jam! (Explicit, No Shuffle)\n" + commonFormat,
+                new[] { trackNameVar, trackArtistVar, albumNameVar, deviceNameVar, volumePercentVar, shuffleStateVar, repeatStateVar });
+
+            CreateState("Playing_Jam_Clean_Shuffle", "In a Jam!: Clean + Shuffle",
+                "State: In a Jam! (Clean, Shuffle)\n" + commonFormat,
+                new[] { trackNameVar, trackArtistVar, albumNameVar, deviceNameVar, volumePercentVar, shuffleStateVar, repeatStateVar });
+
+            CreateState("Playing_Jam_Clean_NoShuffle", "In a Jam!: Clean, No Shuffle",
+                "State: In a Jam! (Clean, No Shuffle)\n" + commonFormat,
+                new[] { trackNameVar, trackArtistVar, albumNameVar, deviceNameVar, volumePercentVar, shuffleStateVar, repeatStateVar });
+
+            CreateState("Paused_Jam", "In a Jam!: Paused Music",
+                "State: In a Jam!: Paused Music\n" + commonFormat,
+                new[] { trackNameVar, trackArtistVar, albumNameVar, deviceNameVar, volumePercentVar, shuffleStateVar, repeatStateVar });
+
+            // 2. Playing normally (not in a jam)
+            CreateState("Playing_Explicit_Shuffle", "Playing: Explicit Song + Shuffle",
+                "State: Playing (Explicit, Shuffle)\n" + commonFormat,
+                new[] { trackNameVar, trackArtistVar, albumNameVar, deviceNameVar, volumePercentVar, shuffleStateVar, repeatStateVar });
+
+            CreateState("Playing_Explicit_NoShuffle", "Playing: Explicit Song, No Shuffle",
+                "State: Playing (Explicit, No Shuffle)\n" + commonFormat,
+                new[] { trackNameVar, trackArtistVar, albumNameVar, deviceNameVar, volumePercentVar, shuffleStateVar, repeatStateVar });
+
+            CreateState("Playing_Clean_Shuffle", "Playing: Clean + Shuffle",
+                "State: Playing (Clean, Shuffle)\n" + commonFormat,
+                new[] { trackNameVar, trackArtistVar, albumNameVar, deviceNameVar, volumePercentVar, shuffleStateVar, repeatStateVar });
+
+            CreateState("Playing_Clean_NoShuffle", "Playing: Clean, No Shuffle",
+                "State: Playing (Clean, No Shuffle)\n" + commonFormat,
+                new[] { trackNameVar, trackArtistVar, albumNameVar, deviceNameVar, volumePercentVar, shuffleStateVar, repeatStateVar });
+
+            CreateState("Paused_Normal", "Paused Music",
+                "State: Paused Music\n" + commonFormat,
+                new[] { trackNameVar, trackArtistVar, albumNameVar, deviceNameVar, volumePercentVar, shuffleStateVar, repeatStateVar });
         }
 
-        /// <summary>
-        /// Updates all of the module's state displays based on the current context.
-        /// </summary>
-        private void UpdateModuleStates()
-        {
-            // Always update the device state.
-            ChangeState(stateMapping[SpotiState.DeviceState]);
-
-            // Update other state groups that show fixed information.
-            ChangeState(stateMapping[SpotiState.ShuffleState]);
-            ChangeState(stateMapping[SpotiState.RepeatState]);
-            ChangeState(stateMapping[SpotiState.PlaybackProgressState]);
-            ChangeState(stateMapping[SpotiState.ContextState]);
-
-            // Update track info and trigger play/pause events based on playback status.
-            if (spotifyRequestContext.IsPlaying)
-            {
-                ChangeState(stateMapping[SpotiState.TrackInfoState]);
-                TriggerEvent("PlayEvent");
-            }
-            else
-            {
-                ChangeState(stateMapping[SpotiState.TrackInfoState]);
-                TriggerEvent("PauseEvent");
-            }
-
-            // Update album and artist info states.
-            ChangeState(stateMapping[SpotiState.AlbumInfoState]);
-            ChangeState(stateMapping[SpotiState.ArtistInfoState]);
-
-            // Update Jam state and trigger an event if in a jam.
-            if (spotifyRequestContext.IsInJam)
-            {
-                ChangeState(stateMapping[SpotiState.JamState]);
-                TriggerEvent("JamEvent");
-            }
-        }
 
         protected override async Task<bool> OnModuleStart()
         {
@@ -716,57 +731,92 @@ namespace YeusepesModules.SPOTIOSC
                     LogDebug($"Extracted join session URI: {joinSessionUri}");
                     SpotifyJamRequests._shareableUrl = SpotifyJamRequests.GenerateShareableUrlAsync(joinSessionUri, spotifyRequestContext, spotifyUtilities).Result;
                 }
-
-
-                if (session.TryGetProperty("active", out var isActive) && isActive.GetBoolean())
+                if (session.TryGetProperty("is_listening", out JsonElement isListening))
                 {
-                    SpotifyJamRequests._isInJam = true;
-                    spotifyRequestContext.IsInJam = true;
-                    SendParameter(SpotiParameters.InAJam, true);
-
-                    // Update the Jam state variable and trigger the Jam event.
-                    SetVariableValue("InAJam", true);
-                    TriggerEvent("JamEvent");
+                    SpotifyJamRequests._isListening = isListening.GetBoolean();
+                    SetParameterSafe(SpotiParameters.SessionIsListening, isListening.GetBoolean());
                 }
-                else
+                if (session.TryGetProperty("is_controlling", out JsonElement isControlling))
                 {
-                    SpotifyJamRequests._isInJam = false;
-                    spotifyRequestContext.IsInJam = false;
-                    SendParameter(SpotiParameters.InAJam, false);
-
-                    // Update the Jam state variable and trigger the Jam event.
-                    SetVariableValue("InAJam", false);
-                    TriggerEvent("JamEvent");
+                    SpotifyJamRequests._isControlling = isControlling.GetBoolean();
+                    SetParameterSafe(SpotiParameters.SessionIsControlling, isControlling.GetBoolean());
+                }
+                if (session.TryGetProperty("queue_only_mode", out JsonElement queueOnly))
+                {
+                    SpotifyJamRequests._queueOnlyMode = queueOnly.GetBoolean();
+                    SetParameterSafe(SpotiParameters.QueueOnlyMode, queueOnly.GetBoolean());
                 }
 
-                // Extract session owner and images
-                if (session.TryGetProperty("session_members", out var sessionMembers))
+                if (session.TryGetProperty("maxMemberCount", out JsonElement maxCount))
                 {
-                    var images = new List<string>();
-                    foreach (var member in sessionMembers.EnumerateArray())
+                    int maxMemberCount = maxCount.GetInt32();
+                    SpotifyJamRequests._maxMemberCount = maxMemberCount;
+                    LogDebug($"Updated max member count: {maxMemberCount}");
+                    SendParameter(SpotiParameters.SessionMaxMemberCount, maxMemberCount);
+                }
+
+                // Host device info: check if host device is a group
+                if (session.TryGetProperty("host_device_info", out JsonElement hostInfo))
+                {
+                    if (hostInfo.TryGetProperty("is_group", out JsonElement IsGroup))
                     {
-                        // Check if this member is the session owner
-                        if (session.TryGetProperty("session_owner_id", out var ownerId) &&
-                            member.GetProperty("id").GetString() == ownerId.GetString())
-                        {
-                            spotifyRequestContext.JamOwnerName = member.GetProperty("display_name").GetString();
-                            LogDebug($"Updated jam owner: {spotifyRequestContext.JamOwnerName}");
-                        }
-
-                        // Add image URL to the list
-                        if (member.TryGetProperty("image_url", out var imageUrlProperty) &&
-                            !string.IsNullOrEmpty(imageUrlProperty.GetString()))
-                        {
-                            images.Add(imageUrlProperty.GetString());
-                        }
-                        else if (member.TryGetProperty("large_image_url", out var largeImageUrlProperty) &&
-                                 !string.IsNullOrEmpty(largeImageUrlProperty.GetString()))
-                        {
-                            images.Add(largeImageUrlProperty.GetString());
-                        }
+                        bool isGroup = IsGroup.GetBoolean();
+                        SpotifyJamRequests._hostIsGroup = isGroup;
+                        SendParameter(SpotiParameters.HostIsGroup, isGroup);
+                        LogDebug($"Updated host device group status: {isGroup}");
                     }
-                    spotifyRequestContext.JamParticipantImages = images;
-                    LogDebug($"Updated participant images: {string.Join(", ", images)}");
+
+                    if (session.TryGetProperty("active", out var isActive) && isActive.GetBoolean())
+                    {
+                        SpotifyJamRequests._isInJam = true;
+                        spotifyRequestContext.IsInJam = true;
+                        SendParameter(SpotiParameters.InAJam, true);
+
+                        // Update the Jam state variable and trigger the Jam event.                    
+                        TriggerEvent("JamEvent");
+                    }
+                    else
+                    {
+                        SpotifyJamRequests._isInJam = false;
+                        spotifyRequestContext.IsInJam = false;
+                        SendParameter(SpotiParameters.InAJam, false);
+
+                        // Update the Jam state variable and trigger the Jam event.                    
+                        TriggerEvent("JamEvent");
+                    }
+
+                    // Extract session owner and images
+                    if (session.TryGetProperty("session_members", out var sessionMembers))
+                    {
+                        int count = sessionMembers.GetArrayLength();
+                        SpotifyJamRequests._participantCount = count;
+                        SendParameter(SpotiParameters.JamParticipantCount, count);
+                        var images = new List<string>();
+                        foreach (var member in sessionMembers.EnumerateArray())
+                        {
+                            // Check if this member is the session owner
+                            if (session.TryGetProperty("session_owner_id", out var ownerId) &&
+                                member.GetProperty("id").GetString() == ownerId.GetString())
+                            {
+                                spotifyRequestContext.JamOwnerName = member.GetProperty("display_name").GetString();
+                                LogDebug($"Updated jam owner: {spotifyRequestContext.JamOwnerName}");
+                            }
+
+                            // Add image URL to the list
+                            if (member.TryGetProperty("image_url", out var imageUrlProperty) &&
+                                !string.IsNullOrEmpty(imageUrlProperty.GetString()))
+                            {
+                                images.Add(imageUrlProperty.GetString());
+                            }
+                            else if (member.TryGetProperty("large_image_url", out var largeImageUrlProperty) &&
+                                     !string.IsNullOrEmpty(largeImageUrlProperty.GetString()))
+                            {
+                                images.Add(largeImageUrlProperty.GetString());
+                            }
+                        }
+                        spotifyRequestContext.JamParticipantImages = images;
+                        LogDebug($"Updated participant images: {string.Join(", ", images)}");
+                    }
                 }
             }
             catch (Exception ex)
@@ -820,47 +870,52 @@ namespace YeusepesModules.SPOTIOSC
                 spotifyRequestContext.DeviceName = device.GetProperty("name").GetString();
                 spotifyRequestContext.IsActiveDevice = device.GetProperty("is_active").GetBoolean();
                 spotifyRequestContext.VolumePercent = device.GetProperty("volume_percent").GetInt32();
-
-                SetVariableValue("DeviceId", spotifyRequestContext.DeviceId);
-                SetVariableValue("DeviceName", spotifyRequestContext.DeviceName);
-                SetVariableValue("IsActiveDevice", spotifyRequestContext.IsActiveDevice);
-                SetVariableValue("VolumePercent", spotifyRequestContext.VolumePercent);
+                SetParameterSafe(SpotiParameters.DeviceIsActive, device.GetProperty("is_active").GetBoolean());
+                SetParameterSafe(SpotiParameters.DeviceIsPrivate, device.GetProperty("is_private_session").GetBoolean());
+                SetParameterSafe(SpotiParameters.DeviceIsRestricted, device.GetProperty("is_restricted").GetBoolean());
+                SetParameterSafe(SpotiParameters.DeviceSupportsVolume, device.GetProperty("supports_volume").GetBoolean());
+                SetParameterSafe(SpotiParameters.DeviceVolumePercent, device.GetProperty("volume_percent").GetInt32());
             }
 
             // --- Shuffle and Smart Shuffle ---
             if (state.TryGetProperty("shuffle_state", out JsonElement shuffle))
             {
                 spotifyRequestContext.ShuffleState = shuffle.GetBoolean();
+                SetParameterSafe(SpotiParameters.ShuffleEnabled, state.GetProperty("shuffle_state").GetBoolean());
                 LogDebug($"Shuffle state: {spotifyRequestContext.ShuffleState}");
-                SetVariableValue("ShuffleState", spotifyRequestContext.ShuffleState);
+
             }
             if (state.TryGetProperty("smart_shuffle", out JsonElement smartShuffle))
             {
                 spotifyRequestContext.SmartShuffle = smartShuffle.GetBoolean();
-                LogDebug($"Smart Shuffle state: {spotifyRequestContext.SmartShuffle}");
-                SetVariableValue("SmartShuffle", spotifyRequestContext.SmartShuffle);
+                SetParameterSafe(SpotiParameters.SmartShuffle, state.GetProperty("smart_shuffle").GetBoolean());
+                LogDebug($"Smart Shuffle state: {spotifyRequestContext.SmartShuffle}");                
             }
 
             // --- Repeat state ---
             if (state.TryGetProperty("repeat_state", out JsonElement repeat))
             {
                 spotifyRequestContext.RepeatState = repeat.GetString();
-                LogDebug($"Repeat state: {spotifyRequestContext.RepeatState}");
-                SetVariableValue("RepeatState", spotifyRequestContext.RepeatState);
+                string repeatStr = state.GetProperty("repeat_state").GetString();
+                int repeatMapped = repeatStr == "off" ? 0 : (repeatStr == "track" ? 1 : 2);
+                SetParameterSafe(SpotiParameters.RepeatMode, repeatMapped);
+                LogDebug($"Repeat state: {spotifyRequestContext.RepeatState}");                
             }
 
             // --- Timestamp and progress ---
             if (state.TryGetProperty("timestamp", out JsonElement timestamp))
             {
                 spotifyRequestContext.Timestamp = timestamp.GetInt64();
-                LogDebug($"Timestamp: {spotifyRequestContext.Timestamp}");
-                SetVariableValue("Timestamp", spotifyRequestContext.Timestamp.ToString());
+                int ts = (int)(state.GetProperty("timestamp").GetInt64() % int.MaxValue);
+                SetParameterSafe(SpotiParameters.Timestamp, ts);
+                SetParameterSafe(SpotiParameters.PlaybackPosition, state.GetProperty("progress_ms").GetInt32());
+                SetParameterSafe(SpotiParameters.IsPlaying, state.GetProperty("is_playing").GetBoolean());
+                LogDebug($"Timestamp: {spotifyRequestContext.Timestamp}");                
             }
             if (state.TryGetProperty("progress_ms", out JsonElement progress))
             {
                 spotifyRequestContext.ProgressMs = progress.GetInt32();
-                LogDebug($"Progress: {spotifyRequestContext.ProgressMs}");
-                SetVariableValue("ProgressMs", spotifyRequestContext.ProgressMs);
+                LogDebug($"Progress: {spotifyRequestContext.ProgressMs}");                
             }
 
             // --- Context details ---
@@ -870,27 +925,26 @@ namespace YeusepesModules.SPOTIOSC
                     extUrls.TryGetProperty("spotify", out JsonElement contextSpotify))
                 {
                     spotifyRequestContext.ContextExternalUrl = contextSpotify.GetString();
-                    LogDebug($"Context external URL: {spotifyRequestContext.ContextExternalUrl}");
-                    SetVariableValue("ContextExternalUrl", spotifyRequestContext.ContextExternalUrl);
+                    LogDebug($"Context external URL: {spotifyRequestContext.ContextExternalUrl}");                    
                 }
                 if (contextElement.TryGetProperty("href", out JsonElement contextHref))
                 {
                     spotifyRequestContext.ContextHref = contextHref.GetString();
-                    LogDebug($"Context href: {spotifyRequestContext.ContextHref}");
-                    SetVariableValue("ContextHref", spotifyRequestContext.ContextHref);
+                    LogDebug($"Context href: {spotifyRequestContext.ContextHref}");                    
                 }
                 if (contextElement.TryGetProperty("type", out JsonElement contextType))
                 {
                     spotifyRequestContext.ContextType = contextType.GetString();
-                    LogDebug($"Context type: {spotifyRequestContext.ContextType}");
-                    SetVariableValue("ContextType", spotifyRequestContext.ContextType);
+                    int ctxMapped = contextType.GetString() == "playlist" ? 0 : -1;
+                    SetParameterSafe(SpotiParameters.ContextType, ctxMapped);
+                    LogDebug($"Context type: {spotifyRequestContext.ContextType}");                    
                 }
                 if (contextElement.TryGetProperty("uri", out JsonElement contextUri))
                 {
                     spotifyRequestContext.ContextUri = contextUri.GetString();
-                    LogDebug($"Context URI: {spotifyRequestContext.ContextUri}");
-                    SetVariableValue("ContextUri", spotifyRequestContext.ContextUri);
+                    LogDebug($"Context URI: {spotifyRequestContext.ContextUri}");                    
                 }
+
             }
 
             // --- Playing status ---
@@ -912,13 +966,6 @@ namespace YeusepesModules.SPOTIOSC
             TriggerEvent("ShuffleEvent");
             TriggerEvent("RepeatEvent");
             TriggerEvent("VolumeEvent");
-
-            // --- Update states for each group ---
-            ChangeState("DeviceState");
-            ChangeState("ShuffleState");
-            ChangeState("RepeatState");
-            ChangeState("PlaybackProgressState");
-            ChangeState("ContextState");
         }
 
 
@@ -930,8 +977,7 @@ namespace YeusepesModules.SPOTIOSC
                 return;
 
             // --- Track basic info ---
-            spotifyRequestContext.TrackName = item.GetProperty("name").GetString();
-            SetVariableValue("TrackName", spotifyRequestContext.TrackName);
+            spotifyRequestContext.TrackName = item.GetProperty("name").GetString();            
 
             // --- Track Artist ---
             if (item.TryGetProperty("artists", out JsonElement artistsElement))
@@ -939,11 +985,9 @@ namespace YeusepesModules.SPOTIOSC
                 spotifyRequestContext.Artists = artistsElement.EnumerateArray()
                     .Select(artist => (artist.GetProperty("name").GetString(), artist.GetProperty("uri").GetString()))
                     .ToList();
-                string artistsCombined = string.Join(", ", spotifyRequestContext.Artists);
-                SetVariableValue("Artists", artistsCombined);
+                string artistsCombined = string.Join(", ", spotifyRequestContext.Artists);                
                 LogDebug($"Artists: {artistsCombined}");
-                string mainArtist = spotifyRequestContext.Artists.FirstOrDefault().Item1;
-                SetVariableValue("TrackArtist", mainArtist);
+                string mainArtist = spotifyRequestContext.Artists.FirstOrDefault().Item1;                
                 LogDebug($"Main Artist: {mainArtist}");
             }
 
@@ -951,49 +995,52 @@ namespace YeusepesModules.SPOTIOSC
             if (item.TryGetProperty("duration_ms", out JsonElement duration))
             {
                 spotifyRequestContext.TrackDurationMs = duration.GetInt32();
-                SetVariableValue("TrackDurationMs", spotifyRequestContext.TrackDurationMs);
+                SetParameterSafe(SpotiParameters.TrackDurationMs, duration.GetInt32());
                 LogDebug($"Track duration: {spotifyRequestContext.TrackDurationMs}");
             }
             if (item.TryGetProperty("disc_number", out JsonElement disc))
             {
                 spotifyRequestContext.DiscNumber = disc.GetInt32();
-                SetVariableValue("DiscNumber", spotifyRequestContext.DiscNumber);
+                SetParameterSafe(SpotiParameters.DiscNumber, disc.GetInt32());
                 LogDebug($"Disc number: {spotifyRequestContext.DiscNumber}");
             }
             if (item.TryGetProperty("explicit", out JsonElement explicitElem))
             {
                 spotifyRequestContext.IsExplicit = explicitElem.GetBoolean();
-                SetVariableValue("IsExplicit", spotifyRequestContext.IsExplicit);
+                SetParameterSafe(SpotiParameters.IsExplicit, explicitElem.GetBoolean());
                 LogDebug($"Explicit: {spotifyRequestContext.IsExplicit}");
+            }
+            if (item.TryGetProperty("is_local", out JsonElement isLocal))
+            {
+                spotifyRequestContext.IsLocal = isLocal.GetBoolean();
+                SetParameterSafe(SpotiParameters.IsLocal, isLocal.GetBoolean());
+                LogDebug($"Is local: {spotifyRequestContext.IsLocal}");
             }
             if (item.TryGetProperty("popularity", out JsonElement popularity))
             {
                 spotifyRequestContext.Popularity = popularity.GetInt32();
-                SetVariableValue("Popularity", spotifyRequestContext.Popularity);
+                SetParameterSafe(SpotiParameters.SongPopularity, popularity.GetInt32());
                 LogDebug($"Popularity: {spotifyRequestContext.Popularity}");
             }
             if (item.TryGetProperty("preview_url", out JsonElement previewUrl))
             {
-                spotifyRequestContext.PreviewUrl = previewUrl.GetString();
-                SetVariableValue("PreviewUrl", spotifyRequestContext.PreviewUrl);
+                spotifyRequestContext.PreviewUrl = previewUrl.GetString();                
                 LogDebug($"Preview URL: {spotifyRequestContext.PreviewUrl}");
             }
             if (item.TryGetProperty("track_number", out JsonElement trackNumber))
             {
                 spotifyRequestContext.TrackNumber = trackNumber.GetInt32();
-                SetVariableValue("TrackNumber", spotifyRequestContext.TrackNumber);
+                SetParameterSafe(SpotiParameters.TrackNumber, trackNumber.GetInt32());
                 LogDebug($"Track number: {spotifyRequestContext.TrackNumber}");
             }
             if (item.TryGetProperty("uri", out JsonElement trackUri))
             {
-                spotifyRequestContext.TrackUri = trackUri.GetString();
-                SetVariableValue("TrackUri", spotifyRequestContext.TrackUri);
+                spotifyRequestContext.TrackUri = trackUri.GetString();                
                 LogDebug($"Track URI: {spotifyRequestContext.TrackUri}");
             }
             if (item.TryGetProperty("currently_playing_type", out JsonElement playingType))
             {
-                spotifyRequestContext.CurrentlyPlayingType = playingType.GetString();
-                SetVariableValue("CurrentlyPlayingType", spotifyRequestContext.CurrentlyPlayingType);
+                spotifyRequestContext.CurrentlyPlayingType = playingType.GetString();                
                 LogDebug($"Currently playing type: {spotifyRequestContext.CurrentlyPlayingType}");
             }
 
@@ -1001,37 +1048,35 @@ namespace YeusepesModules.SPOTIOSC
             if (item.TryGetProperty("album", out JsonElement album))
             {
                 spotifyRequestContext.AlbumName = album.GetProperty("name").GetString();
-                LogDebug($"Album name: {spotifyRequestContext.AlbumName}");
-                SetVariableValue("AlbumName", spotifyRequestContext.AlbumName);
+                LogDebug($"Album name: {spotifyRequestContext.AlbumName}");                
                 if (album.TryGetProperty("images", out JsonElement images))
                 {
                     var imageUrl = images.EnumerateArray().FirstOrDefault().GetProperty("url").GetString();
                     spotifyRequestContext.AlbumArtworkUrl = imageUrl;
-                    LogDebug($"Album artwork URL: {imageUrl}");
-                    SetVariableValue("AlbumArtworkUrl", imageUrl);
+                    LogDebug($"Album artwork URL: {imageUrl}");                    
                 }
                 if (album.TryGetProperty("album_type", out JsonElement albumType))
                 {
                     spotifyRequestContext.AlbumType = albumType.GetString();
-                    LogDebug($"Album type: {spotifyRequestContext.AlbumType}");
-                    SetVariableValue("AlbumType", spotifyRequestContext.AlbumType);
+                    // Map "single" to 0, "album" to 1, otherwise 2.
+                    string typeStr = albumType.GetString();
+                    int albumTypeMapped = typeStr == "single" ? 0 : (typeStr == "album" ? 1 : 2);
+                    SetParameterSafe(SpotiParameters.AlbumType, albumTypeMapped);
+                    LogDebug($"Album type: {spotifyRequestContext.AlbumType}");                    
                 }
                 if (album.TryGetProperty("release_date", out JsonElement releaseDate))
                 {
                     spotifyRequestContext.AlbumReleaseDate = releaseDate.GetString();
-                    LogDebug($"Album release date: {spotifyRequestContext.AlbumReleaseDate}");
-                    SetVariableValue("AlbumReleaseDate", spotifyRequestContext.AlbumReleaseDate);
+                    LogDebug($"Album release date: {spotifyRequestContext.AlbumReleaseDate}");                    
                 }
                 if (album.TryGetProperty("total_tracks", out JsonElement totalTracks))
                 {
                     spotifyRequestContext.AlbumTotalTracks = totalTracks.GetInt32();
-                    LogDebug($"Album total tracks: {spotifyRequestContext.AlbumTotalTracks}");
-                    SetVariableValue("AlbumTotalTracks", spotifyRequestContext.AlbumTotalTracks);
+                    SetParameterSafe(SpotiParameters.AlbumTotalTracks, totalTracks.GetInt32());
+                    LogDebug($"Album total tracks: {spotifyRequestContext.AlbumTotalTracks}");                    
                 }
             }
-
-            // --- Finally, update track state and trigger track change event ---
-            ChangeState("TrackInfoState");
+            
             TriggerEvent("TrackChangedEvent");
         }
 
@@ -1269,126 +1314,107 @@ namespace YeusepesModules.SPOTIOSC
             }
         }
 
+        // -- Switching logic: choose the state based on several booleans.
+        private void setState()
+        {
+            if (spotifyRequestContext.IsInJam)
+            {
+                if (spotifyRequestContext.IsPlaying)
+                {
+                    if (spotifyRequestContext.IsExplicit)
+                    {
+                        if (spotifyRequestContext.ShuffleState)
+                            ChangeState("Playing_Jam_Explicit_Shuffle");
+                        else
+                            ChangeState("Playing_Jam_Explicit_NoShuffle");
+                    }
+                    else
+                    {
+                        if (spotifyRequestContext.ShuffleState)
+                            ChangeState("Playing_Jam_Clean_Shuffle");
+                        else
+                            ChangeState("Playing_Jam_Clean_NoShuffle");
+                    }
+                }
+                else
+                {
+                    ChangeState("Paused_Jam");
+                }
+            }
+            else // not in a jam
+            {
+                if (spotifyRequestContext.IsPlaying)
+                {
+                    if (spotifyRequestContext.IsExplicit)
+                    {
+                        if (spotifyRequestContext.ShuffleState)
+                            ChangeState("Playing_Explicit_Shuffle");
+                        else
+                            ChangeState("Playing_Explicit_NoShuffle");
+                    }
+                    else
+                    {
+                        if (spotifyRequestContext.ShuffleState)
+                            ChangeState("Playing_Clean_Shuffle");
+                        else
+                            ChangeState("Playing_Clean_NoShuffle");
+                    }
+                }
+                else
+                {
+                    ChangeState("Paused_Normal");
+                }
+            }
+        }
+
+        // -- ChatBoxUpdate: update all variables, then call setState() once.
         [ModuleUpdate(ModuleUpdateMode.ChatBox)]
         private void ChatBoxUpdate()
         {
-            LogDebug("ChatBoxUpdate is running.");
+            // Update device info
+            SetVariableValue("DeviceId", spotifyRequestContext.DeviceId);
+            SetVariableValue("DeviceName", spotifyRequestContext.DeviceName);
+            SetVariableValue("IsActiveDevice", spotifyRequestContext.IsActiveDevice);
+            SetVariableValue("VolumePercent", spotifyRequestContext.VolumePercent);
 
-            if (spotifyRequestContext == null)
-            {
-                Log("SpotifyRequestContext is not initialized yet.");
-                return;
-            }
+            // Update context info
+            SetVariableValue("ContextExternalUrl", spotifyRequestContext.ContextExternalUrl);
+            SetVariableValue("ContextHref", spotifyRequestContext.ContextHref);
+            SetVariableValue("ContextType", spotifyRequestContext.ContextType);
+            SetVariableValue("ContextUri", spotifyRequestContext.ContextUri);
 
-            // --- Update Device Info ---
-            try
-            {
-                // Update Device ID
-                SetVariableValue("DeviceId", spotifyRequestContext.DeviceId);
-                SetVariableValue("DeviceName", spotifyRequestContext.DeviceName);
-                // Update Active Device flag
-                SetVariableValue("IsActiveDevice", spotifyRequestContext.IsActiveDevice);
-                // Update Volume Percent
-                SetVariableValue("VolumePercent", spotifyRequestContext.VolumePercent);
+            // Update media info
+            SetVariableValue("TrackName", spotifyRequestContext.TrackName);
+            SetVariableValue("TrackArtist", spotifyRequestContext.Artists.FirstOrDefault().Name ?? string.Empty);
+            SetVariableValue("TrackDurationMs", spotifyRequestContext.TrackDurationMs);
+            SetVariableValue("DiscNumber", spotifyRequestContext.DiscNumber);
+            SetVariableValue("IsExplicit", spotifyRequestContext.IsExplicit);
+            SetVariableValue("Popularity", spotifyRequestContext.Popularity);
+            SetVariableValue("TrackNumber", spotifyRequestContext.TrackNumber);
+            SetVariableValue("TrackUri", spotifyRequestContext.TrackUri);
+            SetVariableValue("CurrentlyPlayingType", spotifyRequestContext.CurrentlyPlayingType);
 
-            }
-            catch (Exception ex)
-            {
-                LogDebug("Error updating Device Info: " + ex.Message);
-            }
+            SetVariableValue("AlbumName", spotifyRequestContext.AlbumName);
+            SetVariableValue("AlbumArtworkUrl", spotifyRequestContext.AlbumArtworkUrl);
+            SetVariableValue("AlbumType", spotifyRequestContext.AlbumType);
+            SetVariableValue("AlbumReleaseDate", spotifyRequestContext.AlbumReleaseDate);
+            SetVariableValue("AlbumTotalTracks", spotifyRequestContext.AlbumTotalTracks);
 
-            // --- Update Playback State ---
-            try
-            {
-                // Update Shuffle state
-                SetVariableValue("ShuffleState", spotifyRequestContext.ShuffleState);
-                // Update Repeat state
-                SetVariableValue("RepeatState", spotifyRequestContext.RepeatState);
-                // Update Timestamp (as string)
-                SetVariableValue("Timestamp", spotifyRequestContext.Timestamp.ToString());
-                // Update Progress (ms)
-                SetVariableValue("ProgressMs", spotifyRequestContext.ProgressMs);
-                // Update Context details
-                SetVariableValue("ContextExternalUrl", spotifyRequestContext.ContextExternalUrl);
-                SetVariableValue("ContextHref", spotifyRequestContext.ContextHref);
-                SetVariableValue("ContextType", spotifyRequestContext.ContextType);
-                SetVariableValue("ContextUri", spotifyRequestContext.ContextUri);
-            }
-            catch (Exception ex)
-            {
-                LogDebug("Error updating Playback State: " + ex.Message);
-            }
+            SetVariableValue("ShuffleState", spotifyRequestContext.ShuffleState);
+            SetVariableValue("SmartShuffle", spotifyRequestContext.SmartShuffle);
+            SetVariableValue("RepeatState", spotifyRequestContext.RepeatState);
+            SetVariableValue("Timestamp", spotifyRequestContext.Timestamp.ToString());
+            SetVariableValue("ProgressMs", spotifyRequestContext.ProgressMs);
 
-            // --- Update Track Information ---
-            try
-            {
-                string value = string.IsNullOrEmpty(spotifyRequestContext.TrackName)
-                        ? "No Track"
-                        : spotifyRequestContext.TrackName;
-                SetVariableValue("TrackName", value);
-                // Update Track Artist
-                string artists = (spotifyRequestContext.Artists != null && spotifyRequestContext.Artists.Any())
-                    ? string.Join(", ", spotifyRequestContext.Artists.Select(a => a.Name))
-                    : "Unknown Artist";
-                SetVariableValue("TrackArtist", artists);
-                // Update Track Duration
-                SetVariableValue("TrackDurationMs", spotifyRequestContext.TrackDurationMs);
-                // Update Disc Number
-                SetVariableValue("DiscNumber", spotifyRequestContext.DiscNumber);
-                // Update Explicit flag
-                SetVariableValue("IsExplicit", spotifyRequestContext.IsExplicit);
-                // Update Popularity
-                SetVariableValue("Popularity", spotifyRequestContext.Popularity);
-                // Update Preview URL
-                SetVariableValue("PreviewUrl", spotifyRequestContext.PreviewUrl);
-                // Update Track Number
-                SetVariableValue("TrackNumber", spotifyRequestContext.TrackNumber);
-                // Update Track URI
-                SetVariableValue("TrackUri", spotifyRequestContext.TrackUri);
-                // Update Playing Type
-                SetVariableValue("CurrentlyPlayingType", spotifyRequestContext.CurrentlyPlayingType);
-            }
-            catch (Exception ex)
-            {
-                LogDebug("Error updating Track Information: " + ex.Message);
-            }
+            // Update artists info
+            SetVariableValue("Artists", string.Join(", ", spotifyRequestContext.Artists.Select(a => a.Name)));
 
-            // --- Update Album Information ---
-            try
-            {
-                SetVariableValue("AlbumName", spotifyRequestContext.AlbumName);
-                SetVariableValue("AlbumArtworkUrl", spotifyRequestContext.AlbumArtworkUrl);
-                SetVariableValue("AlbumType", spotifyRequestContext.AlbumType);
-                SetVariableValue("AlbumReleaseDate", spotifyRequestContext.AlbumReleaseDate);
-                SetVariableValue("AlbumTotalTracks", spotifyRequestContext.AlbumTotalTracks);
-            }
-            catch (Exception ex)
-            {
-                LogDebug("Error updating Album Information: " + ex.Message);
-            }
+            // Update jam state
+            SetVariableValue("InAJam", spotifyRequestContext.IsInJam);
 
-            // --- Update Artists (combined) ---
-            try
-            {
-                // Assuming your context holds a list of artist names
-                string artists = (spotifyRequestContext.Artists != null && spotifyRequestContext.Artists.Any())
-                    ? string.Join(", ", spotifyRequestContext.Artists.Select(a => a.Name))
-                    : "Unknown Artist";
-                SetVariableValue("Artists", artists);
-            }
-            catch (Exception ex)
-            {
-                LogDebug("Error updating Artists: " + ex.Message);
-            }
-
-            UpdateModuleStates();
+            // Switch state (only one ChangeState call)
+            setState();
         }
-
-
-
-
-
-
 
         // Async version for asynchronous methods.
         private async Task ExecuteWithErrorHandlingAsync(Func<Task> asyncAction)
