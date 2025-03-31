@@ -74,6 +74,33 @@ namespace YeusepesModules.SPOTIOSC
             AvailableDevices
         }
 
+        // Define an enum for your state groups.
+        private enum SpotiState
+        {
+            DeviceState,
+            ShuffleState,
+            RepeatState,
+            PlaybackProgressState,
+            ContextState,
+            TrackInfoState,
+            AlbumInfoState,
+            ArtistInfoState,
+            JamState
+        }
+
+        // Map each enum value to the corresponding state key used in CreateState.
+        private readonly Dictionary<SpotiState, string> stateMapping = new Dictionary<SpotiState, string>
+        {
+        { SpotiState.DeviceState, "DeviceState" },
+        { SpotiState.ShuffleState, "ShuffleState" },
+        { SpotiState.RepeatState, "RepeatState" },
+        { SpotiState.PlaybackProgressState, "PlaybackProgressState" },
+        { SpotiState.ContextState, "ContextState" },
+        { SpotiState.TrackInfoState, "TrackInfoState" },
+        { SpotiState.AlbumInfoState, "AlbumInfoState" },
+        { SpotiState.ArtistInfoState, "ArtistInfoState" },
+        { SpotiState.JamState, "JamState" }
+        };
 
         protected override void OnPreLoad()
         {
@@ -260,10 +287,60 @@ namespace YeusepesModules.SPOTIOSC
             CreateEvent("RepeatEvent", "Repeat Event", "Repeat mode set to {0}.", new[] { repeatStateVar });
             CreateEvent("ShuffleEvent", "Shuffle Event", "Shuffle is {0}.", new[] { shuffleStateVar });
 
+            // Create a clip variable for Jam status
+            var inAJamVar = CreateVariable<bool>("InAJam", "In a Jam");
+
+            // Create a state to display the jam status
+            CreateState("JamState", "Jam State",
+                "In a Jam: {0}",
+                new[] { inAJamVar });
+
+            // Register a dedicated Jam event
+            CreateEvent("JamEvent", "Jam Event",
+                "Jam status updated: {0}",
+                new[] { inAJamVar });
+
+
             base.OnPostLoad();
         }
 
+        /// <summary>
+        /// Updates all of the module's state displays based on the current context.
+        /// </summary>
+        private void UpdateModuleStates()
+        {
+            // Always update the device state.
+            ChangeState(stateMapping[SpotiState.DeviceState]);
 
+            // Update other state groups that show fixed information.
+            ChangeState(stateMapping[SpotiState.ShuffleState]);
+            ChangeState(stateMapping[SpotiState.RepeatState]);
+            ChangeState(stateMapping[SpotiState.PlaybackProgressState]);
+            ChangeState(stateMapping[SpotiState.ContextState]);
+
+            // Update track info and trigger play/pause events based on playback status.
+            if (spotifyRequestContext.IsPlaying)
+            {
+                ChangeState(stateMapping[SpotiState.TrackInfoState]);
+                TriggerEvent("PlayEvent");
+            }
+            else
+            {
+                ChangeState(stateMapping[SpotiState.TrackInfoState]);
+                TriggerEvent("PauseEvent");
+            }
+
+            // Update album and artist info states.
+            ChangeState(stateMapping[SpotiState.AlbumInfoState]);
+            ChangeState(stateMapping[SpotiState.ArtistInfoState]);
+
+            // Update Jam state and trigger an event if in a jam.
+            if (spotifyRequestContext.IsInJam)
+            {
+                ChangeState(stateMapping[SpotiState.JamState]);
+                TriggerEvent("JamEvent");
+            }
+        }
 
         protected override async Task<bool> OnModuleStart()
         {
@@ -613,9 +690,6 @@ namespace YeusepesModules.SPOTIOSC
             }
 
             UpdateSessionDetails(session);
-
-            // Trigger jam events after session details are updated.
-            TriggerEvent(SpotiParameters.InAJam);
         }
 
         private void UpdateSessionDetails(JsonElement session)
@@ -649,12 +723,20 @@ namespace YeusepesModules.SPOTIOSC
                     SpotifyJamRequests._isInJam = true;
                     spotifyRequestContext.IsInJam = true;
                     SendParameter(SpotiParameters.InAJam, true);
+
+                    // Update the Jam state variable and trigger the Jam event.
+                    SetVariableValue("InAJam", true);
+                    TriggerEvent("JamEvent");
                 }
                 else
                 {
                     SpotifyJamRequests._isInJam = false;
                     spotifyRequestContext.IsInJam = false;
                     SendParameter(SpotiParameters.InAJam, false);
+
+                    // Update the Jam state variable and trigger the Jam event.
+                    SetVariableValue("InAJam", false);
+                    TriggerEvent("JamEvent");
                 }
 
                 // Extract session owner and images
@@ -1298,6 +1380,8 @@ namespace YeusepesModules.SPOTIOSC
             {
                 LogDebug("Error updating Artists: " + ex.Message);
             }
+
+            UpdateModuleStates();
         }
 
 

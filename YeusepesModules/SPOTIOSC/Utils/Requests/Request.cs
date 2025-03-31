@@ -47,6 +47,34 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
             }
 
             return request;
+
+        }
+
+        /// <summary>
+        /// Clones an HttpRequestMessage by copying its method, URI, headers, and content.
+        /// </summary>
+        private async Task<HttpRequestMessage> CloneRequestAsync(HttpRequestMessage request)
+        {
+            var clone = new HttpRequestMessage(request.Method, request.RequestUri);
+
+            // Copy headers
+            foreach (var header in request.Headers)
+            {
+                clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+
+            // Copy content (if any)
+            if (request.Content != null)
+            {
+                var contentBytes = await request.Content.ReadAsByteArrayAsync();
+                var contentClone = new ByteArrayContent(contentBytes);
+                foreach (var header in request.Content.Headers)
+                {
+                    contentClone.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                }
+                clone.Content = contentClone;
+            }
+            return clone;
         }
 
         public async Task<string> SendAsync(HttpRequestMessage request)
@@ -55,11 +83,16 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
             int attempt = 0;
             HttpResponseMessage response = null;
 
+            // Store the original request for cloning on retries.
+            var originalRequest = request;
+            // Create a fresh clone for the first attempt.
+            var clonedRequest = await CloneRequestAsync(originalRequest);
+
             while (attempt <= maxRetries)
             {
-                response = await HttpClient.SendAsync(request);
+                response = await HttpClient.SendAsync(clonedRequest);
 
-                // If response is not unauthorized, break out.
+                // If the response is not unauthorized, break out.
                 if (response.StatusCode != HttpStatusCode.Unauthorized)
                     break;
 
@@ -67,18 +100,15 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
                 bool tokenRefreshed = await RefreshAccessTokenAsync();
                 if (tokenRefreshed)
                 {
-                    // Update the request's Authorization header with the new token.
-                    request.Headers.Remove("Authorization");
-                    request.Headers.Add("Authorization", $"Bearer {CredentialManager.LoadAccessToken()}");
-
+                    // Recreate the request with the updated token.
+                    clonedRequest = await CloneRequestAsync(originalRequest);
+                    clonedRequest.Headers.Remove("Authorization");
+                    clonedRequest.Headers.Add("Authorization", $"Bearer {CredentialManager.LoadAccessToken()}");
                     attempt++;
-                    // Optionally, you might want to recreate the request if it's non-reusable.
                     continue;
                 }
                 else
                 {
-                    // If token refresh fails, prompt the user to sign in.
-                    // You can throw an exception or return an error message here.
                     throw new UnauthorizedAccessException("Token refresh failed. Please sign in again.");
                 }
             }
@@ -86,6 +116,7 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
             response.EnsureSuccessStatusCode();
             return await response.Content.ReadAsStringAsync();
         }
+
 
 
 
@@ -251,8 +282,18 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
             }
             catch (Exception ex)
             {
+                // Check if the error message matches the expected JSON token error.
+                if (ex.Message.Contains("The input does not contain any JSON tokens"))
+                {
+                    // Optionally log that the error was ignored.
+                    utilities.LogDebug("Ignored JSON token error while fetching playback state.");
+                    return; // Ignore the error.
+                }
+
+                // Log any other exceptions.
                 utilities.Log($"An error occurred while fetching playback state: {ex.Message}");
             }
+
         }
 
 
@@ -260,25 +301,12 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
         {
             try
             {
-                ////Logger.Log("Starting full token flow to refresh access token...");
                 await CredentialManager.AuthenticateAsync();
-
-                // Check if a new access token was loaded
                 string newAccessToken = CredentialManager.LoadAccessToken();
-                if (!string.IsNullOrEmpty(newAccessToken))
-                {
-                    ////Logger.Log("Access token successfully refreshed and loaded.");
-                    return true;
-                }
-                else
-                {
-                    ////Logger.Log("Failed to load refreshed access token.");
-                    return false;
-                }
+                return !string.IsNullOrEmpty(newAccessToken);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                ////Logger.Log($"Error while refreshing access token: {ex.Message}");
                 return false;
             }
         }

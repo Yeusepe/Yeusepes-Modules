@@ -415,8 +415,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                     if (e.Response.Url.Contains("access_token") &&
                         e.Response.Status == System.Net.HttpStatusCode.OK)
                     {
-                        string responseBody = await e.Response.TextAsync();
-                        SpotifyUtils?.Log($"JSON response captured: {responseBody}");
+                        string responseBody = await e.Response.TextAsync();                        
 
                         try
                         {
