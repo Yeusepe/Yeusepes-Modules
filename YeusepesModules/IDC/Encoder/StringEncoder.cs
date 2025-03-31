@@ -40,7 +40,7 @@ namespace YeusepesModules.IDC.Encoder
         )
         {
             // Register the tolerance setting with a default value of 100.
-            CreateTextBox(EncoderSettings.Tolerance, "Tolerance", "Tolerance value for image filtering", 100.ToString());
+            CreateTextBox(EncoderSettings.Tolerance, "Tolerance", "Tolerance value for image filtering", 3.ToString());
 
             // Save the provided dependencies.
             this.encodingUtilities = encodingUtilities;
