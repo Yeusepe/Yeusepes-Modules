@@ -45,7 +45,7 @@ namespace YeusepesModules.SPOTIOSC
         private readonly object _deduplicationLock = new();
 
         public ScreenUtilities screenUtilities;
-        
+
         private CancellationTokenSource _cts = new CancellationTokenSource();
 
         public enum SpotiSettings
@@ -76,8 +76,8 @@ namespace YeusepesModules.SPOTIOSC
 
 
         protected override void OnPreLoad()
-        {            
-            YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("libusb-1.0.dll", message => Log(message));                               
+        {
+            YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("libusb-1.0.dll", message => Log(message));
             YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("cvextern.dll", message => Log(message));
             screenUtilities = ScreenUtilities.EnsureInitialized(
                 LogDebug,         // Logging delegate
@@ -85,7 +85,7 @@ namespace YeusepesModules.SPOTIOSC
                 SetSettingValue,  // Function to save settings
                 CreateTextBox,    // Function to create a text box
                 (parameter, name, mode, title, description) =>
-                {                    
+                {
                     RegisterParameter<bool>(parameter, name, mode, title, description);
                 }
             );
@@ -159,7 +159,7 @@ namespace YeusepesModules.SPOTIOSC
                     typeof(SignIn),
                     true
                 )
-            );            
+            );
             #endregion
 
 
@@ -190,7 +190,7 @@ namespace YeusepesModules.SPOTIOSC
             var shuffleStateVar = CreateVariable<bool>("ShuffleState", "Shuffle");
             var smartShuffleVar = CreateVariable<bool>("SmartShuffle", "Smart Shuffle");
             var repeatStateVar = CreateVariable<string>("RepeatState", "Repeat Mode");
-            var timestampVar = CreateVariable<string>("Timestamp", "Timestamp"); 
+            var timestampVar = CreateVariable<string>("Timestamp", "Timestamp");
             var progressMsVar = CreateVariable<int>("ProgressMs", "Progress (ms)");
 
             // Create clip variables for context details
@@ -221,7 +221,7 @@ namespace YeusepesModules.SPOTIOSC
 
             // Create clip variable for artists (combined)
             var artistsVar = CreateVariable<string>("Artists", "Artists");
-            
+
             // Device info state
             CreateState("DeviceState", "Device State",
                 "ID: {0}, Name: {1}, Active: {2}, Volume: {3}%",
@@ -255,7 +255,7 @@ namespace YeusepesModules.SPOTIOSC
             // --- Events for changes ---            
             CreateEvent("PlayEvent", "Play Event", "Playback started: {0}", new[] { trackNameVar });
             CreateEvent("PauseEvent", "Pause Event", "Playback paused: {0}", new[] { trackNameVar });
-            CreateEvent("TrackChangedEvent", "Track Changed Event", "Now playing: {0}", new[] { trackNameVar });            
+            CreateEvent("TrackChangedEvent", "Track Changed Event", "Now playing: {0}", new[] { trackNameVar });
             CreateEvent("VolumeEvent", "Volume Event", "Volume changed to {0}%.", new[] { volumePercentVar });
             CreateEvent("RepeatEvent", "Repeat Event", "Repeat mode set to {0}.", new[] { repeatStateVar });
             CreateEvent("ShuffleEvent", "Shuffle Event", "Shuffle is {0}.", new[] { shuffleStateVar });
@@ -276,7 +276,7 @@ namespace YeusepesModules.SPOTIOSC
             }
 
             encodingUtilities.IsDebug = SettingsManager.GetInstance().GetValue<bool>(VRCOSCSetting.EnableAppDebug);
-            
+
             Log("Starting Spotify Cookie Manager...");
 
             // Validate tokens and fetch profile
@@ -301,9 +301,9 @@ namespace YeusepesModules.SPOTIOSC
                     AccessToken = accessToken,
                     ClientToken = clientToken
                 };
-                
+
                 return true;
-            });            
+            });
 
             _playerEventSubscriber = new PlayerEventSubscriber(spotifyUtilities, spotifyRequestContext);
             _playerEventSubscriber.OnPlayerEventReceived += HandlePlayerEvent;
@@ -311,7 +311,7 @@ namespace YeusepesModules.SPOTIOSC
             LogDebug("Starting player event subscription...");
             await _playerEventSubscriber.StartAsync();
             SendParameter(SpotiParameters.Enabled, true);
-            
+
             SendParameter(SpotiParameters.InAJam, false);
             SendParameter(SpotiParameters.IsJamOwner, false);
             SendParameter(SpotiParameters.Error, false);
@@ -322,11 +322,11 @@ namespace YeusepesModules.SPOTIOSC
 
             SendParameter(SpotiParameters.InAJam, false);
             SendParameter(SpotiParameters.IsJamOwner, false);
-            SendParameter(SpotiParameters.Error, false);     
-                       
+            SendParameter(SpotiParameters.Error, false);
 
 
-            await decoder.OnModuleStart();                        
+
+            await decoder.OnModuleStart();
             return true;
         }
 
@@ -345,8 +345,8 @@ namespace YeusepesModules.SPOTIOSC
                                 // HandleCharIn(parameter.GetValue<int>());
                                 break;
                             case EncodingParameter.Touching:
-                                if(parameter.GetValue<bool>())
-                                {                                    
+                                if (parameter.GetValue<bool>())
+                                {
                                     if (SpotifyJamRequests._isInJam && !string.IsNullOrEmpty(SpotifyJamRequests._joinSessionToken))
                                     {
                                         EncodeAndSendSessionId(SpotifyJamRequests._shareableUrl);
@@ -373,7 +373,7 @@ namespace YeusepesModules.SPOTIOSC
 
             catch (System.Exception ex)
             {
-            }            
+            }
             // Ensure we are processing only relevant parameters
             if (parameter.Lookup is not SpotiParameters param)
             {
@@ -615,7 +615,7 @@ namespace YeusepesModules.SPOTIOSC
             UpdateSessionDetails(session);
 
             // Trigger jam events after session details are updated.
-            TriggerEvent(SpotiParameters.InAJam);            
+            TriggerEvent(SpotiParameters.InAJam);
         }
 
         private void UpdateSessionDetails(JsonElement session)
@@ -640,7 +640,7 @@ namespace YeusepesModules.SPOTIOSC
                 {
                     string joinSessionUri = joinSessionUriElement.GetString();
                     LogDebug($"Extracted join session URI: {joinSessionUri}");
-                    SpotifyJamRequests._shareableUrl = SpotifyJamRequests.GenerateShareableUrlAsync(joinSessionUri, spotifyRequestContext, spotifyUtilities).Result;                    
+                    SpotifyJamRequests._shareableUrl = SpotifyJamRequests.GenerateShareableUrlAsync(joinSessionUri, spotifyRequestContext, spotifyUtilities).Result;
                 }
 
 
@@ -667,7 +667,7 @@ namespace YeusepesModules.SPOTIOSC
                         if (session.TryGetProperty("session_owner_id", out var ownerId) &&
                             member.GetProperty("id").GetString() == ownerId.GetString())
                         {
-                            spotifyRequestContext.JamOwnerName = member.GetProperty("display_name").GetString();                            
+                            spotifyRequestContext.JamOwnerName = member.GetProperty("display_name").GetString();
                             LogDebug($"Updated jam owner: {spotifyRequestContext.JamOwnerName}");
                         }
 
@@ -683,7 +683,7 @@ namespace YeusepesModules.SPOTIOSC
                             images.Add(largeImageUrlProperty.GetString());
                         }
                     }
-                    spotifyRequestContext.JamParticipantImages = images;                   
+                    spotifyRequestContext.JamParticipantImages = images;
                     LogDebug($"Updated participant images: {string.Join(", ", images)}");
                 }
             }
@@ -829,7 +829,7 @@ namespace YeusepesModules.SPOTIOSC
             // --- Trigger other events ---
             TriggerEvent("ShuffleEvent");
             TriggerEvent("RepeatEvent");
-            TriggerEvent("VolumeEvent");                    
+            TriggerEvent("VolumeEvent");
 
             // --- Update states for each group ---
             ChangeState("DeviceState");
@@ -857,7 +857,7 @@ namespace YeusepesModules.SPOTIOSC
                 spotifyRequestContext.Artists = artistsElement.EnumerateArray()
                     .Select(artist => (artist.GetProperty("name").GetString(), artist.GetProperty("uri").GetString()))
                     .ToList();
-                string artistsCombined = string.Join(", ", spotifyRequestContext.Artists);                                
+                string artistsCombined = string.Join(", ", spotifyRequestContext.Artists);
                 SetVariableValue("Artists", artistsCombined);
                 LogDebug($"Artists: {artistsCombined}");
                 string mainArtist = spotifyRequestContext.Artists.FirstOrDefault().Item1;
@@ -1116,7 +1116,7 @@ namespace YeusepesModules.SPOTIOSC
 
             var errorContent = await response.Content.ReadAsStringAsync();
             throw new System.Exception($"API call failed with status code {response.StatusCode}: {errorContent}");
-        }        
+        }
 
         private void SetParameterSafe(Enum parameter, object value)
         {
@@ -1202,29 +1202,13 @@ namespace YeusepesModules.SPOTIOSC
             try
             {
                 // Update Device ID
-                var deviceIdVar = GetVariable("DeviceId");
-                if (deviceIdVar != null)
-                {
-                    SetVariableValue("DeviceId", spotifyRequestContext.DeviceId);
-                }
-                // Update Device Name
-                var deviceNameVar = GetVariable("DeviceName");
-                if (deviceNameVar != null)
-                {
-                    SetVariableValue("DeviceName", spotifyRequestContext.DeviceName);
-                }
+                SetVariableValue("DeviceId", spotifyRequestContext.DeviceId);
+                SetVariableValue("DeviceName", spotifyRequestContext.DeviceName);
                 // Update Active Device flag
-                var isActiveDeviceVar = GetVariable("IsActiveDevice");
-                if (isActiveDeviceVar != null)
-                {
-                    SetVariableValue("IsActiveDevice", spotifyRequestContext.IsActiveDevice);
-                }
+                SetVariableValue("IsActiveDevice", spotifyRequestContext.IsActiveDevice);
                 // Update Volume Percent
-                var volumePercentVar = GetVariable("VolumePercent");
-                if (volumePercentVar != null)
-                {
-                    SetVariableValue("VolumePercent", spotifyRequestContext.VolumePercent);
-                }
+                SetVariableValue("VolumePercent", spotifyRequestContext.VolumePercent);
+
             }
             catch (Exception ex)
             {
@@ -1235,50 +1219,18 @@ namespace YeusepesModules.SPOTIOSC
             try
             {
                 // Update Shuffle state
-                var shuffleVar = GetVariable("ShuffleState");
-                if (shuffleVar != null)
-                {
-                    SetVariableValue("ShuffleState", spotifyRequestContext.ShuffleState);
-                }
+                SetVariableValue("ShuffleState", spotifyRequestContext.ShuffleState);
                 // Update Repeat state
-                var repeatVar = GetVariable("RepeatState");
-                if (repeatVar != null)
-                {
-                    SetVariableValue("RepeatState", spotifyRequestContext.RepeatState);
-                }
+                SetVariableValue("RepeatState", spotifyRequestContext.RepeatState);
                 // Update Timestamp (as string)
-                var timestampVar = GetVariable("Timestamp");
-                if (timestampVar != null)
-                {
-                    SetVariableValue("Timestamp", spotifyRequestContext.Timestamp.ToString());
-                }
+                SetVariableValue("Timestamp", spotifyRequestContext.Timestamp.ToString());
                 // Update Progress (ms)
-                var progressVar = GetVariable("ProgressMs");
-                if (progressVar != null)
-                {
-                    SetVariableValue("ProgressMs", spotifyRequestContext.ProgressMs);
-                }
+                SetVariableValue("ProgressMs", spotifyRequestContext.ProgressMs);
                 // Update Context details
-                var contextUrlVar = GetVariable("ContextExternalUrl");
-                if (contextUrlVar != null)
-                {
-                    SetVariableValue("ContextExternalUrl", spotifyRequestContext.ContextExternalUrl);
-                }
-                var contextHrefVar = GetVariable("ContextHref");
-                if (contextHrefVar != null)
-                {
-                    SetVariableValue("ContextHref", spotifyRequestContext.ContextHref);
-                }
-                var contextTypeVar = GetVariable("ContextType");
-                if (contextTypeVar != null)
-                {
-                    SetVariableValue("ContextType", spotifyRequestContext.ContextType);
-                }
-                var contextUriVar = GetVariable("ContextUri");
-                if (contextUriVar != null)
-                {
-                    SetVariableValue("ContextUri", spotifyRequestContext.ContextUri);
-                }
+                SetVariableValue("ContextExternalUrl", spotifyRequestContext.ContextExternalUrl);
+                SetVariableValue("ContextHref", spotifyRequestContext.ContextHref);
+                SetVariableValue("ContextType", spotifyRequestContext.ContextType);
+                SetVariableValue("ContextUri", spotifyRequestContext.ContextUri);
             }
             catch (Exception ex)
             {
@@ -1288,73 +1240,31 @@ namespace YeusepesModules.SPOTIOSC
             // --- Update Track Information ---
             try
             {
-                // Update Track Name
-                var trackNameVar = GetVariable("TrackName");
-                if (trackNameVar != null)
-                {
-                    string value = string.IsNullOrEmpty(spotifyRequestContext.TrackName)
+                string value = string.IsNullOrEmpty(spotifyRequestContext.TrackName)
                         ? "No Track"
                         : spotifyRequestContext.TrackName;
-                    SetVariableValue("TrackName", value);
-                }
+                SetVariableValue("TrackName", value);
                 // Update Track Artist
-                var trackArtistVar = GetVariable("TrackArtist");
-                if (trackArtistVar != null)
-                {
-                    // Combine artist names if available
-                    string artists = (spotifyRequestContext.Artists != null && spotifyRequestContext.Artists.Any())
-                        ? string.Join(", ", spotifyRequestContext.Artists.Select(a => a.Name))
-                        : "Unknown Artist";
-                    SetVariableValue("TrackArtist", artists);
-                }
+                string artists = (spotifyRequestContext.Artists != null && spotifyRequestContext.Artists.Any())
+                    ? string.Join(", ", spotifyRequestContext.Artists.Select(a => a.Name))
+                    : "Unknown Artist";
+                SetVariableValue("TrackArtist", artists);
                 // Update Track Duration
-                var trackDurationVar = GetVariable("TrackDurationMs");
-                if (trackDurationVar != null)
-                {
-                    SetVariableValue("TrackDurationMs", spotifyRequestContext.TrackDurationMs);
-                }
+                SetVariableValue("TrackDurationMs", spotifyRequestContext.TrackDurationMs);
                 // Update Disc Number
-                var discNumberVar = GetVariable("DiscNumber");
-                if (discNumberVar != null)
-                {
-                    SetVariableValue("DiscNumber", spotifyRequestContext.DiscNumber);
-                }
+                SetVariableValue("DiscNumber", spotifyRequestContext.DiscNumber);
                 // Update Explicit flag
-                var isExplicitVar = GetVariable("IsExplicit");
-                if (isExplicitVar != null)
-                {
-                    SetVariableValue("IsExplicit", spotifyRequestContext.IsExplicit);
-                }
+                SetVariableValue("IsExplicit", spotifyRequestContext.IsExplicit);
                 // Update Popularity
-                var popularityVar = GetVariable("Popularity");
-                if (popularityVar != null)
-                {
-                    SetVariableValue("Popularity", spotifyRequestContext.Popularity);
-                }
+                SetVariableValue("Popularity", spotifyRequestContext.Popularity);
                 // Update Preview URL
-                var previewUrlVar = GetVariable("PreviewUrl");
-                if (previewUrlVar != null)
-                {
-                    SetVariableValue("PreviewUrl", spotifyRequestContext.PreviewUrl);
-                }
+                SetVariableValue("PreviewUrl", spotifyRequestContext.PreviewUrl);
                 // Update Track Number
-                var trackNumberVar = GetVariable("TrackNumber");
-                if (trackNumberVar != null)
-                {
-                    SetVariableValue("TrackNumber", spotifyRequestContext.TrackNumber);
-                }
+                SetVariableValue("TrackNumber", spotifyRequestContext.TrackNumber);
                 // Update Track URI
-                var trackUriVar = GetVariable("TrackUri");
-                if (trackUriVar != null)
-                {
-                    SetVariableValue("TrackUri", spotifyRequestContext.TrackUri);
-                }
+                SetVariableValue("TrackUri", spotifyRequestContext.TrackUri);
                 // Update Playing Type
-                var playingTypeVar = GetVariable("CurrentlyPlayingType");
-                if (playingTypeVar != null)
-                {
-                    SetVariableValue("CurrentlyPlayingType", spotifyRequestContext.CurrentlyPlayingType);
-                }
+                SetVariableValue("CurrentlyPlayingType", spotifyRequestContext.CurrentlyPlayingType);
             }
             catch (Exception ex)
             {
@@ -1364,31 +1274,11 @@ namespace YeusepesModules.SPOTIOSC
             // --- Update Album Information ---
             try
             {
-                var albumNameVar = GetVariable("AlbumName");
-                if (albumNameVar != null)
-                {
-                    SetVariableValue("AlbumName", spotifyRequestContext.AlbumName);
-                }
-                var albumArtworkVar = GetVariable("AlbumArtworkUrl");
-                if (albumArtworkVar != null)
-                {
-                    SetVariableValue("AlbumArtworkUrl", spotifyRequestContext.AlbumArtworkUrl);
-                }
-                var albumTypeVar = GetVariable("AlbumType");
-                if (albumTypeVar != null)
-                {
-                    SetVariableValue("AlbumType", spotifyRequestContext.AlbumType);
-                }
-                var albumReleaseDateVar = GetVariable("AlbumReleaseDate");
-                if (albumReleaseDateVar != null)
-                {
-                    SetVariableValue("AlbumReleaseDate", spotifyRequestContext.AlbumReleaseDate);
-                }
-                var albumTotalTracksVar = GetVariable("AlbumTotalTracks");
-                if (albumTotalTracksVar != null)
-                {
-                    SetVariableValue("AlbumTotalTracks", spotifyRequestContext.AlbumTotalTracks);
-                }
+                SetVariableValue("AlbumName", spotifyRequestContext.AlbumName);
+                SetVariableValue("AlbumArtworkUrl", spotifyRequestContext.AlbumArtworkUrl);
+                SetVariableValue("AlbumType", spotifyRequestContext.AlbumType);
+                SetVariableValue("AlbumReleaseDate", spotifyRequestContext.AlbumReleaseDate);
+                SetVariableValue("AlbumTotalTracks", spotifyRequestContext.AlbumTotalTracks);
             }
             catch (Exception ex)
             {
@@ -1398,15 +1288,11 @@ namespace YeusepesModules.SPOTIOSC
             // --- Update Artists (combined) ---
             try
             {
-                var artistsVar = GetVariable("Artists");
-                if (artistsVar != null)
-                {
-                    // Assuming your context holds a list of artist names
-                    string artists = (spotifyRequestContext.Artists != null && spotifyRequestContext.Artists.Any())
-                        ? string.Join(", ", spotifyRequestContext.Artists.Select(a => a.Name))
-                        : "Unknown Artist";
-                    SetVariableValue("Artists", artists);
-                }
+                // Assuming your context holds a list of artist names
+                string artists = (spotifyRequestContext.Artists != null && spotifyRequestContext.Artists.Any())
+                    ? string.Join(", ", spotifyRequestContext.Artists.Select(a => a.Name))
+                    : "Unknown Artist";
+                SetVariableValue("Artists", artists);
             }
             catch (Exception ex)
             {
