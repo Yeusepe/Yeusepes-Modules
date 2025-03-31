@@ -11,7 +11,8 @@ using System.IO;              // For MemoryStream
 using System.Net.Http;        // For HttpClient
 using System.Drawing;         // For Bitmap (System.Drawing.Bitmap)
 using System.Threading.Tasks; // In case you need async
-using YeusepesModules.IDC.Encoder;  // For StringDecoder and related functions
+using YeusepesModules.IDC.Encoder;
+using ABI.System.Collections.Generic;  // For StringDecoder and related functions
 
 namespace YeusepesModules.IDC
 {
@@ -20,52 +21,121 @@ namespace YeusepesModules.IDC
         private StringDecoder _decoder;
         private Image<Bgr, byte> _sourceImage;
 
+        public static readonly DependencyProperty ToleranceProperty =
+        DependencyProperty.Register(
+            "Tolerance",
+            typeof(int),
+            typeof(DecoderToleranceControl),
+            new PropertyMetadata(100, OnToleranceChanged));
+
+
+        public int Tolerance
+        {
+            get => (int)GetValue(ToleranceProperty);
+            set => SetValue(ToleranceProperty, value);
+        }
+
+
         public DecoderToleranceControl()
         {
             InitializeComponent();
-
-            Loaded += DecoderToleranceControl_Loaded;
+            // Load the persisted tolerance value (or default if not set)            
         }
-
-        // This method is called when the control is fully loaded.
-        private void DecoderToleranceControl_Loaded(object sender, RoutedEventArgs e)
+        private static void OnToleranceChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
         {
-            // If dependencies have not been attached externally, you can either delay processing
-            // or create a default instance.
-            if (_decoder == null)
+            var control = d as DecoderToleranceControl;
+            if (control != null)
             {
-                // You can either throw an exception or create a default instance.
-                // For example, using a default no‑op logger:
-                _decoder = new StringDecoder(new EncodingUtilities());
-            }
-            if (_sourceImage == null)
-            {
-                _sourceImage = LoadSampleImage();
-            }
-            ProcessImage();
-        }
+                int toleranceValue = (int)e.NewValue;
 
-        public void AttachDependencies(EncodingUtilities utils)
+                // Update any dependent functionality, e.g. reprocessing the image
+                if (control._decoder != null)
+                {
+                    control._decoder.encodingUtilities.Log("Setting tolerance to " + toleranceValue);
+                    control._decoder.encodingUtilities.SetSettingValue(EncoderSettings.Tolerance, toleranceValue.ToString());
+                    control._decoder.encodingUtilities.Log("Tolerance saved in settings: " +control._decoder.encodingUtilities.GetSettingValue(EncoderSettings.Tolerance));
+                    control.ProcessImage();
+                }                
+            }
+        }        
+
+
+        /// <summary>
+        /// Toggle the advanced panel and download the image when expanded.
+        /// </summary>
+        private async void AdvancedSettingsButton_Click(object sender, RoutedEventArgs e)
         {
-            // Create a new decoder with the provided utilities.
-            _decoder = new StringDecoder(utils);
-            // Optionally, you might also load your sample image here (or you can do it later).
-            _sourceImage = LoadSampleImage();
+            if (AdvancedPanel.Visibility == Visibility.Visible)
+            {
+                AdvancedPanel.Visibility = Visibility.Collapsed;
+                ArrowIcon.Text = "▼";
+            }
+            else
+            {
+                AdvancedPanel.Visibility = Visibility.Visible;
+                ArrowIcon.Text = "▲";
+
+                // Download the sample image and process it.
+                await DownloadAndProcessImageAsync();
+            }
         }
 
         /// <summary>
-        /// Handler for when the slider value changes.
+        /// Downloads the sample image asynchronously, converts it, and processes it.
         /// </summary>
-        private void ToleranceSlider_ValueChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
+        private async Task DownloadAndProcessImageAsync()
         {
-            // Ensure that _decoder and _sourceImage are set
-            if (_decoder == null || _sourceImage == null)
-                return;
-
-            ToleranceValueText.Text = ((int)e.NewValue).ToString();
-            ProcessImage();
+            try
+            {
+                string url = "https://raw.githubusercontent.com/Yeusepe/Yeusepes-Modules/refs/heads/main/Resources/Images/scanable.png";
+                using (HttpClient client = new HttpClient())
+                {
+                    byte[] data = await client.GetByteArrayAsync(url);
+                    using (MemoryStream ms = new MemoryStream(data))
+                    {
+                        using (var bmp = new System.Drawing.Bitmap(ms))
+                        {
+                            _sourceImage = BitmapToEmguImage(bmp);
+                        }
+                    }
+                }
+                ProcessImage();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Error downloading image: " + ex.Message);
+            }
         }
 
+
+        public void AttachDependencies(EncodingUtilities utils)
+        {
+            if (utils == null)
+                throw new ArgumentNullException(nameof(utils));
+
+            _decoder = new StringDecoder(utils);
+            _sourceImage = LoadSampleImage();
+
+            // Safely retrieve the persisted tolerance value.
+            string persisted = null;
+            if (utils.GetSettingValue != null)
+            {
+                // Convert the int to a string.
+                persisted = utils.GetSettingValue(EncoderSettings.Tolerance).ToString();
+            }
+
+            int tol;
+            if (!string.IsNullOrWhiteSpace(persisted) && int.TryParse(persisted, out tol))
+            {
+                Tolerance = tol;
+                utils.Log("Loaded tolerance from settings: " + tol);
+            }
+            else
+            {
+                Tolerance = 100;
+                utils.Log("No tolerance setting found; using default value.");
+            }
+        }
 
         /// <summary>
         /// Processes the image using the current tolerance value.
@@ -73,25 +143,32 @@ namespace YeusepesModules.IDC
         /// </summary>
         private void ProcessImage()
         {
-            // Get the current tolerance from the slider.
-            double tolerance = ToleranceSlider.Value;
+            try
+            {
+                // Get the current tolerance from the slider.
+                double tolerance = ToleranceSlider.Value;
 
-            // Convert the target hex color (for example "#1EB955") to a Bgr color using your function.
-            Bgr targetColor = _decoder.HexToBgr("#1EB955");
+                // Convert the target hex color to a Bgr color.
+                Bgr targetColor = _decoder.HexToBgr("#1EB955");
 
-            // Filter the source image using the specified tolerance.
-            // (Ensure that FilterImageByColor is accessible; you might need to make it public or wrap it.)
-            Image<Bgr, byte> filtered = FilterImageByColor(_sourceImage, targetColor, tolerance);
+                // Filter the source image.
+                Image<Bgr, byte> filtered = FilterImageByColor(_sourceImage, targetColor, tolerance);
 
-            // Update the FilteredImage control with the new filtered image.
-            FilteredImage.Source = ConvertToBitmapSource(filtered);
+                // Update the filtered image display.
+                FilteredImage.Source = ConvertToBitmapSource(filtered);
 
-            // Run the decoding process.
-            string decodedText = _decoder.DecodeText(filtered);
+                // Attempt to decode the image.
+                string decodedText = _decoder.DecodeText(filtered);
 
-            // Create a visual representation of the decoded result.
-            DecodedImage.Source = CreateDecodedImage(decodedText);
+                // Display the decoded text.
+                DecodedImage.Source = CreateDecodedImage(decodedText);
+            }
+            catch (Exception ex)
+            {                
+                DecodedImage.Source = CreateDecodedImage("Decoding failed: " + ex.Message);
+            }
         }
+
 
         /// <summary>
         /// Converts an EmguCV Image to a BitmapSource for WPF display.
@@ -160,7 +237,7 @@ namespace YeusepesModules.IDC
         private Image<Bgr, byte> LoadSampleImage()
         {
             // URL for the image you want to use.
-            string url = "https://private-user-images.githubusercontent.com/180480983/423741225-855af8ac-54ab-4bc3-a9bc-ae7c746828ad.png?jwt=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJnaXRodWIuY29tIiwiYXVkIjoicmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbSIsImtleSI6ImtleTUiLCJleHAiOjE3NDMzNzE2NTIsIm5iZiI6MTc0MzM3MTM1MiwicGF0aCI6Ii8xODA0ODA5ODMvNDIzNzQxMjI1LTg1NWFmOGFjLTU0YWItNGJjMy1hOWJjLWFlN2M3NDY4MjhhZC5wbmc_WC1BbXotQWxnb3JpdGhtPUFXUzQtSE1BQy1TSEEyNTYmWC1BbXotQ3JlZGVudGlhbD1BS0lBVkNPRFlMU0E1M1BRSzRaQSUyRjIwMjUwMzMwJTJGdXMtZWFzdC0xJTJGczMlMkZhd3M0X3JlcXVlc3QmWC1BbXotRGF0ZT0yMDI1MDMzMFQyMTQ5MTJaJlgtQW16LUV4cGlyZXM9MzAwJlgtQW16LVNpZ25hdHVyZT00MmQ4M2FjZGEwOTg1MmJmZmMwMjYwODY4YzA0ZWU5MjdmZjgwZGY5YmE2ODU5ZWEwZmI2MjAzNWM4MWEzOGJkJlgtQW16LVNpZ25lZEhlYWRlcnM9aG9zdCJ9.qV9VEv29a0mzGU2RUFsuNkCrl50WX5YgU9TlprwR6JI";
+            string url = "https://raw.githubusercontent.com/Yeusepe/Yeusepes-Modules/refs/heads/main/Resources/Images/scanable.png";
 
             using (HttpClient client = new HttpClient())
             {

@@ -15,7 +15,8 @@ namespace YeusepesModules.IDC.Encoder
         // Add a Func to accept the FindParameter by string
         public Func<string, Task<ReceivedParameter?>> FindParameterByString { get; set; }
 
-        public Func<Enum, String> GetSettingValue;        
+        public Func<Enum, string> GetSettingValue;
+        public Action<Enum, string> SetSettingValue;
         public ScreenUtilities ScreenUtilities { get; set; }
 
 

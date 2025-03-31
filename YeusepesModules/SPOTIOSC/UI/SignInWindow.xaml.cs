@@ -36,7 +36,8 @@ namespace YeusepesModules.SPOTIOSC.UI
             _module.screenUtilities.AttachSelector(ScreenSelector);
             // In SignInWindow.SourceInitialized or similar:
             var decoderControl = new DecoderToleranceControl();
-            decoderControl.AttachDependencies(_module.encodingUtilities);           
+            decoderControl.AttachDependencies(_module.encodingUtilities);
+            MainGrid.Children.Add(decoderControl);
         }
 
         private void SignInWindow_Closed(object sender, EventArgs e)

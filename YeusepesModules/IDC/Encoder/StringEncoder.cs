@@ -19,7 +19,8 @@ namespace YeusepesModules.IDC.Encoder
 
     public enum EncoderSettings
     {
-        SaveImagesToggle        
+        SaveImagesToggle,
+        Tolerance
     }
 
 
@@ -33,13 +34,20 @@ namespace YeusepesModules.IDC.Encoder
 
         public StringEncoder(
             EncodingUtilities encodingUtilities,
-            Action<Enum, ModuleSetting> createCustomSetting,
-            Action<Enum, string, string, bool> createToggle            
-            )
+            Action<Enum, string, string, string> CreateTextBox,
+            Action<Enum, string> setSettingValue,
+            Func<Enum, string> getSettingValue // New delegate for reading settings
+        )
         {
-            
-            this.encodingUtilities = encodingUtilities;            
-        }        
+            // Register the tolerance setting with a default value of 100.
+            CreateTextBox(EncoderSettings.Tolerance, "Tolerance", "Tolerance value for image filtering", 100.ToString());
+
+            // Save the provided dependencies.
+            this.encodingUtilities = encodingUtilities;
+            encodingUtilities.SetSettingValue = setSettingValue;
+            encodingUtilities.GetSettingValue = getSettingValue;  // Ensure the getter is wired!
+        }
+
 
         public void RegisterParameters(Action<Enum, string, ParameterMode, string, string> registerIntParameter, Action<Enum, string, ParameterMode, string, string> registerBoolParameter)
         {

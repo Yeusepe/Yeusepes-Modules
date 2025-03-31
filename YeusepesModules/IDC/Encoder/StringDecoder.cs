@@ -19,8 +19,7 @@ namespace YeusepesModules.IDC.Encoder
 {
     public class StringDecoder
     {
-        private readonly EncodingUtilities encodingUtilities;
-        private bool capturing = false; // Indicates if a capture is in progress        
+        public readonly EncodingUtilities encodingUtilities;        
 
         // An event to signal that decoding is complete.
         public event Action<string>? DecodingCompleted;
@@ -409,7 +408,17 @@ namespace YeusepesModules.IDC.Encoder
             // If a target hex is provided, filter the image.
             if (!string.IsNullOrEmpty(targetCircleHex))
             {
-                encodedImage = FilterImageByColor(encodedImage, HexToBgr(targetCircleHex));
+                // Retrieve the tolerance setting as a string.
+                string toleranceSetting = encodingUtilities.GetSettingValue(EncoderSettings.Tolerance);
+
+                // Parse the string to a double. You may want to use TryParse to handle invalid input.
+                double toleranceValue = 100.0; // default value
+                if (!string.IsNullOrWhiteSpace(toleranceSetting) && double.TryParse(toleranceSetting, out double parsedTolerance))
+                {
+                    toleranceValue = parsedTolerance;
+                }
+
+                encodedImage = FilterImageByColor(encodedImage, HexToBgr(targetCircleHex), toleranceValue);
                 // Save the filtered image for debugging.
                 string filteredPath = Path.Combine(debugFolder, "filtered_image.png");
                 encodedImage.Save(filteredPath);

@@ -101,10 +101,17 @@ namespace YeusepesModules.SPOTIOSC
 
 
             encoder = new StringEncoder(
-                encodingUtilities,
-                CreateCustomSetting,
-                CreateToggle
-            );
+                    encodingUtilities,
+                    // Delegate signature: (Enum lookup, string name, string description, int defaultValue, int min, int max)
+                    (lookup, name, description, defaultValue) =>
+                    {
+                        // In this case, we already created the setting.
+                        // Optionally, if you need to update or recreate it, call:
+                        CreateTextBox(lookup, name, description, defaultValue);
+                    },
+                    SetSettingValue,
+                    GetSettingValue<String>
+                );
 
             decoder = new StringDecoder(
                 encodingUtilities

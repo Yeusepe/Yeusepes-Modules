@@ -14,9 +14,7 @@
         <StackPanel Name="MainGrid"
                     Margin="20,50,20,20"
                     Orientation="Vertical">
-
-            <!-- Embedding the DecoderToleranceControl -->
-            <encoder:DecoderToleranceControl x:Name="DecoderToleranceControl" />
+                        
             <!-- You can also keep the ScreenUtilitySelector if needed -->
             <su:ScreenUtilitySelector x:Name="ScreenSelector" />
         </StackPanel>

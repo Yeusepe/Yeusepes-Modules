@@ -2,30 +2,58 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              Background="#212121">
-    <Grid Margin="20">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="*"/>
-        </Grid.RowDefinitions>
-        <!-- Tolerance slider and value -->
-        <StackPanel Orientation="Horizontal" VerticalAlignment="Top">
-            <TextBlock Text="Tolerance:" Foreground="White" VerticalAlignment="Center" Margin="0,0,5,0"/>
-            <Slider x:Name="ToleranceSlider" Minimum="0" Maximum="255" Value="100" Width="200" 
-              ValueChanged="ToleranceSlider_ValueChanged"/>
-            <TextBlock x:Name="ToleranceValueText" Text="100" Foreground="White" VerticalAlignment="Center" Margin="5,0,0,0"/>
+    <StackPanel Margin="20">
+        <!-- Toggle button similar to AdvancedSettingsButton -->
+        <Button x:Name="AdvancedSettingsButton" 
+                Click="AdvancedSettingsButton_Click"
+                Margin="10,5" 
+                Padding="8"
+                Background="Transparent"
+                BorderBrush="Transparent"
+                Foreground="White"
+                HorizontalContentAlignment="Stretch">
+            <Grid HorizontalAlignment="Stretch">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Text="Advanced Decoding Settings" 
+                           VerticalAlignment="Center"                           
+                           FontSize="16"
+                           Grid.Column="0"/>
+                <TextBlock x:Name="ArrowIcon"
+                           Text="▼"
+                           VerticalAlignment="Center"
+                           FontSize="14"
+                           Grid.Column="1"/>
+            </Grid>
+        </Button>
+
+        <!-- Collapsible panel with the slider and image displays -->
+        <StackPanel x:Name="AdvancedPanel" Visibility="Collapsed" Margin="10">
+            <!-- Tolerance slider and value -->
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Tolerance:" Foreground="White" VerticalAlignment="Center" Margin="0,0,5,0"/>
+                <Slider x:Name="ToleranceSlider"
+              Minimum="0" Maximum="255" Width="200"
+              Value="{Binding Tolerance, Mode=TwoWay, RelativeSource={RelativeSource AncestorType=UserControl}}"/>
+                <!-- Display the current value -->
+                <TextBlock Text="{Binding Tolerance, Mode=OneWay, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                 Foreground="White" VerticalAlignment="Center" Margin="5,0,0,0"/>
+            </StackPanel>
+            <!-- Display area: filtered image on the left, decoded result on the right -->
+            <Grid Margin="0,10,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <Border BorderThickness="1" BorderBrush="Gray" Margin="5">
+                    <Image x:Name="FilteredImage" Stretch="Uniform"/>
+                </Border>
+                <Border BorderThickness="1" BorderBrush="Gray" Margin="5" Grid.Column="1">
+                    <Image x:Name="DecodedImage" Stretch="Uniform"/>
+                </Border>
+            </Grid>
         </StackPanel>
-        <!-- Display area: filtered image on the left, decoded result on the right -->
-        <Grid Grid.Row="1" Margin="0,10,0,0">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-            <Border BorderThickness="1" BorderBrush="Gray" Margin="5">
-                <Image x:Name="FilteredImage" Stretch="Uniform"/>
-            </Border>
-            <Border BorderThickness="1" BorderBrush="Gray" Margin="5" Grid.Column="1">
-                <Image x:Name="DecodedImage" Stretch="Uniform"/>
-            </Border>
-        </Grid>
-    </Grid>
+    </StackPanel>
 </UserControl>
