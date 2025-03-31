@@ -97,6 +97,7 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
             {
                 using (var request = new HttpRequestMessage(HttpMethod.Get, endpoint))
                 {
+                    // Use the access token stored in the context.
                     request.Headers.Add("Authorization", $"Bearer {context.AccessToken}");
                     utilities.Log("Fetching current playback state...");
 
@@ -110,6 +111,7 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
 
                         var playbackState = JsonSerializer.Deserialize<JsonElement>(responseContent);
 
+                        // --- Device Information ---
                         if (playbackState.TryGetProperty("device", out JsonElement device))
                         {
                             context.DeviceId = device.GetProperty("id").GetString();
@@ -118,15 +120,95 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
                             context.VolumePercent = device.GetProperty("volume_percent").GetInt32();
                         }
 
-                        // Update observables using safe extensions.
-                        context.ShuffleState = playbackState.GetProperty("shuffle_state").GetBoolean();
-                        context.RepeatState = playbackState.GetProperty("repeat_state").GetString();
-                        context.IsPlaying = playbackState.GetProperty("is_playing").GetBoolean();
+                        // --- Playback State ---
+                        if (playbackState.TryGetProperty("shuffle_state", out JsonElement shuffle))
+                        {
+                            context.ShuffleState = shuffle.GetBoolean();
+                        }
+                        if (playbackState.TryGetProperty("smart_shuffle", out JsonElement smartShuffle))
+                        {
+                            context.SmartShuffle = smartShuffle.GetBoolean();
+                        }
+                        if (playbackState.TryGetProperty("repeat_state", out JsonElement repeat))
+                        {
+                            context.RepeatState = repeat.GetString();
+                        }
+                        if (playbackState.TryGetProperty("is_playing", out JsonElement isPlaying))
+                        {
+                            context.IsPlaying = isPlaying.GetBoolean();
+                        }
+                        if (playbackState.TryGetProperty("timestamp", out JsonElement timestamp))
+                        {
+                            context.Timestamp = timestamp.GetInt64();
+                        }
+                        if (playbackState.TryGetProperty("progress_ms", out JsonElement progressMs))
+                        {
+                            context.ProgressMs = progressMs.GetInt32();
+                        }
 
+                        // --- Context (e.g. Playlist) ---
+                        if (playbackState.TryGetProperty("context", out JsonElement contextObj))
+                        {
+                            if (contextObj.TryGetProperty("external_urls", out JsonElement extUrls) &&
+                                extUrls.TryGetProperty("spotify", out JsonElement contextSpotifyUrl))
+                            {
+                                context.ContextExternalUrl = contextSpotifyUrl.GetString();
+                            }
+                            if (contextObj.TryGetProperty("href", out JsonElement contextHref))
+                            {
+                                context.ContextHref = contextHref.GetString();
+                            }
+                            if (contextObj.TryGetProperty("type", out JsonElement contextType))
+                            {
+                                context.ContextType = contextType.GetString();
+                            }
+                            if (contextObj.TryGetProperty("uri", out JsonElement contextUri))
+                            {
+                                context.ContextUri = contextUri.GetString();
+                            }
+                        }
+
+                        // --- Track Details ---
                         if (playbackState.TryGetProperty("item", out JsonElement item))
                         {
+                            // Basic track information
                             context.TrackName = item.GetProperty("name").GetString();
 
+                            // Track duration, disc number, explicit flag, popularity, preview URL, track number, and track URI.
+                            if (item.TryGetProperty("duration_ms", out JsonElement duration))
+                            {
+                                context.TrackDurationMs = duration.GetInt32();
+                            }
+                            if (item.TryGetProperty("disc_number", out JsonElement discNumber))
+                            {
+                                context.DiscNumber = discNumber.GetInt32();
+                            }
+                            if (item.TryGetProperty("explicit", out JsonElement explicitElem))
+                            {
+                                context.IsExplicit = explicitElem.GetBoolean();
+                            }
+                            if (item.TryGetProperty("popularity", out JsonElement popularity))
+                            {
+                                context.Popularity = popularity.GetInt32();
+                            }
+                            if (item.TryGetProperty("preview_url", out JsonElement previewUrl))
+                            {
+                                context.PreviewUrl = previewUrl.GetString();
+                            }
+                            if (item.TryGetProperty("track_number", out JsonElement trackNumber))
+                            {
+                                context.TrackNumber = trackNumber.GetInt32();
+                            }
+                            if (item.TryGetProperty("uri", out JsonElement trackUri))
+                            {
+                                context.TrackUri = trackUri.GetString();
+                            }
+                            if (item.TryGetProperty("currently_playing_type", out JsonElement playingType))
+                            {
+                                context.CurrentlyPlayingType = playingType.GetString();
+                            }
+
+                            // --- Album Details ---
                             if (item.TryGetProperty("album", out JsonElement album))
                             {
                                 context.AlbumName = album.GetProperty("name").GetString();
@@ -135,17 +217,27 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
                                     var imageUrl = images.EnumerateArray().FirstOrDefault().GetProperty("url").GetString();
                                     context.AlbumArtworkUrl = imageUrl;
                                 }
+                                if (album.TryGetProperty("album_type", out JsonElement albumType))
+                                {
+                                    context.AlbumType = albumType.GetString();
+                                }
+                                if (album.TryGetProperty("release_date", out JsonElement releaseDate))
+                                {
+                                    context.AlbumReleaseDate = releaseDate.GetString();
+                                }
+                                if (album.TryGetProperty("total_tracks", out JsonElement totalTracks))
+                                {
+                                    context.AlbumTotalTracks = totalTracks.GetInt32();
+                                }
                             }
 
-                            if (item.TryGetProperty("artists", out var artists))
+                            // --- Artists Details ---
+                            if (item.TryGetProperty("artists", out JsonElement artists))
                             {
                                 var artistList = artists.EnumerateArray()
-                                    .Select(artist => (artist.GetProperty("name").GetString(), artist.GetProperty("uri").GetString()))
+                                    .Select(artist => (Name: artist.GetProperty("name").GetString(), Uri: artist.GetProperty("uri").GetString()))
                                     .ToList();
-
-                                context.Artists = artists.EnumerateArray()
-                                .Select(artist => (artist.GetProperty("name").GetString(), artist.GetProperty("uri").GetString()))
-                                .ToList();
+                                context.Artists = artistList;
                             }
                         }
                     }
@@ -205,6 +297,24 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
         public string DeviceName { get; set; }
         public bool IsActiveDevice { get; set; }
         public int VolumePercent { get; set; }
+        public bool SmartShuffle { get; set; }
+        public long Timestamp { get; set; }
+        public int ProgressMs { get; set; }
+        public string ContextExternalUrl { get; set; }
+        public string ContextHref { get; set; }
+        public string ContextType { get; set; }
+        public string ContextUri { get; set; }
+        public int TrackDurationMs { get; set; }
+        public int DiscNumber { get; set; }
+        public bool IsExplicit { get; set; }
+        public int Popularity { get; set; }
+        public string PreviewUrl { get; set; }
+        public int TrackNumber { get; set; }
+        public string TrackUri { get; set; }
+        public string CurrentlyPlayingType { get; set; }
+        public string AlbumType { get; set; }
+        public string AlbumReleaseDate { get; set; }
+        public int AlbumTotalTracks { get; set; }
 
         // Playback State
         private bool _shuffleState;

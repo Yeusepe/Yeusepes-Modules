@@ -44,7 +44,7 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests.Profiles
                         {
                             string userName = nameProperty.GetString();
                             string userId = usernameProperty.GetString();
-                            log($"Fetched user: {userName} ({userId})");
+                            log($"Fetched user successfully!");
                             return true;
                         }
                         else
