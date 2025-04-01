@@ -35,7 +35,7 @@ namespace YeusepesModules.Common.ScreenUtilities
         ScreenUtilitySelector screenSelector;
 
         Action<ScreenUtilitiesParameters, bool> sendBoolParameter;
-        Action<HPPH.IImage> whatDoInCapture;        
+        Action<HPPH.IImage> whatDoInCapture;
 
         private Dictionary<string, ICaptureZone> _captureZones = new Dictionary<string, ICaptureZone>();
 
@@ -63,8 +63,7 @@ namespace YeusepesModules.Common.ScreenUtilities
             Action<string> log,
             Func<Enum, string> getSettingValue,
             Action<Enum, string> setSettingValue,
-            Action<Enum, string, string, string> createTextBox,
-            Action<Enum, string, ParameterMode, string, string> registerBoolParameter)
+            Action<Enum, string, string, string> createTextBox)            
         {
             if (_instance == null)
             {
@@ -72,7 +71,7 @@ namespace YeusepesModules.Common.ScreenUtilities
                 {
                     if (_instance == null)
                     {
-                        _instance = new ScreenUtilities(log, getSettingValue, setSettingValue, createTextBox, registerBoolParameter);
+                        _instance = new ScreenUtilities(log, getSettingValue, setSettingValue, createTextBox);
                     }
                 }
             }
@@ -100,15 +99,11 @@ namespace YeusepesModules.Common.ScreenUtilities
         }
 
 
-        public ScreenUtilities(Action<string> log, Func<Enum, string> getSettingValue, Action<Enum, string> setSettingValue, Action<Enum, string, string, string> createTextBox, Action<Enum, string, ParameterMode, string, string> registerBoolParameter)
+        public ScreenUtilities(Action<string> log, Func<Enum, string> getSettingValue, Action<Enum, string> setSettingValue, Action<Enum, string, string, string> createTextBox)
         {
             Log = log;
             GetSettingValue = getSettingValue;
             this.setSettingValue = setSettingValue;
-            
-            sendBoolParameter = (parameter, value) => registerBoolParameter(parameter, value.ToString(), ParameterMode.Write, "Bool", "Bool");
-            registerBoolParameter(ScreenUtilitiesParameters.StartRecording, "ScreenUtilities/StartRecording", ParameterMode.Write, "Start Recording", "Start or stop screen recording");
-            registerBoolParameter(ScreenUtilitiesParameters.Error, "ScreenUtilities/Error", ParameterMode.Read, "Error", "Indicates an error occurred during screen capture");
 
             // Initialize screen capture service.
             screenCaptureService = new DX11ScreenCaptureService();            
@@ -310,32 +305,32 @@ namespace YeusepesModules.Common.ScreenUtilities
 
         public void StartCapture()
         {
-            sendBoolParameter(ScreenUtilitiesParameters.Error, false);
+            //sendBoolParameter(ScreenUtilitiesParameters.Error, false);
             if (screenCaptureService == null)
             {
                 Log("Cannot start capture. screenCaptureService is null.");
-                sendBoolParameter(ScreenUtilitiesParameters.Error, true);
+                //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                 return;
             }
 
             if (selectedGraphicsCard == null)
             {
                 Log("Cannot start capture. No GPU selected.");
-                sendBoolParameter(ScreenUtilitiesParameters.Error, true);
+                //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                 return;
             }
 
             if (selectedDisplay == null || !selectedDisplay.HasValue)
             {
                 Log("Cannot start capture. No display selected.");
-                sendBoolParameter(ScreenUtilitiesParameters.Error, true);
+                //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                 return;
             }
 
             if (selectedDisplay.Value.Width <= 0 || selectedDisplay.Value.Height <= 0)
             {
                 Log($"Cannot start capture. Invalid display dimensions: Width={selectedDisplay.Value.Width}, Height={selectedDisplay.Value.Height}");
-                sendBoolParameter(ScreenUtilitiesParameters.Error, true);
+                //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                 return;
             }
 
@@ -542,7 +537,7 @@ namespace YeusepesModules.Common.ScreenUtilities
                 if (screenCaptureService == null)
                 {
                     Log("Error: screenCaptureService is null. Cannot continue.");
-                    sendBoolParameter(ScreenUtilitiesParameters.Error, true);
+                    //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                     isCapturing = false;
                     return;
                 }
@@ -551,7 +546,7 @@ namespace YeusepesModules.Common.ScreenUtilities
                 if (selectedDisplay == null || !selectedDisplay.HasValue)
                 {
                     Log("Error: selectedDisplay is null or invalid. Cannot continue.");
-                    sendBoolParameter(ScreenUtilitiesParameters.Error, true);
+                    //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                     isCapturing = false;
                     return;
                 }
@@ -559,7 +554,7 @@ namespace YeusepesModules.Common.ScreenUtilities
                 if (selectedDisplay.Value.Width <= 0 || selectedDisplay.Value.Height <= 0)
                 {
                     Log($"Error: Invalid display dimensions: Width={selectedDisplay.Value.Width}, Height={selectedDisplay.Value.Height}");
-                    sendBoolParameter(ScreenUtilitiesParameters.Error, true);
+                    //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                     isCapturing = false;
                     return;
                 }
@@ -569,7 +564,7 @@ namespace YeusepesModules.Common.ScreenUtilities
                 if (screenCapture == null)
                 {
                     Log("Error: screenCapture is null. Cannot initialize screen capture.");
-                    sendBoolParameter(ScreenUtilitiesParameters.Error, true);
+                    //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                     isCapturing = false;
                     return;
                 }
@@ -577,7 +572,7 @@ namespace YeusepesModules.Common.ScreenUtilities
                 if (screenCapture.Display == null || screenCapture.Display.Width <= 0 || screenCapture.Display.Height <= 0)
                 {
                     Log($"Error: Invalid screen capture display dimensions: Width={screenCapture.Display.Width}, Height={screenCapture.Display.Height}");
-                    sendBoolParameter(ScreenUtilitiesParameters.Error, true);
+                    //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                     isCapturing = false;
                     return;
                 }
@@ -592,14 +587,14 @@ namespace YeusepesModules.Common.ScreenUtilities
 
                     if (captureZone == null)
                     {
-                        sendBoolParameter(ScreenUtilitiesParameters.Error, true);
+                        //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                         throw new NullReferenceException("RegisterCaptureZone returned null.");
                     }
                 }
                 catch (Exception ex)
                 {
                     Log($"Error during RegisterCaptureZone: {ex.Message}. Stack Trace: {ex.StackTrace}");
-                    sendBoolParameter(ScreenUtilitiesParameters.Error, true);
+                    //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                     isCapturing = false;
                     return;
                 }
@@ -629,7 +624,7 @@ namespace YeusepesModules.Common.ScreenUtilities
                     catch (Exception ex)
                     {
                         Log($"Error during screen capture or processing: {ex.Message}");
-                        sendBoolParameter(ScreenUtilitiesParameters.Error, true);
+                        //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                     }
 
                     // Adjust the sleep interval based on performance needs
@@ -639,7 +634,7 @@ namespace YeusepesModules.Common.ScreenUtilities
             catch (Exception ex)
             {
                 Log($"Critical error in capture loop: {ex.Message}. Stack Trace: {ex.StackTrace}");
-                sendBoolParameter(ScreenUtilitiesParameters.Error, true);
+                //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                 isCapturing = false;
             }
 

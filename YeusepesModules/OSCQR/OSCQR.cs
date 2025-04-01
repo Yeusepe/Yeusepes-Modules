@@ -56,11 +56,7 @@ namespace YeusepesModules.OSCQR
                 LogDebug,         // Logging delegate
                 GetSettingValue<String>,  // Function to retrieve settings
                 SetSettingValue,  // Function to save settings
-                CreateTextBox,    // Function to create a text box
-                (parameter, name, mode, title, description) =>
-                {                    
-                    RegisterParameter<bool>(parameter, name, mode, title, description);
-                }
+                CreateTextBox
             );
 
             // Register our module parameters.
@@ -94,7 +90,8 @@ namespace YeusepesModules.OSCQR
                 ParameterMode.Write,
                 "Error",
                 "Indicates an error occurred during capture or processing."
-            );
+            );            
+
 
             // Register a custom setting for viewing saved QR codes.
             CreateCustomSetting(

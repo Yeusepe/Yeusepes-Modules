@@ -121,11 +121,7 @@ namespace YeusepesModules.SPOTIOSC
                 LogDebug,         // Logging delegate
                 GetSettingValue<String>,  // Function to retrieve settings
                 SetSettingValue,  // Function to save settings
-                CreateTextBox,    // Function to create a text box
-                (parameter, name, mode, title, description) =>
-                {
-                    RegisterParameter<bool>(parameter, name, mode, title, description);
-                }
+                CreateTextBox
             );
 
             /// ThreadPool.SetMinThreads(100, 100); // Set a higher minimum thread pool size
@@ -169,7 +165,7 @@ namespace YeusepesModules.SPOTIOSC
             #region Parameters
 
 
-            RegisterParameter<bool>(SpotiParameters.Enabled, "SpotiOSC/Enabled", ParameterMode.ReadWrite, "Enabled", "Set to true to enable the module.");
+            RegisterParameter<bool>(SpotiParameters.Enabled, "SpotiOSC/Enabled", ParameterMode.Write, "Enabled", "Set to true if the module is enabled.");
             RegisterParameter<bool>(SpotiParameters.WantJam, "SpotiOSC/WantJam", ParameterMode.ReadWrite, "Want Jam", "Set to true if you want to join a jam.");
             RegisterParameter<bool>(SpotiParameters.InAJam, "SpotiOSC/InAJam", ParameterMode.Write, "In A Jam", "Set to true if you are in a jam.");
             RegisterParameter<bool>(SpotiParameters.IsJamOwner, "SpotiOSC/IsJamOwner", ParameterMode.Write, "Is Jam Owner", "Set to true if you are the owner of the jam.");
