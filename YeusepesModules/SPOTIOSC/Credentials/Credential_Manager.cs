@@ -380,7 +380,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
 
         private static async Task NavigateAndCaptureJsonResponseAsync(IPage page, TaskCompletionSource<bool> tokenReady)
         {
-            SpotifyUtils?.Log("Setting up request interception for token retrieval...");
+            SpotifyUtils?.Log("Setting up request token retrieval...");
             try
             {
                 await page.SetRequestInterceptionAsync(true);
@@ -425,7 +425,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                             if (json.TryGetProperty("accessToken", out JsonElement tokenElement))
                             {
                                 string accessToken = tokenElement.GetString();
-                                SpotifyUtils?.Log($"Access token found: {accessToken}");
+                                SpotifyUtils?.Log($"Access token found!");
                                 SaveAccessToken(accessToken);
                             }
                             else
@@ -437,7 +437,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                             if (json.TryGetProperty("clientId", out JsonElement clientIDElement))
                             {
                                 clientID = clientIDElement.GetString();
-                                SpotifyUtils?.Log($"ClientID found and saved: {clientID}");
+                                SpotifyUtils?.Log($"ClientID found and saved!");
                             }
                             else
                             {
