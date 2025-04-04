@@ -297,7 +297,7 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
         }
 
 
-        private async Task<bool> RefreshAccessTokenAsync()
+        public async Task<bool> RefreshAccessTokenAsync()
         {
             try
             {
