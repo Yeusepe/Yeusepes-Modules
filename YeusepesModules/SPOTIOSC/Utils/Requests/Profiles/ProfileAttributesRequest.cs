@@ -13,12 +13,6 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests.Profiles
         public ProfileAttributesRequest(HttpClient httpClient, string accessToken, string clientToken)
             : base(httpClient, accessToken, clientToken) { }
 
-        public async Task<string> FetchAsync()
-        {
-            var request = CreateRequest(HttpMethod.Get, profileUrl);
-            return await SendAsync(request);
-        }
-
 
         public static async Task<bool> FetchProfileAttributesAsync(HttpClient httpClient, string accessToken, string clientToken, Action<string> log, Action<string> logDebug)
         {
