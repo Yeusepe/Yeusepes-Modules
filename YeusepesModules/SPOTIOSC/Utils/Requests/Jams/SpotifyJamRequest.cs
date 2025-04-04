@@ -79,7 +79,7 @@ namespace YeusepesModules.SPOTIOSC.Utils
                     utilities.SendParameter(SpotiOSC.SpotiParameters.IsJamOwner, true);
                     utilities.LogDebug($"Is in Jam: {_isInJam}");
                 }
-                
+
                 return true;
             }
             catch (UnauthorizedAccessException)
@@ -90,6 +90,7 @@ namespace YeusepesModules.SPOTIOSC.Utils
             catch (Exception ex)
             {
                 utilities.Log($"An error occurred: {ex.Message}");
+                utilities.SendParameter(SpotiOSC.SpotiParameters.Error, true);
                 return false;
             }
         }
@@ -235,52 +236,14 @@ namespace YeusepesModules.SPOTIOSC.Utils
                     request.Headers.Add("sec-fetch-site", "same-site");
                     request.Headers.Add("spotify-app-version", "1.2.57.463");
 
-                    // (Optional) Log request details
-                    utilities.LogDebug("=== Request Details ===");
-                    utilities.LogDebug("Method: " + request.Method);
-                    utilities.LogDebug("URL: " + request.RequestUri);
-                    utilities.LogDebug("Request Headers:");
-                    foreach (var header in request.Headers)
-                    {
-                        utilities.LogDebug($"{header.Key}: {string.Join(", ", header.Value)}");
-                    }
-                    if (request.Content != null)
-                    {
-                        utilities.LogDebug("Content Headers:");
-                        foreach (var header in request.Content.Headers)
-                        {
-                            utilities.LogDebug($"{header.Key}: {string.Join(", ", header.Value)}");
-                        }
-                        string contentStr = await request.Content.ReadAsStringAsync();
-                        utilities.LogDebug("Content: " + contentStr);
-                    }
-                    else
-                    {
-                        utilities.LogDebug("No content in request.");
-                    }
-
                     utilities.LogDebug("Sending request to join Spotify Jam session...");
-                    HttpResponseMessage response = await context.HttpClient.SendAsync(request);
 
-                    // Log response details
-                    utilities.LogDebug("=== Response Details ===");
-                    utilities.LogDebug("Status Code: " + response.StatusCode);
-                    utilities.LogDebug("Response Headers:");
-                    foreach (var header in response.Headers)
-                    {
-                        utilities.LogDebug($"{header.Key}: {string.Join(", ", header.Value)}");
-                    }
-                    string responseContent = await response.Content.ReadAsStringAsync();
-                    utilities.LogDebug("Response Content: " + responseContent);
+                    // Use the generic request's SendRequestAsync to handle sending and token refresh logic.
+                    string responseBody = await genericRequest.SendRequestAsync(request);
+                    utilities.LogDebug("Response Content: " + responseBody);
 
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        utilities.Log("Failed to join the Spotify Jam session. Status Code: " + response.StatusCode);
-                        return false;
-                    }
-
+                    // Update the session state if the request was successful.
                     utilities.Log("Successfully joined the Spotify Jam session.");
-                    // Optionally, process the response JSON if needed.
                     _currentSessionId = sessionId;
                     _isInJam = true;
                     context.IsInJam = _isInJam;
@@ -295,9 +258,11 @@ namespace YeusepesModules.SPOTIOSC.Utils
             catch (Exception ex)
             {
                 utilities.Log($"An error occurred while joining the Spotify Jam session: {ex.Message}");
+                utilities.SendParameter(SpotiOSC.SpotiParameters.Error, true);
                 return false;
             }
         }
+
 
 
 
@@ -326,6 +291,7 @@ namespace YeusepesModules.SPOTIOSC.Utils
             catch (Exception ex)
             {
                 Console.WriteLine($"Error updating session details: {ex.Message}");
+                utilities.SendParameter(SpotiOSC.SpotiParameters.Error, true);
             }
         }
 
