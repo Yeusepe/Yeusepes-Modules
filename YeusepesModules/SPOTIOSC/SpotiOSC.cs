@@ -356,12 +356,17 @@ namespace YeusepesModules.SPOTIOSC
         protected override async Task<bool> OnModuleStart()
         {
             _cts = new CancellationTokenSource();
+            
+            _httpClient = new HttpClient();
 
-            // Reinitialize the HttpClient if it was disposed in a previous stop.
-            if (_httpClient == null)
+            spotifyUtilities = new SpotifyUtilities
             {
-                _httpClient = new HttpClient();
-            }
+                Log = message => Log(message),
+                LogDebug = message => LogDebug(message),
+                SendParameter = (param, value) => SetParameterSafe(param, value),
+                Encoder = encoder
+            };
+            CredentialManager.SpotifyUtils = spotifyUtilities;
 
             encodingUtilities.IsDebug = SettingsManager.GetInstance().GetValue<bool>(VRCOSCSetting.EnableAppDebug);
 
@@ -836,6 +841,7 @@ namespace YeusepesModules.SPOTIOSC
                 else
                 {
                     spotifyUtilities.Log("Failed to join the jam session.");
+                    SendParameter(SpotiParameters.Error, true);
                 }
             });
         }
@@ -1117,13 +1123,20 @@ namespace YeusepesModules.SPOTIOSC
             {
                 _isInJam = true;
                 LogDebug("Starting jam request...");
-
-                // Log the context properties before making the call.
+                // Log context properties before making the call.
                 LogDebug("SpotifyRequestContext.HttpClient is " + (spotifyRequestContext.HttpClient != null ? "initialized" : "null"));
                 LogDebug("SpotifyRequestContext.AccessToken is " + (spotifyRequestContext.AccessToken != null ? "initialized" : "null"));
                 LogDebug("SpotifyRequestContext.ClientToken is " + (spotifyRequestContext.ClientToken != null ? "initialized" : "null"));
 
-                await SpotifyJamRequests.CreateSpotifyJam(spotifyRequestContext, spotifyUtilities);
+                try
+                {
+                    bool jamCreated = await SpotifyJamRequests.CreateSpotifyJam(spotifyRequestContext, spotifyUtilities);
+                    LogDebug("CreateSpotifyJam returned: " + jamCreated);
+                }
+                catch (Exception ex)
+                {
+                    Log("Exception while creating Spotify Jam: " + ex.ToString());
+                }
             }
             else if (!wantJam && _isInJam)
             {
@@ -1136,6 +1149,7 @@ namespace YeusepesModules.SPOTIOSC
             spotifyRequestContext.IsInJam = _isInJam;
             SetParameterSafe(SpotiParameters.InAJam, wantJam);
         }
+
 
 
 
@@ -1422,7 +1436,7 @@ namespace YeusepesModules.SPOTIOSC
             catch (Exception ex)
             {
                 LogWithError("An error occurred during asynchronous execution", true, ex);
-                // Optionally, rethrow or further handle the exception.
+                SendParameter(SpotiParameters.Error, true);                
             }
         }
 
