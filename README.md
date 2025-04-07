@@ -48,8 +48,7 @@ This project is licensed under the GNU General Public License V3 License. See th
 ---
 
 ## Acknowledgments
-- Special thanks to the [VolcanicArts](https://github.com/VolcanicArts) team for their support.
-- Inspired by the potential of OSC in VRChat and the creativity of the community.
+- Special thanks to [VolcanicArts](https://github.com/VolcanicArts) for their support and for withstanding my shenanigans.
 
 ---
 
