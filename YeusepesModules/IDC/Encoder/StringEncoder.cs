@@ -26,7 +26,8 @@ namespace YeusepesModules.IDC.Encoder
 
     public class StringEncoder
     {       
-        private const int MillisecondsDelay = 150;  
+        private const int MillisecondsDelay = 150;
+        private const int MillisecondsDelay2 = 5000; // For the second delay
         EncodingUtilities encodingUtilities = new EncodingUtilities();
 
         public bool isEncoding = false;
@@ -84,6 +85,7 @@ namespace YeusepesModules.IDC.Encoder
                 await Task.Delay(MillisecondsDelay);
             }
 
+            await Task.Delay(MillisecondsDelay2);
             sendParameter(EncodingParameter.CharIn, 255);
             isEncoding = false;
         }
