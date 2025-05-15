@@ -17,6 +17,7 @@ using System.IO;
 using System.Windows.Media;
 using System.Collections.ObjectModel;
 using System.Windows;
+using System.Net.Http.Headers;
 
 namespace YeusepesModules.SPOTIOSC.Utils.Requests
 {
@@ -506,10 +507,34 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
         public GenericSpotifyRequest(HttpClient httpClient, string accessToken, string clientToken)
             : base(httpClient, accessToken, clientToken) { }
 
+        public GenericSpotifyRequest(HttpClient httpClient, string accessToken)
+            : base(httpClient, accessToken, clientToken: null) { }
+
         // Expose a method to send the request using the base SendAsync logic.
         public async Task<string> SendRequestAsync(HttpRequestMessage request)
         {
             return await SendAsync(request);
+        }
+
+        /// <summary>
+        /// Overrides the base CreateRequest to drop all headers
+        /// except Authorization: Bearer {AccessToken}.
+        /// </summary>
+        public HttpRequestMessage CreateRequest(
+            HttpMethod method,
+            string url,
+            HttpContent content = null)
+        {
+            var request = new HttpRequestMessage(method, url);
+
+            // Only the OAuth token header
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", AccessToken);
+
+            // Attach body if you explicitly provided one (e.g. for context_uri in play)
+            if (content != null)
+                request.Content = content;
+
+            return request;
         }
     }
 

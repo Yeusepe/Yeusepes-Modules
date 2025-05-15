@@ -109,7 +109,10 @@ namespace YeusepesModules.SPOTIOSC
             SessionIsListening,     // from session.is_listening
             SessionIsControlling,   // from session.is_controlling
             QueueOnlyMode,          // from session.queue_only_mode            
-            HostIsGroup             // from session.host_device_info.is_group
+            HostIsGroup,             // from session.host_device_info.is_group
+
+            TrackChangedEvent
+
         }
 
 
@@ -175,6 +178,7 @@ namespace YeusepesModules.SPOTIOSC
             RegisterParameter<bool>(SpotiParameters.Pause, "SpotiOSC/Pause", ParameterMode.ReadWrite, "Pause", "Pauses playback.");
             RegisterParameter<bool>(SpotiParameters.NextTrack, "SpotiOSC/NextTrack", ParameterMode.Read, "Next Track", "Skips to the next track.");
             RegisterParameter<bool>(SpotiParameters.PreviousTrack, "SpotiOSC/PreviousTrack", ParameterMode.Read, "Previous Track", "Skips to the previous track.");                        
+            RegisterParameter<bool>(SpotiParameters.TrackChangedEvent, "SpotiOSC/TrackChangedEvent", ParameterMode.Write, "Track Changed Event", "Triggers when succesfully run a ChangedEvent.");                        
 
             // Playback state (root)
             RegisterParameter<bool>(SpotiParameters.ShuffleEnabled, "SpotiOSC/ShuffleEnabled", ParameterMode.ReadWrite, "Shuffle", "Shuffle state.");
@@ -493,6 +497,27 @@ namespace YeusepesModules.SPOTIOSC
                     HandleTouching(parameter.GetValue<bool>());
                     break;
 
+                case SpotiParameters.Play:
+                    LogDebug($"▶ Play parameter received: {parameter.GetValue<bool>()}");
+                    if (parameter.GetValue<bool>())
+                        HandlePlayCommand();
+                    break;
+
+                case SpotiParameters.Pause:
+                    LogDebug($"⏸ Pause parameter received: {parameter.GetValue<bool>()}");
+                    if (parameter.GetValue<bool>())
+                        HandlePauseCommand();
+                    break;
+
+                case SpotiParameters.NextTrack:
+                    LogDebug("⏭ NextTrack parameter received");
+                    HandleNextTrackCommand();
+                    break;
+
+                case SpotiParameters.PreviousTrack:
+                    LogDebug("⏮ PreviousTrack parameter received");
+                    HandlePreviousTrackCommand();
+                    break;
             }
         }
 
@@ -707,6 +732,24 @@ namespace YeusepesModules.SPOTIOSC
 
             UpdateSessionDetails(session);
         }
+
+        private async void HandlePlayCommand()
+        {            
+            if (string.IsNullOrEmpty(spotifyRequestContext.ContextUri))
+                await SpotifyMelodyRequests.ResumeAsync(spotifyRequestContext, spotifyUtilities);
+            /* else
+                await SpotifyPlaybackRequests.ResumeAsync(spotifyRequestContext, spotifyUtilities, spotifyRequestContext.ContextUri);*/
+        }
+
+        private async void HandlePauseCommand()
+            => await SpotifyMelodyRequests.PauseAsync(spotifyRequestContext, spotifyUtilities);
+
+        private async void HandleNextTrackCommand()
+            => await SpotifyMelodyRequests.SkipNextAsync(spotifyRequestContext, spotifyUtilities);
+
+        private async void HandlePreviousTrackCommand()
+            => await SpotifyMelodyRequests.SkipPrevAsync(spotifyRequestContext, spotifyUtilities);
+
 
         private void UpdateSessionDetails(JsonElement session)
         {
