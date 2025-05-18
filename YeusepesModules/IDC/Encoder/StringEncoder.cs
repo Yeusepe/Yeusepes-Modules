@@ -32,6 +32,7 @@ namespace YeusepesModules.IDC.Encoder
 
         public bool isEncoding = false;
 
+        private CancellationTokenSource _cts;
 
         public StringEncoder(
             EncodingUtilities encodingUtilities,
@@ -57,41 +58,55 @@ namespace YeusepesModules.IDC.Encoder
             registerBoolParameter(EncodingParameter.Ready, "Encoder/Ready", ParameterMode.Read, "Ready", "Indicates if the decoder is ready to receive the data");
         }
 
-
-        public async void SendString(string input, bool isUrl, Action<EncodingParameter, int> sendParameter)
+        public void CancelEncoding()
         {
-            if (string.IsNullOrEmpty(input))
-                return;
-
-            isEncoding = true;
-
-            // Send start signal: number of characters in the string, then a 0
-            sendParameter(EncodingParameter.CharIn, input.Length);
-            await Task.Delay(MillisecondsDelay);
-
-            sendParameter(EncodingParameter.CharIn, 0);
-            await Task.Delay(MillisecondsDelay);
-
-            // For each character, send its integer value (ensured to be 0-255) and then a 0
-            foreach (char c in input)
-            {
-                int intValue = ((int)c) % 256;
-
-                encodingUtilities.LogDebug($"Sending character {c} as {intValue}");
-                sendParameter(EncodingParameter.CharIn, intValue);
-                await Task.Delay(MillisecondsDelay);
-
-                sendParameter(EncodingParameter.CharIn, 0);
-                await Task.Delay(MillisecondsDelay);
-            }
-
-            await Task.Delay(MillisecondsDelay2);
-            sendParameter(EncodingParameter.CharIn, 255);
-            isEncoding = false;
+            _cts?.Cancel();
         }
 
+        public async void SendString(string input, bool isUrl, Action<EncodingParameter, int> sendParam)
+        {
+            if (isEncoding) return;
+            if (string.IsNullOrEmpty(input)) return;
 
+            // kill any pending encode
+            _cts?.Cancel();
+            _cts = new CancellationTokenSource();
+            var token = _cts.Token;
 
+            isEncoding = true;
+            try
+            {
+                // start signal
+                sendParam(EncodingParameter.CharIn, input.Length);
+                await Task.Delay(MillisecondsDelay, token);
+                sendParam(EncodingParameter.CharIn, 0);
+                await Task.Delay(MillisecondsDelay, token);
 
+                foreach (char c in input)
+                {
+                    token.ThrowIfCancellationRequested();
+
+                    int intValue = ((int)c) % 256;
+                    encodingUtilities.LogDebug($"Sending character {c} as {intValue}");
+                    sendParam(EncodingParameter.CharIn, intValue);
+                    await Task.Delay(MillisecondsDelay, token);
+
+                    sendParam(EncodingParameter.CharIn, 0);
+                    await Task.Delay(MillisecondsDelay, token);
+                }
+
+                // end-of-string marker
+                await Task.Delay(MillisecondsDelay2, token);
+                sendParam(EncodingParameter.CharIn, 255);
+            }
+            catch (OperationCanceledException)
+            {
+                encodingUtilities.LogDebug("Encoding cancelled.");
+            }
+            finally
+            {
+                isEncoding = false;
+            }
+        }
     }
 }

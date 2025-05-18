@@ -523,6 +523,7 @@ namespace YeusepesModules.SPOTIOSC
 
         private void StopDecodingProcess()
         {
+            encoder.CancelEncoding();
             Log("Decoding process halted.");
         }
 
