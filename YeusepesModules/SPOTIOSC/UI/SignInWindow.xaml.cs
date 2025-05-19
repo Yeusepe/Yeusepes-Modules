@@ -38,6 +38,11 @@ namespace YeusepesModules.SPOTIOSC.UI
             var decoderControl = new DecoderToleranceControl();
             decoderControl.AttachDependencies(_module.encodingUtilities);
             MainGrid.Children.Add(decoderControl);
+
+            // inside SignInWindow_SourceInitialized(...)
+            var advancedCreds = new AdvancedCredentials();
+            // if you need to pass dependencies you can do it here…
+            MainGrid.Children.Add(advancedCreds);
         }
 
         private void SignInWindow_Closed(object sender, EventArgs e)

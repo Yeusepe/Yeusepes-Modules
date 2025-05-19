@@ -11,6 +11,9 @@
     <Compile Update="OSCQR\UI\SavedQRCodesWindow.xaml.cs">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Update="SPOTIOSC\UI\AdvancedCredentials.xaml.cs">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Update="SPOTIOSC\UI\NowPlayingView.xaml.cs">
       <SubType>Code</SubType>
     </Compile>
