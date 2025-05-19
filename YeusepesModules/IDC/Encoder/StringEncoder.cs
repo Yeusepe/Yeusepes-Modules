@@ -101,6 +101,7 @@ namespace YeusepesModules.IDC.Encoder
             }
             catch (OperationCanceledException)
             {
+                sendParam(EncodingParameter.CharIn, 254);
                 encodingUtilities.LogDebug("Encoding cancelled.");
             }
             finally

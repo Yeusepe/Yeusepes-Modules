@@ -1,156 +1,127 @@
 ﻿using System;
-using System.Net.Http;
-using System.Net.Http.Headers;
-using System.Text;
-using System.Text.Json;
 using System.Threading.Tasks;
+using SpotifyAPI.Web;
 using YeusepesModules.SPOTIOSC.Credentials;
-using YeusepesModules.SPOTIOSC.Utils.Requests;
-using static YeusepesModules.SPOTIOSC.SpotiOSC;
 
-namespace YeusepesModules.SPOTIOSC.Utils.Requests
+public class SpotifyApiService
 {
-    public static class SpotifyMelodyRequests
+    private SpotifyClient _client;
+
+    /// <summary>
+    /// Ensures we have a valid access token (scraped or loaded) and builds the SpotifyClient.
+    /// </summary>
+    public async Task InitializeAsync()
     {
-        private const string MelodyEndpoint =
-            "https://gue1-spclient.spotify.com/melody/v1/msg/batch";
-
-        /// <summary>
-        /// Sends a generic connect command via the Spotify "melody" batch API.
-        /// </summary>
-        /// <summary>
-        /// Send any connect‐command (pause, resume, skip_next, skip_prev, etc.)
-        /// to the user’s active device via the “melody” batch API.
-        /// </summary>
-        /// <param name="context">Your SpotifyRequestContext (must have DeviceId set).</param>
-        /// <param name="utilities">SpotifyUtilities for logging & parameters.</param>
-        /// <param name="commandType">One of “pause” / “resume” / “skip_next” / “skip_prev”</param>
-        public static async Task<bool> SendCommandAsync(
-            SpotifyRequestContext context,
-            SpotifyUtilities utilities,
-            string commandType)
+        if (string.IsNullOrEmpty(CredentialManager.LoadApiAccessToken()))
         {
-            // 1) Build the batch payload
-            var cmdId = Guid.NewGuid().ToString("N"); // 32‐hex chars
-            var payload = new
-            {
-                messages = new[]
-                {
-                    new {
-                        type = "jssdk_connect_command",
-                        message = new {
-                            ms_ack_duration         = 349,
-                            ms_request_latency      = 280,
-                            command_id              = cmdId,
-                            command_type            = commandType,
-                            target_device_brand     = "spotify",
-                            target_device_model     = "PC desktop",
-                            target_device_client_id = context.ClientToken,
-                            target_device_id        = context.DeviceId,
-                            interaction_ids         = "",
-                            play_origin             = "",
-                            result                  = "success",
-                            http_response           = "",
-                            http_status_code        = 200
-                        }
-                    }
-                },
-                sdk_id = "harmony:4.51.2-0481fbde",
-                platform = "web_player windows;chrome;desktop",
-                client_version = "0.0.0"
-            };
-            string json = JsonSerializer.Serialize(payload);
-
-            // 2) Create the request and set all headers *exactly* like your cURL
-            using var req = new HttpRequestMessage(HttpMethod.Post, MelodyEndpoint);
-
-            req.Headers.TryAddWithoutValidation("accept", "*/*");
-            req.Headers.TryAddWithoutValidation(
-                "accept-language",
-                "en-US,en;q=0.9,es-CO;q=0.8,es;q=0.7");
-            req.Headers.Authorization =
-                new AuthenticationHeaderValue("Bearer", context.AccessToken);
-            req.Headers.TryAddWithoutValidation("client-token", context.ClientToken);
-            req.Headers.TryAddWithoutValidation("dnt", "1");
-            req.Headers.TryAddWithoutValidation("origin", "https://open.spotify.com");
-            req.Headers.TryAddWithoutValidation("priority", "u=1, i");
-            req.Headers.TryAddWithoutValidation("referer", "https://open.spotify.com/");
-            req.Headers.TryAddWithoutValidation(
-                "sec-ch-ua",
-                "\"Chromium\";v=\"136\", \"Google Chrome\";v=\"136\", \"Not.A/Brand\";v=\"99\"");
-            req.Headers.TryAddWithoutValidation("sec-ch-ua-mobile", "?0");
-            req.Headers.TryAddWithoutValidation("sec-ch-ua-platform", "\"Windows\"");
-            req.Headers.TryAddWithoutValidation("sec-fetch-dest", "empty");
-            req.Headers.TryAddWithoutValidation("sec-fetch-mode", "cors");
-            req.Headers.TryAddWithoutValidation("sec-fetch-site", "same-site");
-            req.Headers.UserAgent.ParseAdd(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-                "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                "Chrome/136.0.0.0 Safari/537.36");
-
-            // 3) Attach the JSON as text/plain and then set the charset
-            var content = new StringContent(json, Encoding.UTF8, "text/plain");
-            content.Headers.ContentType.CharSet = "UTF-8";
-            req.Content = content;
-
-            // 4) Dump outgoing request for debugging
-            utilities.Log("----- HTTP Request -----");
-            utilities.Log($"{req.Method} {MelodyEndpoint}");
-            foreach (var h in req.Headers)
-                utilities.Log($"[H] {h.Key}: {string.Join(", ", h.Value)}");
-            utilities.Log($"[CH] Content-Type: {req.Content.Headers.ContentType}");
-            utilities.Log($"[Body] {json}");
-            utilities.Log("------------------------");
-
-            // 5) Send it raw (so we see exactly what Spotify returns)
-            HttpResponseMessage resp;
-            try
-            {
-                resp = await context.HttpClient.SendAsync(req);
-            }
-            catch (Exception ex)
-            {
-                utilities.Log($"Network error: {ex.Message}");
-                utilities.SendParameter(SpotiParameters.Error, true);
-                return false;
-            }
-
-            // 6) Dump incoming response
-            var respBody = await resp.Content.ReadAsStringAsync();
-            utilities.Log("----- HTTP Response -----");
-            utilities.Log($"Status: {(int)resp.StatusCode} {resp.ReasonPhrase}");
-            utilities.Log($"Body: {(string.IsNullOrWhiteSpace(respBody) ? "<empty>" : respBody)}");
-            utilities.Log("-------------------------");
-
-            if (!resp.IsSuccessStatusCode)
-            {
-                utilities.Log($"Command '{commandType}' failed with {(int)resp.StatusCode}.");
-                utilities.SendParameter(SpotiParameters.Error, true);
-                return false;
-            }
-
-            return true;
+            // Headless‐only: scrape the API endpoint for access_token + refresh_token
+            await CredentialManager.CaptureApiTokensAsync();
         }
 
-        // Convenience wrappers:
-        public static Task<bool> PauseAsync(
-            SpotifyRequestContext ctx,
-            SpotifyUtilities utils)
-            => SendCommandAsync(ctx, utils, "pause");
+        var apiToken = CredentialManager.LoadApiAccessToken();
+        if (string.IsNullOrEmpty(apiToken))
+            throw new InvalidOperationException("Failed to obtain API access token.");
 
-        public static Task<bool> ResumeAsync(
-            SpotifyRequestContext ctx,
-            SpotifyUtilities utils)
-            => SendCommandAsync(ctx, utils, "resume");
+        _client = new SpotifyClient(apiToken);
+    }
 
-        public static Task<bool> SkipNextAsync(
-            SpotifyRequestContext ctx,
-            SpotifyUtilities utils)
-            => SendCommandAsync(ctx, utils, "skip_next");
 
-        public static Task<bool> SkipPrevAsync(
-            SpotifyRequestContext ctx,
-            SpotifyUtilities utils)
-            => SendCommandAsync(ctx, utils, "skip_prev");
+    /// <summary>
+    /// Gets the user's current playback state. On 401 it will refresh once & retry.
+    /// </summary>
+    public async Task<CurrentlyPlaying> GetCurrentPlaybackAsync()
+    {
+        try
+        {
+            return await _client.Player.GetCurrentlyPlaying(new PlayerCurrentlyPlayingRequest());
+        }
+        catch (APIUnauthorizedException)
+        {
+            await RefreshAndReinitializeAsync();
+            return await _client.Player.GetCurrentlyPlaying(new PlayerCurrentlyPlayingRequest());
+        }
+    }
+
+    /// <summary> Start or resume playback. </summary>
+    public async Task PlayAsync(string deviceId = null)
+        => await _client.Player.ResumePlayback(new PlayerResumePlaybackRequest { DeviceId = deviceId });
+
+    public async Task PlayUriAsync(string uri, string deviceId = null)
+    {
+        // Spotify only accepts single‐track URIs in `uris`, but albums/artists/playlists
+        // as `context_uri`.
+        var req = new PlayerResumePlaybackRequest { DeviceId = deviceId };
+        if (uri.StartsWith("spotify:track:"))
+            req.Uris = new List<string> { uri };
+        else
+            req.ContextUri = uri;
+
+        await _client.Player.ResumePlayback(req);
+    }
+
+
+    /// <summary> Pause playback. </summary>
+    public async Task PauseAsync(string deviceId = null)
+        => await _client.Player.PausePlayback(new PlayerPausePlaybackRequest { DeviceId = deviceId });
+
+    /// <summary> Skip to next track. </summary>
+    public async Task NextTrackAsync()
+        => await _client.Player.SkipNext();
+
+    /// <summary> Skip to previous track. </summary>
+    public async Task PreviousTrackAsync()
+        => await _client.Player.SkipPrevious();
+
+    /// <summary> Seek to a position (ms) in the currently playing track. </summary>
+    public async Task SeekAsync(int positionMs, string deviceId = null)
+        => await _client.Player.SeekTo(new PlayerSeekToRequest(positionMs) { DeviceId = deviceId });
+
+    /// <summary> Set volume (0–100%). </summary>
+    public async Task SetVolumeAsync(int volumePercent, string deviceId = null)
+        => await _client.Player.SetVolume(new PlayerVolumeRequest(volumePercent) { DeviceId = deviceId });
+
+    /// <summary> Toggle shuffle on/off. </summary>
+    public async Task SetShuffleAsync(bool state, string deviceId = null)
+        => await _client.Player.SetShuffle(new PlayerShuffleRequest(state) { DeviceId = deviceId });
+
+    /// <summary> Set repeat mode: off, track, or context. </summary>
+    public async Task SetRepeatAsync(PlayerSetRepeatRequest.State state, string deviceId = null)
+        => await _client.Player.SetRepeat(new PlayerSetRepeatRequest(state) { DeviceId = deviceId });
+
+    /// <summary>
+    /// Transfer playback to one or more devices. 
+    /// If play = true, playback will start on the new device immediately.
+    /// </summary>
+    public async Task TransferPlaybackAsync(string[] deviceIds, bool play = false)
+        => await _client.Player.TransferPlayback(new PlayerTransferPlaybackRequest(deviceIds)
+        {
+            Play = play
+        });
+
+    /// <summary> Add a track or episode to the end of the user’s queue. </summary>
+    public async Task AddToQueueAsync(string uri, string deviceId = null)
+        => await _client.Player.AddToQueue(new PlayerAddToQueueRequest(uri) { DeviceId = deviceId });
+
+    /// <summary>
+    /// Refreshes the access token using the saved refresh token, persists the new pair,
+    /// and rebuilds the SpotifyClient.
+    /// </summary>
+    private async Task RefreshAndReinitializeAsync()
+    {
+        var savedRefresh = CredentialManager.LoadApiRefreshToken();
+        if (string.IsNullOrEmpty(savedRefresh))
+            throw new InvalidOperationException("No saved API refresh token.");
+
+        var refreshRequest = new PKCETokenRefreshRequest(
+            clientId: CredentialManager.ApiClientId,
+            refreshToken: savedRefresh
+        );
+        var refreshResponse = await new OAuthClient().RequestToken(refreshRequest);
+
+        CredentialManager.SaveApiAccessToken(refreshResponse.AccessToken);
+        if (!string.IsNullOrEmpty(refreshResponse.RefreshToken))
+            CredentialManager.SaveApiRefreshToken(refreshResponse.RefreshToken);
+
+        _client = new SpotifyClient(refreshResponse.AccessToken);
     }
 }

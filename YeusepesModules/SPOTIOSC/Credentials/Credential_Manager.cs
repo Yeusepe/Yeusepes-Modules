@@ -9,6 +9,8 @@ using VRCOSC.App.Utils;
 using PuppeteerSharp;
 using System.Text.RegularExpressions;
 using YeusepesModules.SPOTIOSC.Utils.Requests;
+using System.Net;
+using System.Runtime.InteropServices;
 
 namespace YeusepesModules.SPOTIOSC.Credentials
 {
@@ -22,13 +24,22 @@ namespace YeusepesModules.SPOTIOSC.Credentials
         private const string AccessTokenEndpoint = "https://open.spotify.com/";        
         private const string ClientTokenEndpoint = "https://clienttoken.spotify.com/v1/clienttoken";
 
+        // Developer docs page for “Get Current Playback”
+        private const string DeveloperPlaybackUrl =
+            "https://developer.spotify.com/documentation/web-api/reference/get-information-about-the-users-current-playback";
+
+        // Where we’ll persist the API refresh token
+        private const string ApiRefreshTokenFile = "api_refresh_token.dat";
         private const string AccessTokenFile = "access_token.dat";
         private const string ClientTokenFile = "client_token.dat";
 
         // Global token holders.
         public static SecureString AccessToken = new SecureString();
         public static SecureString ClientToken = new SecureString();
+        public static SecureString ApiAccessToken = new SecureString();
         private static string clientID = null;
+        public static string ApiClientId = null;
+        public static SecureString ApiRefreshToken = new SecureString();
 
         public static SpotifyUtilities SpotifyUtils { get; set; }
         #endregion
@@ -156,10 +167,20 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                     }
                 }
             }
+
             if (string.IsNullOrEmpty(LoadClientToken()))
-            {                
-                await GetClientTokenAsync();                
+                await GetClientTokenAsync();
+
+            try
+            {
+                await CaptureBrowserTokensAsync(DeveloperPlaybackUrl, interceptApiToken: true);
             }
+            catch (PuppeteerSharp.NavigationException ex)
+            {
+                // this is harmless once we've captured the tokens
+                SpotifyUtils?.Log($"Ignoring detached-frame error in API capture: {ex.Message}");
+            }
+
         }
 
         /// <summary>
@@ -172,16 +193,8 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             // Delete token files.
             try
             {
-                if (File.Exists(AccessTokenFile))
-                {
-                    File.Delete(AccessTokenFile);
-                    SpotifyUtils?.Log("Access token file deleted.");
-                }
-                if (File.Exists(ClientTokenFile))
-                {
-                    File.Delete(ClientTokenFile);
-                    SpotifyUtils?.Log("Client token file deleted.");
-                }
+                foreach (var f in new[] { AccessTokenFile, ClientTokenFile, ApiRefreshTokenFile })
+                    if (File.Exists(f)) File.Delete(f);
             }
             catch (Exception ex)
             {
@@ -193,6 +206,8 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             {
                 ClearSecureString(ref AccessToken);
                 ClearSecureString(ref ClientToken);
+                ClearSecureString(ref ApiAccessToken);
+                ClearSecureString(ref ApiRefreshToken);
             }
             catch (Exception ex)
             {
@@ -490,6 +505,108 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             }
         }
 
+        /// <summary>
+        /// Headless‐only flow to capture the Web-API access & refresh tokens.
+        /// </summary>
+        public static Task CaptureApiTokensAsync()
+            => CaptureBrowserTokensAsync(DeveloperPlaybackUrl, interceptApiToken: true);
+
+        private static async Task CaptureBrowserTokensAsync(
+            string url,
+            bool interceptApiToken = false)
+        {
+            IBrowser browser = null;
+            IPage page = null;
+            var tcs = new TaskCompletionSource<bool>();
+
+            try
+            {
+                browser = await LaunchBrowserAsync(headless: true);
+                page = await InitializePageAsync(browser, url);
+
+                // intercept requests
+                await page.SetRequestInterceptionAsync(true);
+
+                // 1) Intercept the API POST to /api/token (if requested)
+                page.Request += async (sender, e) =>
+                {
+                    if (interceptApiToken
+                        && e.Request.Url.Contains("/accounts.spotify.com/api/token")
+                        && e.Request.Method == HttpMethod.Post)
+                    {
+                        var postData = e.Request.PostData;
+                        var m = Regex.Match(postData, @"client_id=([^&]+)");
+                        if (m.Success)
+                        {
+                            ApiClientId = Uri.UnescapeDataString(m.Groups[1].Value);
+                            SpotifyUtils?.Log($"[API] client_id = {ApiClientId}");
+                        }
+                    }
+                    await e.Request.ContinueAsync();
+                };
+
+                // 2) Intercept responses
+                page.Response += async (sender, e) =>
+                {
+                    // --- API‐token flow ---
+                    if (interceptApiToken
+                        && e.Response.Url.Contains("/accounts.spotify.com/api/token")
+                        && e.Response.Status == HttpStatusCode.OK)
+                    {
+                        var body = await e.Response.TextAsync();
+                        var json = JsonSerializer.Deserialize<JsonElement>(body);
+
+                        if (json.TryGetProperty("access_token", out var at))
+                        {
+                            SaveApiAccessToken(at.GetString());
+                            SpotifyUtils?.Log("[API] access_token captured");
+                        }
+                        if (json.TryGetProperty("refresh_token", out var rt))
+                        {
+                            SaveApiRefreshToken(rt.GetString());
+                            SpotifyUtils?.Log("[API] refresh_token saved");
+                        }
+
+                        tcs.TrySetResult(true);
+                        await browser.CloseAsync();
+                    }
+                    // --- original open.spotify.com flow ---
+                    else if (!interceptApiToken
+                        && e.Response.Url.Contains("access_token")
+                        && e.Response.Status == HttpStatusCode.OK)
+                    {
+                        // your existing logic…
+                        // Deserialize, SaveAccessToken(...), clientID = ..., etc.
+                        tcs.TrySetResult(true);
+                        await browser.CloseAsync();
+                    }
+                };
+
+                // navigate _again_ to trigger the token fetch
+                try
+                {
+                    await page.GoToAsync(url, WaitUntilNavigation.Networkidle0);
+                }
+                catch (PuppeteerSharp.NavigationException ex)
+                {
+                    SpotifyUtils?.Log($"Ignored navigation exception during API token capture: {ex.Message}");
+                }
+
+                // await either the API or the original flow
+                await tcs.Task;
+
+            }
+            catch (Exception ex)
+            {
+                SpotifyUtils?.Log($"Error in CaptureBrowserTokensAsync: {ex.Message}");
+                throw;
+            }
+            finally
+            {
+                if (browser != null && browser.IsConnected)
+                    await browser.CloseAsync();
+            }
+        }
 
         #endregion
 
@@ -592,6 +709,50 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                 return null;
             }
         }
+
+        public static void SaveApiAccessToken(string token)
+        {
+            NativeMethods.SaveToSecureString(token, ref ApiAccessToken);
+        }
+        public static void SaveApiRefreshToken(string refresh)
+        {
+            NativeMethods.SaveToSecureString(refresh, ref ApiRefreshToken);
+            var encrypted = ProtectedData.Protect(
+                Encoding.UTF8.GetBytes(refresh),
+                null,
+                DataProtectionScope.CurrentUser);
+            File.WriteAllBytes(ApiRefreshTokenFile, encrypted);
+        }
+
+        public static string LoadApiRefreshToken()
+        {
+            if (!File.Exists(ApiRefreshTokenFile)) return null;
+            var encrypted = File.ReadAllBytes(ApiRefreshTokenFile);
+            var refresh = Encoding.UTF8.GetString(
+                ProtectedData.Unprotect(encrypted, null, DataProtectionScope.CurrentUser));
+            NativeMethods.SaveToSecureString(refresh, ref ApiRefreshToken);
+            return refresh;
+        }
+
+        /// <summary>
+        /// Retrieve the API access token we saved earlier.
+        /// </summary>
+        public static string LoadApiAccessToken()
+        {
+            if (ApiAccessToken == null)
+                return null;
+
+            var ptr = Marshal.SecureStringToBSTR(ApiAccessToken);
+            try
+            {
+                return Marshal.PtrToStringBSTR(ptr);
+            }
+            finally
+            {
+                Marshal.ZeroFreeBSTR(ptr);
+            }
+        }
+
 
         #endregion
 

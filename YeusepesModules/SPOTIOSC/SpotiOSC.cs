@@ -15,6 +15,7 @@ using System.Text.Json;
 using YeusepesModules.Common.ScreenUtilities;
 using VRCOSC.App.Settings;
 using VRCOSC.App.Utils;
+using Windows.Services.Maps;
 
 
 namespace YeusepesModules.SPOTIOSC
@@ -33,6 +34,7 @@ namespace YeusepesModules.SPOTIOSC
         public SpotifyUtilities spotifyUtilities;
         public EncodingUtilities encodingUtilities;
         private PlayerEventSubscriber _playerEventSubscriber;
+        private SpotifyApiService _apiService;
 
 
         private StringEncoder encoder;
@@ -173,8 +175,16 @@ namespace YeusepesModules.SPOTIOSC
             RegisterParameter<bool>(SpotiParameters.InAJam, "SpotiOSC/InAJam", ParameterMode.Write, "In A Jam", "Set to true if you are in a jam.");
             RegisterParameter<bool>(SpotiParameters.IsJamOwner, "SpotiOSC/IsJamOwner", ParameterMode.Write, "Is Jam Owner", "Set to true if you are the owner of the jam.");
             RegisterParameter<bool>(SpotiParameters.Error, "SpotiOSC/Error", ParameterMode.Write, "Error", "Triggered when an error occurs.");
-            RegisterParameter<bool>(SpotiParameters.Touching, "SpotiOSC/Touching", ParameterMode.ReadWrite, "Touching", "Set to true when two compatible devices tap eachother.");
-            RegisterParameter<bool>(SpotiParameters.Play, "SpotiOSC/Play", ParameterMode.ReadWrite, "Play", "Triggers playback.");
+            RegisterParameter<bool>(SpotiParameters.Touching, "SpotiOSC/Touching", ParameterMode.ReadWrite, "Touching", "Set to true when two compatible devices tap eachother.");            
+            RegisterParameter<bool>(
+              SpotiParameters.Play,
+              "SpotiOSC/Play/*",
+              ParameterMode.ReadWrite,
+              "Play [URI]",
+              "Set to true to resume playback, or append /<spotify:uri> to play that URI."
+            );
+
+
             RegisterParameter<bool>(SpotiParameters.Pause, "SpotiOSC/Pause", ParameterMode.ReadWrite, "Pause", "Pauses playback.");
             RegisterParameter<bool>(SpotiParameters.NextTrack, "SpotiOSC/NextTrack", ParameterMode.Read, "Next Track", "Skips to the next track.");
             RegisterParameter<bool>(SpotiParameters.PreviousTrack, "SpotiOSC/PreviousTrack", ParameterMode.Read, "Previous Track", "Skips to the previous track.");                        
@@ -409,13 +419,8 @@ namespace YeusepesModules.SPOTIOSC
             await _playerEventSubscriber.StartAsync();
             SendParameter(SpotiParameters.Enabled, true);
 
-            SendParameter(SpotiParameters.InAJam, false);
-            SendParameter(SpotiParameters.IsJamOwner, false);
-            SendParameter(SpotiParameters.Error, false);
-
-            //
-            SendParameter(SpotiParameters.InAJam, true);
-
+            _apiService = new SpotifyApiService();
+            await _apiService.InitializeAsync();
 
             SendParameter(SpotiParameters.InAJam, false);
             SendParameter(SpotiParameters.IsJamOwner, false);
@@ -462,6 +467,7 @@ namespace YeusepesModules.SPOTIOSC
                                 // Start the asynchronous join process.
                                 HandleJoinJam();
                                 break;
+
                         }
 
                     }
@@ -485,6 +491,29 @@ namespace YeusepesModules.SPOTIOSC
                 return;
             }
 
+            async void Do(Action<SpotifyApiService> work)
+            {
+                try { await Task.Yield(); work(_apiService); }
+                catch (Exception ex) { Log($"Spotify API error: {ex.Message}"); }
+            }
+
+            if (parameter.Lookup is SpotiParameters p && p == SpotiParameters.Play && parameter.GetValue<bool>())
+            {
+                // is there something in that * ?
+                if (parameter.IsWildcardType<string>(0)
+                    && !string.IsNullOrEmpty(parameter.GetWildcard<string>(0)))
+                {
+                    var uri = parameter.GetWildcard<string>(0);
+                    // fire‐and‐forget
+                    _ = _apiService.PlayUriAsync(uri, spotifyRequestContext.DeviceId);
+                }
+                else
+                {
+                    // no URI ⇒ just resume current playback
+                    _ = _apiService.PlayAsync(spotifyRequestContext.DeviceId);
+                }
+            }
+
             switch (parameter.Lookup)
             {
                 case SpotiParameters.WantJam:
@@ -497,27 +526,18 @@ namespace YeusepesModules.SPOTIOSC
                     HandleTouching(parameter.GetValue<bool>());
                     break;
 
-                case SpotiParameters.Play:
-                    LogDebug($"▶ Play parameter received: {parameter.GetValue<bool>()}");
-                    if (parameter.GetValue<bool>())
-                        HandlePlayCommand();
+                case SpotiParameters.Pause when parameter.GetValue<bool>():
+                    Do(svc => svc.PauseAsync(spotifyRequestContext.DeviceId));
                     break;
 
-                case SpotiParameters.Pause:
-                    LogDebug($"⏸ Pause parameter received: {parameter.GetValue<bool>()}");
-                    if (parameter.GetValue<bool>())
-                        HandlePauseCommand();
+                case SpotiParameters.NextTrack when parameter.GetValue<bool>():
+                    Do(svc => svc.NextTrackAsync());
                     break;
 
-                case SpotiParameters.NextTrack:
-                    LogDebug("⏭ NextTrack parameter received");
-                    HandleNextTrackCommand();
+                case SpotiParameters.PreviousTrack when parameter.GetValue<bool>():
+                    Do(svc => svc.PreviousTrackAsync());
                     break;
 
-                case SpotiParameters.PreviousTrack:
-                    LogDebug("⏮ PreviousTrack parameter received");
-                    HandlePreviousTrackCommand();
-                    break;
             }
         }
 
@@ -652,7 +672,7 @@ namespace YeusepesModules.SPOTIOSC
                 Log("Attempting to refresh tokens...");
                 await CredentialManager.AuthenticateAsync();
 
-                var newAccessToken = CredentialManager.LoadAccessToken();
+                var newAccessToken = CredentialManager.LoadAccessToken();                
                 var newClientToken = CredentialManager.LoadClientToken();
 
                 if (string.IsNullOrEmpty(newAccessToken) || string.IsNullOrEmpty(newClientToken))
@@ -733,25 +753,6 @@ namespace YeusepesModules.SPOTIOSC
 
             UpdateSessionDetails(session);
         }
-
-        private async void HandlePlayCommand()
-        {            
-            if (string.IsNullOrEmpty(spotifyRequestContext.ContextUri))
-                await SpotifyMelodyRequests.ResumeAsync(spotifyRequestContext, spotifyUtilities);
-            /* else
-                await SpotifyPlaybackRequests.ResumeAsync(spotifyRequestContext, spotifyUtilities, spotifyRequestContext.ContextUri);*/
-        }
-
-        private async void HandlePauseCommand()
-            => await SpotifyMelodyRequests.PauseAsync(spotifyRequestContext, spotifyUtilities);
-
-        private async void HandleNextTrackCommand()
-            => await SpotifyMelodyRequests.SkipNextAsync(spotifyRequestContext, spotifyUtilities);
-
-        private async void HandlePreviousTrackCommand()
-            => await SpotifyMelodyRequests.SkipPrevAsync(spotifyRequestContext, spotifyUtilities);
-
-
         private void UpdateSessionDetails(JsonElement session)
         {
             try
@@ -1220,72 +1221,6 @@ namespace YeusepesModules.SPOTIOSC
                     Array.Clear(clientToken.ToCharArray(), 0, clientToken.Length);
                 }
             }
-        }
-
-        public async Task<string> GetTopArtistsAsync()
-        {
-            var response = await _httpClient.GetAsync("https://api.spotify.com/v1/me/top/artists");
-            return await HandleResponseAsync(response);
-        }
-        public async Task<string> GetPlaylistsAsync()
-        {
-            var response = await _httpClient.GetAsync("https://api.spotify.com/v1/me/playlists");
-            return await HandleResponseAsync(response);
-        }
-
-        public async Task<bool> EnableShuffleAsync()
-        {
-            var response = await _httpClient.PutAsync("https://api.spotify.com/v1/me/player/shuffle?state=true", null);
-            return response.IsSuccessStatusCode;
-        }
-
-        public async Task<bool> SetVolumeAsync(int volumePercent)
-        {
-            var response = await _httpClient.PutAsync($"https://api.spotify.com/v1/me/player/volume?volume_percent={volumePercent}", null);
-            return response.IsSuccessStatusCode;
-        }
-
-        public async Task<bool> SetRepeatModeAsync(string state)
-        {
-            var response = await _httpClient.PutAsync($"https://api.spotify.com/v1/me/player/repeat?state={state}", null);
-            return response.IsSuccessStatusCode;
-        }
-
-        public async Task<bool> SkipToPreviousTrackAsync()
-        {
-            var response = await _httpClient.PostAsync("https://api.spotify.com/v1/me/player/previous", null);
-            return response.IsSuccessStatusCode;
-        }
-
-        public async Task<bool> SkipToNextTrackAsync()
-        {
-            var response = await _httpClient.PostAsync("https://api.spotify.com/v1/me/player/next", null);
-            return response.IsSuccessStatusCode;
-        }
-
-        public async Task<bool> PausePlaybackAsync()
-        {
-            var response = await _httpClient.PutAsync("https://api.spotify.com/v1/me/player/pause", null);
-            return response.IsSuccessStatusCode;
-        }
-
-        public async Task<bool> StartPlaybackAsync(string contextUri, int offsetPosition, int positionMs)
-        {
-            var content = new StringContent($"{{\"context_uri\":\"{contextUri}\",\"offset\":{{\"position\":{offsetPosition}}},\"position_ms\":{positionMs}}}", System.Text.Encoding.UTF8, "application/json");
-            var response = await _httpClient.PutAsync("https://api.spotify.com/v1/me/player/play", content);
-            return response.IsSuccessStatusCode;
-        }
-
-        public async Task<string> GetCurrentlyPlayingTrackAsync()
-        {
-            var response = await _httpClient.GetAsync("https://api.spotify.com/v1/me/player/currently-playing");
-            return await HandleResponseAsync(response);
-        }
-
-        public async Task<string> GetAvailableDevicesAsync()
-        {
-            var response = await _httpClient.GetAsync("https://api.spotify.com/v1/me/player/devices");
-            return await HandleResponseAsync(response);
         }
 
         private async Task<string> HandleResponseAsync(HttpResponseMessage response)
