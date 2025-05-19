@@ -130,7 +130,7 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
                 using (var request = new HttpRequestMessage(HttpMethod.Get, endpoint))
                 {
                     // Use the access token stored in the context.
-                    request.Headers.Add("Authorization", $"Bearer {context.AccessToken}");
+                    request.Headers.Add("Authorization", $"Bearer {context.ApiToken}");
                     utilities.Log("Fetching current playback state...");
 
                     HttpResponseMessage response = await context.HttpClient.SendAsync(request);
@@ -277,7 +277,7 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
                     {
                         utilities.Log($"Failed to fetch playback state. Status: {response.StatusCode}");
                         string errorContent = await response.Content.ReadAsStringAsync();
-                        utilities.Log($"Error response: {errorContent}");
+                        utilities.LogDebug($"Error response: {errorContent}");
                     }
                 }
             }
@@ -320,6 +320,8 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
         public HttpClient HttpClient { get; set; }
         public string AccessToken { get; set; }
         public string ClientToken { get; set; }
+
+        public string ApiToken { get; set; }
 
         // Device Information
         public string DeviceId { get; set; }

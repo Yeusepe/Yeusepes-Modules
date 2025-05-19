@@ -261,14 +261,14 @@ namespace YeusepesModules.SPOTIOSC.Credentials
 
             try
             {
-                SpotifyUtils?.Log("Initializing browser fetcher...");
+                SpotifyUtils?.LogDebug("Initializing browser fetcher...");
                 var browserFetcher = new BrowserFetcher();
-                SpotifyUtils?.Log("Downloading supported Chromium version...");
+                SpotifyUtils?.LogDebug("Downloading supported Chromium version...");
                 var installedBrowser = await browserFetcher.DownloadAsync();
                 string browserPath = installedBrowser.GetExecutablePath();
-                SpotifyUtils?.Log($"Chromium downloaded to: {browserPath}");
+                SpotifyUtils?.LogDebug($"Chromium downloaded to: {browserPath}");
 
-                SpotifyUtils?.Log("Launching browser with persistence enabled...");
+                SpotifyUtils?.LogDebug("Launching browser with persistence enabled...");
 
                 var launchArgs = new List<string>();
 
@@ -302,33 +302,33 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                     DumpIO = true
                 };
 
-                SpotifyUtils?.Log("Attempting to launch the browser...");
+                SpotifyUtils?.LogDebug("Attempting to launch the browser...");
                 var browser = await Puppeteer.LaunchAsync(launchOptions);
-                SpotifyUtils?.Log("Browser launched successfully!");
+                SpotifyUtils?.LogDebug("Browser launched successfully!");
                 return browser;
             }
             catch (PuppeteerSharp.ProcessException ex)
             {
-                SpotifyUtils?.Log($"ProcessException: Failed to launch browser! {ex.Message}");
+                SpotifyUtils?.LogDebug($"ProcessException: Failed to launch browser! {ex.Message}");
                 if (ex.InnerException != null)
                 {
-                    SpotifyUtils?.Log($"Inner Exception: {ex.InnerException.Message}");
+                    SpotifyUtils?.LogDebug($"Inner Exception: {ex.InnerException.Message}");
                 }
                 throw;
             }
             catch (UnauthorizedAccessException ex)
             {
-                SpotifyUtils?.Log($"UnauthorizedAccessException: Permission issue detected! {ex.Message}");
+                SpotifyUtils?.LogDebug($"UnauthorizedAccessException: Permission issue detected! {ex.Message}");
                 throw;
             }
             catch (IOException ex)
             {
-                SpotifyUtils?.Log($"IOException: Error accessing files or directories! {ex.Message}");
+                SpotifyUtils?.LogDebug($"IOException: Error accessing files or directories! {ex.Message}");
                 throw;
             }
             catch (Exception ex)
             {
-                SpotifyUtils?.Log($"Exception: An unexpected error occurred! {ex.Message}");
+                SpotifyUtils?.LogDebug($"Exception: An unexpected error occurred! {ex.Message}");
                 throw;
             }
         }

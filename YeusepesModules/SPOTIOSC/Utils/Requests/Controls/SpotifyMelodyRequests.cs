@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Threading.Tasks;
+using Microsoft.VisualBasic.Logging;
 using SpotifyAPI.Web;
 using YeusepesModules.SPOTIOSC.Credentials;
 
@@ -12,18 +13,37 @@ public class SpotifyApiService
     /// </summary>
     public async Task InitializeAsync()
     {
-        if (string.IsNullOrEmpty(CredentialManager.LoadApiAccessToken()))
-        {
-            // Headless‐only: scrape the API endpoint for access_token + refresh_token
-            await CredentialManager.CaptureApiTokensAsync();
+        var accessToken = CredentialManager.LoadApiAccessToken();
+        var refreshToken = CredentialManager.LoadApiRefreshToken();
+        var clientId = CredentialManager.ApiClientId;
+
+        if (string.IsNullOrEmpty(accessToken) || string.IsNullOrEmpty(clientId)) { 
+            var refreshRequest = new PKCETokenRefreshRequest(clientId,refreshToken);
+            var refreshResponse = await new OAuthClient().RequestToken(refreshRequest);
+            accessToken = refreshResponse.AccessToken;
         }
 
-        var apiToken = CredentialManager.LoadApiAccessToken();
-        if (string.IsNullOrEmpty(apiToken))
-            throw new InvalidOperationException("Failed to obtain API access token.");
 
-        _client = new SpotifyClient(apiToken);
+        var initialResponse = new PKCETokenResponse
+        {
+            AccessToken = accessToken,
+            RefreshToken = refreshToken
+        };
+
+        var authenticator = new PKCEAuthenticator(clientId, initialResponse);
+        authenticator.TokenRefreshed += (s, tokens) => {            
+            CredentialManager.SaveApiAccessToken(tokens.AccessToken);
+            if (!string.IsNullOrEmpty(tokens.RefreshToken))
+                CredentialManager.SaveApiRefreshToken(tokens.RefreshToken);
+        };
+
+        var config = SpotifyClientConfig
+                        .CreateDefault()
+                        .WithAuthenticator(authenticator);
+
+        _client = new SpotifyClient(config);        
     }
+
 
 
     /// <summary>
@@ -106,22 +126,22 @@ public class SpotifyApiService
     /// Refreshes the access token using the saved refresh token, persists the new pair,
     /// and rebuilds the SpotifyClient.
     /// </summary>
-    private async Task RefreshAndReinitializeAsync()
+    public async Task RefreshAndReinitializeAsync()
     {
         var savedRefresh = CredentialManager.LoadApiRefreshToken();
         if (string.IsNullOrEmpty(savedRefresh))
-            throw new InvalidOperationException("No saved API refresh token.");
-
+        {            
+            await CredentialManager.CaptureApiTokensAsync();
+            savedRefresh = CredentialManager.LoadApiRefreshToken();
+        }
+        
         var refreshRequest = new PKCETokenRefreshRequest(
             clientId: CredentialManager.ApiClientId,
             refreshToken: savedRefresh
         );
         var refreshResponse = await new OAuthClient().RequestToken(refreshRequest);
-
-        CredentialManager.SaveApiAccessToken(refreshResponse.AccessToken);
-        if (!string.IsNullOrEmpty(refreshResponse.RefreshToken))
-            CredentialManager.SaveApiRefreshToken(refreshResponse.RefreshToken);
-
+        
         _client = new SpotifyClient(refreshResponse.AccessToken);
     }
+
 }

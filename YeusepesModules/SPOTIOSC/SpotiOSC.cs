@@ -16,6 +16,7 @@ using YeusepesModules.Common.ScreenUtilities;
 using VRCOSC.App.Settings;
 using VRCOSC.App.Utils;
 using Windows.Services.Maps;
+using SpotifyAPI.Web;
 
 
 namespace YeusepesModules.SPOTIOSC
@@ -203,7 +204,7 @@ namespace YeusepesModules.SPOTIOSC
             RegisterParameter<bool>(SpotiParameters.DeviceIsPrivate, "SpotiOSC/DeviceIsPrivate", ParameterMode.ReadWrite, "Private Session", "Device is in a private session.");
             RegisterParameter<bool>(SpotiParameters.DeviceIsRestricted, "SpotiOSC/DeviceIsRestricted", ParameterMode.ReadWrite, "Restricted Device", "Device is restricted.");
             RegisterParameter<bool>(SpotiParameters.DeviceSupportsVolume, "SpotiOSC/DeviceSupportsVolume", ParameterMode.ReadWrite, "Volume Support", "Device supports volume.");
-            RegisterParameter<int>(SpotiParameters.DeviceVolumePercent, "SpotiOSC/DeviceVolumePercent", ParameterMode.ReadWrite, "Device Volume (%)", "Device volume percentage.");
+            RegisterParameter<int>(SpotiParameters.DeviceVolumePercent, "SpotiOSC/Volume", ParameterMode.ReadWrite, "Device Volume (%)", "Set to 0-100 to change the playback volume.");
 
             // Context details (state.context)
             RegisterParameter<int>(SpotiParameters.ContextType, "SpotiOSC/ContextType", ParameterMode.Write, "Context Type (Mapped)", "Mapped context type (playlist=0, else -1).");
@@ -419,7 +420,10 @@ namespace YeusepesModules.SPOTIOSC
             await _playerEventSubscriber.StartAsync();
             SendParameter(SpotiParameters.Enabled, true);
 
+            await CredentialManager.CaptureApiTokensAsync();
+            
             _apiService = new SpotifyApiService();
+
             await _apiService.InitializeAsync();
 
             SendParameter(SpotiParameters.InAJam, false);
@@ -536,6 +540,24 @@ namespace YeusepesModules.SPOTIOSC
 
                 case SpotiParameters.PreviousTrack when parameter.GetValue<bool>():
                     Do(svc => svc.PreviousTrackAsync());
+                    break;
+                case SpotiParameters.RepeatMode
+                  when parameter.GetValue<int>() is var mode:
+                    {
+                        // map your int → Spotify state
+                        var state = mode switch
+                        {
+                            1 => PlayerSetRepeatRequest.State.Track,
+                            2 => PlayerSetRepeatRequest.State.Context,
+                            _ => PlayerSetRepeatRequest.State.Off
+                        };
+                        Do(svc => svc.SetRepeatAsync(state, spotifyRequestContext.DeviceId));
+                    }
+                    break;
+
+                case SpotiParameters.DeviceVolumePercent
+                    when parameter.GetValue<int>() is var vol && vol is >= 0 and <= 100:
+                    Do(svc => svc.SetVolumeAsync(vol, spotifyRequestContext.DeviceId));
                     break;
 
             }
