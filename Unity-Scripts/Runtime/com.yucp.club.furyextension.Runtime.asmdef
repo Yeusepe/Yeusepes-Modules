@@ -1,0 +1,20 @@
+{
+    "name": "com.yucp.club.furyextension.Runtime",
+    "rootNamespace": "",
+    "references": [
+        "VRC.SDKBase",
+        "VRCFury",
+        "com.vrcfury.api"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [
+        "VRCSDKBase.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -1,0 +1,26 @@
+{
+    "name": "com.yucp.club.furyextension.editor",
+    "rootNamespace": "",
+    "references": [
+        "VRC.SDKBase.Editor.BuildPipeline",
+        "com.yucp.club.furyextension.Runtime",
+        "VRCFury-Editor",
+        "com.vrcfury.api"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [
+        "VRCSDKBase.dll",
+        "VRCSDKBase-Editor.dll",
+        "VRCSDK3A.dll",
+        "VRCSDK3A-Editor.dll"
+    ],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
