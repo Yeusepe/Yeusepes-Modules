@@ -261,12 +261,8 @@ namespace YeusepesModules.SPOTIOSC.Credentials
 
             try
             {
-                SpotifyUtils?.LogDebug("Initializing browser fetcher...");
-                var browserFetcher = new BrowserFetcher();
-                SpotifyUtils?.LogDebug("Downloading supported Chromium version...");
-                var installedBrowser = await browserFetcher.DownloadAsync();
-                string browserPath = installedBrowser.GetExecutablePath();
-                SpotifyUtils?.LogDebug($"Chromium downloaded to: {browserPath}");
+                string browserPath = await ResolveBrowserPathAsync();
+                SpotifyUtils?.LogDebug($"Using Chromium at: {browserPath}");
 
                 SpotifyUtils?.LogDebug("Launching browser with persistence enabled...");
 
@@ -331,6 +327,32 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                 SpotifyUtils?.LogDebug($"Exception: An unexpected error occurred! {ex.Message}");
                 throw;
             }
+        }
+
+        private static async Task<string> ResolveBrowserPathAsync()
+        {
+            SpotifyUtils?.LogDebug("Initializing browser fetcher...");
+            var browserFetcher = new BrowserFetcher();
+            SpotifyUtils?.LogDebug("Downloading supported Chromium version...");
+            var installedBrowser = await browserFetcher.DownloadAsync();
+            var browserPath = installedBrowser.GetExecutablePath();
+
+            if (!File.Exists(browserPath))
+            {
+                SpotifyUtils?.LogDebug("Downloaded browser not found, checking environment variables...");
+                foreach (var envVar in new[] { "PUPPETEER_EXECUTABLE_PATH", "CHROME_PATH" })
+                {
+                    var envPath = Environment.GetEnvironmentVariable(envVar);
+                    if (!string.IsNullOrWhiteSpace(envPath) && File.Exists(envPath))
+                    {
+                        SpotifyUtils?.LogDebug($"Using browser from {envVar}: {envPath}");
+                        return envPath;
+                    }
+                }
+                throw new FileNotFoundException($"Chromium executable not found. Looked in {browserPath}");
+            }
+
+            return browserPath;
         }
 
         /// <summary>
@@ -615,23 +637,52 @@ namespace YeusepesModules.SPOTIOSC.Credentials
         /// <summary>
         /// Saves the access token securely.
         /// </summary>
-        private static void SaveAccessToken(string accessToken)
+        private static void SaveToken(string file, string token, ref SecureString holder, string name)
         {
             try
             {
-                NativeMethods.SaveToSecureString(accessToken, ref AccessToken);
+                NativeMethods.SaveToSecureString(token, ref holder);
                 var encryptedData = ProtectedData.Protect(
-                    Encoding.UTF8.GetBytes(accessToken),
+                    Encoding.UTF8.GetBytes(token),
                     null,
                     DataProtectionScope.CurrentUser
                 );
-                File.WriteAllBytes(AccessTokenFile, encryptedData);
-                SpotifyUtils?.Log("Access token saved securely.");
+                File.WriteAllBytes(file, encryptedData);
+                SpotifyUtils?.Log($"{name} saved securely.");
             }
             catch (Exception ex)
             {
-                SpotifyUtils?.Log($"Error saving access token: {ex.Message}");
+                SpotifyUtils?.Log($"Error saving {name.ToLowerInvariant()}: {ex.Message}");
             }
+        }
+
+        private static string LoadToken(string file, ref SecureString holder, string name)
+        {
+            try
+            {
+                if (!File.Exists(file))
+                {
+                    SpotifyUtils?.Log($"{name} file not found.");
+                    return null;
+                }
+                var encryptedData = File.ReadAllBytes(file);
+                var token = Encoding.UTF8.GetString(
+                    ProtectedData.Unprotect(encryptedData, null, DataProtectionScope.CurrentUser)
+                );
+                NativeMethods.SaveToSecureString(token, ref holder);
+                SpotifyUtils?.Log($"{name} loaded successfully.");
+                return token;
+            }
+            catch (Exception ex)
+            {
+                SpotifyUtils?.Log($"Error loading {name.ToLowerInvariant()}: {ex.Message}");
+                return null;
+            }
+        }
+
+        private static void SaveAccessToken(string accessToken)
+        {
+            SaveToken(AccessTokenFile, accessToken, ref AccessToken, "Access token");
         }
 
         /// <summary>
@@ -639,26 +690,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
         /// </summary>
         public static string LoadAccessToken()
         {
-            try
-            {
-                if (!File.Exists(AccessTokenFile))
-                {
-                    SpotifyUtils?.Log("Access token file not found.");
-                    return null;
-                }
-                var encryptedData = File.ReadAllBytes(AccessTokenFile);
-                var accessToken = Encoding.UTF8.GetString(
-                    ProtectedData.Unprotect(encryptedData, null, DataProtectionScope.CurrentUser)
-                );
-                NativeMethods.SaveToSecureString(accessToken, ref AccessToken);
-                SpotifyUtils?.Log("Access token loaded successfully.");
-                return accessToken;
-            }
-            catch (Exception ex)
-            {
-                SpotifyUtils?.Log($"Error loading access token: {ex.Message}");
-                return null;
-            }
+            return LoadToken(AccessTokenFile, ref AccessToken, "Access token");
         }
 
         /// <summary>
@@ -666,21 +698,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
         /// </summary>
         public static void SaveClientToken(string clientToken)
         {
-            try
-            {
-                NativeMethods.SaveToSecureString(clientToken, ref ClientToken);
-                byte[] encryptedData = ProtectedData.Protect(
-                    Encoding.UTF8.GetBytes(clientToken),
-                    null,
-                    DataProtectionScope.CurrentUser
-                );
-                File.WriteAllBytes(ClientTokenFile, encryptedData);
-                SpotifyUtils?.Log("Client token securely saved.");
-            }
-            catch (Exception ex)
-            {
-                SpotifyUtils?.Log($"Error saving client token: {ex.Message}");
-            }
+            SaveToken(ClientTokenFile, clientToken, ref ClientToken, "Client token");
         }
 
         /// <summary>
@@ -688,50 +706,22 @@ namespace YeusepesModules.SPOTIOSC.Credentials
         /// </summary>
         public static string LoadClientToken()
         {
-            try
-            {
-                if (!File.Exists(ClientTokenFile))
-                {
-                    SpotifyUtils?.Log("Client token file not found.");
-                    return null;
-                }
-                byte[] encryptedData = File.ReadAllBytes(ClientTokenFile);
-                string clientToken = Encoding.UTF8.GetString(
-                    ProtectedData.Unprotect(encryptedData, null, DataProtectionScope.CurrentUser)
-                );
-                NativeMethods.SaveToSecureString(clientToken, ref ClientToken);
-                SpotifyUtils?.Log("Client token successfully loaded.");
-                return clientToken;
-            }
-            catch (Exception ex)
-            {
-                SpotifyUtils?.Log($"Error loading client token: {ex.Message}");
-                return null;
-            }
+            return LoadToken(ClientTokenFile, ref ClientToken, "Client token");
         }
 
         public static void SaveApiAccessToken(string token)
         {
             NativeMethods.SaveToSecureString(token, ref ApiAccessToken);
         }
+
         public static void SaveApiRefreshToken(string refresh)
         {
-            NativeMethods.SaveToSecureString(refresh, ref ApiRefreshToken);
-            var encrypted = ProtectedData.Protect(
-                Encoding.UTF8.GetBytes(refresh),
-                null,
-                DataProtectionScope.CurrentUser);
-            File.WriteAllBytes(ApiRefreshTokenFile, encrypted);
+            SaveToken(ApiRefreshTokenFile, refresh, ref ApiRefreshToken, "API refresh token");
         }
 
         public static string LoadApiRefreshToken()
         {
-            if (!File.Exists(ApiRefreshTokenFile)) return null;
-            var encrypted = File.ReadAllBytes(ApiRefreshTokenFile);
-            var refresh = Encoding.UTF8.GetString(
-                ProtectedData.Unprotect(encrypted, null, DataProtectionScope.CurrentUser));
-            NativeMethods.SaveToSecureString(refresh, ref ApiRefreshToken);
-            return refresh;
+            return LoadToken(ApiRefreshTokenFile, ref ApiRefreshToken, "API refresh token");
         }
 
         /// <summary>
