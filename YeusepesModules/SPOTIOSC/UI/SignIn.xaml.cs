@@ -19,6 +19,7 @@ using static YeusepesLowLevelTools.Loader;
 using System.Reflection;
 
 namespace YeusepesModules.SPOTIOSC.UI
+
 {
     public partial class SignIn : UserControl
     {
@@ -65,8 +66,7 @@ namespace YeusepesModules.SPOTIOSC.UI
                 // 1) If we already have a valid token, just fetch profile
                 if (CredentialManager.IsUserSignedIn())
                 {
-                    using var httpClient = new HttpClient();
-                    spotifyUtilities.Log($"Tokens: {CredentialManager.LoadAccessToken()}, {CredentialManager.LoadClientToken()}");
+                    using var httpClient = new HttpClient();                    
                     var profileRequest = new SpotifyProfileRequest(
                         httpClient,
                         CredentialManager.LoadAccessToken(),

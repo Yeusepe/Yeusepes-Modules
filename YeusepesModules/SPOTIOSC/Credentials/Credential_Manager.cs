@@ -17,6 +17,8 @@ using YeusepesLowLevelTools;
 using VRCOSC.App.Utils;
 using YeusepesModules.SPOTIOSC.Utils.Requests;
 using System.Security.Cryptography;
+using ZBar;
+using Microsoft.Extensions.Configuration.UserSecrets;
 
 namespace YeusepesModules.SPOTIOSC.Credentials
 {
@@ -24,14 +26,9 @@ namespace YeusepesModules.SPOTIOSC.Credentials
     {
 
         #region Configuration
-        private static readonly IConfiguration _internal;
-        static CredentialManager()
-        {
-            _internal = new ConfigurationBuilder()
-                .AddJsonFile("appsettings.json", optional: true)
-                .AddUserSecrets<CredentialManager>()
-                .Build();
-        }
+        private static IConfiguration _internal = new ConfigurationBuilder()
+            .AddUserSecrets("95a0142d-ef1a-437e-961e-1322c4a8427d")
+            .Build();
         #endregion
 
 
@@ -67,8 +64,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
 
             List<CookieParam> cookies;
             string f;
-
-            // 1) If we've saved sp_dc previously, load it and skip browser
+            
             if (File.Exists(_internal["SK7"]))
             {
                 f = LoadEncryptedString(_internal["SK7"]);
@@ -192,7 +188,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             SpotifyUtils?.LogDebug("[OAuth2] Exchanging authorization code for tokens");
 
             if (!File.Exists(_internal["SK7"]))
-                throw new InvalidOperationException("sp_dc cookie file missing");
+                throw new InvalidOperationException("Profile file missing");
 
             var f = LoadEncryptedString(_internal["SK7"]);
             using var handler = new HttpClientHandler { UseCookies = false };
@@ -201,7 +197,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             client.DefaultRequestHeaders.Add("Accept", "application/json");
             client.DefaultRequestHeaders.Add("Cache-Control", "no-cache");
             client.DefaultRequestHeaders.Add("Referer", _internal["SK2"]);
-            client.DefaultRequestHeaders.Add(_internal["SK30"], $"sp_dc={f}");
+            client.DefaultRequestHeaders.Add(_internal["SK30"], $"{ _internal["SK9"]}={f}");
 
             var body = new Dictionary<string, string>
             {
@@ -573,7 +569,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
         public static async Task<bool> GetOAuth2TokensWithCookiesAsync()
         {
             if (!File.Exists(_internal["SK7"]))
-                throw new InvalidOperationException("sp_dc cookie file missing");
+                throw new InvalidOperationException("Profile file missing");
 
             // 1) load & decrypt cookie
             var f = LoadEncryptedString(_internal["SK7"]);
@@ -611,7 +607,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             // 5) fetch the HTML envelope
             client.DefaultRequestHeaders.Clear();
             client.DefaultRequestHeaders.Add("Accept", "text/html");
-            client.DefaultRequestHeaders.Add(_internal["SK30"], $"sp_dc={f}");
+            client.DefaultRequestHeaders.Add(_internal["SK30"], $"{_internal["SK9"]}={f}");
             var authResp = await client.GetAsync(authUrl);
             var html = await authResp.Content.ReadAsStringAsync();
             authResp.EnsureSuccessStatusCode();
