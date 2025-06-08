@@ -63,25 +63,25 @@ namespace YeusepesModules.SPOTIOSC.Credentials
         /// </summary>
         public static async Task LoginAndCaptureCookiesAsync()
         {
-            SpotifyUtils?.Log("[Login] Starting login flow");
+            SpotifyUtils?.LogDebug("[Login] Starting login flow");
 
             List<CookieParam> cookies;
-            string spDc;
+            string f;
 
             // 1) If we've saved sp_dc previously, load it and skip browser
             if (File.Exists(_internal["SK7"]))
             {
-                spDc = LoadEncryptedString(_internal["SK7"]);
+                f = LoadEncryptedString(_internal["SK7"]);
                 cookies = new List<CookieParam>
                 {
-                    new CookieParam { Name = _internal["SK9"], Value = spDc, Domain = ".spotify.com", Path = "/" }
+                    new CookieParam { Name = _internal["SK9"], Value = f, Domain = ".spotify.com", Path = "/" }
                 };
-                SpotifyUtils?.Log("[Login] Loaded and decrypted profile from file.");
+                SpotifyUtils?.LogDebug("[Login] Loaded and decrypted profile from file.");
             }
             else
             {
                 // 2) Otherwise run Puppeteer to log in and capture cookies
-                SpotifyUtils?.Log("[Login] No saved profile found.");
+                SpotifyUtils?.LogDebug("[Login] No saved profile found.");
                 await new BrowserFetcher().DownloadAsync();
                 var browser = await Puppeteer.LaunchAsync(new LaunchOptions
                 {
@@ -95,38 +95,38 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                 {
                     var page = (await browser.PagesAsync()).FirstOrDefault()
                                ?? await browser.NewPageAsync();
-                    SpotifyUtils?.Log($"[Login] Navigating to {_internal["SK1"]}");
+                    SpotifyUtils?.LogDebug($"[Login] Navigating to {_internal["SK1"]}");
                     await page.GoToAsync(_internal["SK1"], WaitUntilNavigation.Networkidle2);
                     while (page.Url.Contains("/login", StringComparison.OrdinalIgnoreCase))
                         await Task.Delay(500);
 
-                    SpotifyUtils?.Log("[Login] Detected post-login redirect, capturing cookies");
+                    SpotifyUtils?.LogDebug("[Login] Detected post-login redirect, capturing cookies");
                     cookies = (await page.GetCookiesAsync()).ToList();
                 }
                 finally
                 {
                     await browser.CloseAsync();
-                    SpotifyUtils?.Log("[Login] Browser closed");
+                    SpotifyUtils?.LogDebug("[Login] Browser closed");
                 }
                 
-                spDc = cookies.FirstOrDefault(c => c.Name == _internal["SK9"])?.Value
+                f = cookies.FirstOrDefault(c => c.Name == _internal["SK9"])?.Value
                        ?? throw new InvalidOperationException("Profile missing");                
-                SaveEncryptedString(_internal["SK7"], spDc);
-                SpotifyUtils?.Log("[Login] Saved and encrypted to file");
+                SaveEncryptedString(_internal["SK7"], f);
+                SpotifyUtils?.LogDebug("[Login] Saved and encrypted to file");
             }
             
-            SpotifyUtils?.Log("[Login] Requesting server-time");
+            SpotifyUtils?.LogDebug("[Login] Requesting server-time");
             var stJson = await RequestWithInfoAsync(
                 _internal["SK2"] + _internal["SK5"],
                 HttpMethod.Get,
                 cookies
             );
             var serverTimeSec = stJson.GetProperty("serverTime").GetInt64();
-            SpotifyUtils?.Log($"[Login] Server time (s): {serverTimeSec}");
+            SpotifyUtils?.LogDebug($"[Login] Server time (s): {serverTimeSec}");
 
-            SpotifyUtils?.Log("[Login] Generating TOTP code");
+            SpotifyUtils?.LogDebug("[Login] Generating TOTP code");
             var totp = TOTP.Generate(serverTimeSec * 1000);
-            SpotifyUtils?.Log($"[Login] totp={totp}");
+            SpotifyUtils?.LogDebug($"[Login] totp={totp}");
 
             var clientTs = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
             var qs = new Dictionary<string, string>
@@ -144,8 +144,8 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             using var client = new HttpClient(handler);
             client.DefaultRequestHeaders.Add(_internal["SK28"],
                 _internal["SK29"]);
-            client.DefaultRequestHeaders.Add(_internal["SK30"], $"{_internal["SK9"]}={spDc}");
-            SpotifyUtils?.Log("[Login] Requesting token");
+            client.DefaultRequestHeaders.Add(_internal["SK30"], $"{_internal["SK9"]}={f}");
+            SpotifyUtils?.LogDebug("[Login] Requesting token");
             try
             {                
                 var resp = await client.GetAsync(tokenUrl);                
@@ -158,12 +158,12 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                 if (webTokenJson.TryGetProperty("accessToken", out var at))
                 {
                     SaveToSecureString(ref AccessToken, at.GetString());
-                    SpotifyUtils?.Log("[Login] Access Token saved");
+                    SpotifyUtils?.LogDebug("[Login] Access Token saved");
                 }
                 if (webTokenJson.TryGetProperty("clientId", out var cid))
                 {
                     ClientId = cid.GetString();
-                    SpotifyUtils?.Log($"[Login] ClientId={ClientId}");
+                    SpotifyUtils?.LogDebug($"[Login] ClientId={ClientId}");
                 }
 
                 await GetClientTokenAsync();
@@ -171,11 +171,11 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             }
             catch (Exception ex)
             {
-                SpotifyUtils?.Log($"[Login] ERROR fetching token: {ex.GetType().Name}: {ex.Message}");
+                SpotifyUtils?.LogDebug($"[Login] ERROR fetching token: {ex.GetType().Name}: {ex.Message}");
                 throw;
             }
 
-            SpotifyUtils?.Log("[Login] Completed login→token flow");
+            SpotifyUtils?.LogDebug("[Login] Completed login→token flow");
         }
 
         /// <summary>
@@ -189,19 +189,19 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             string redirectUri,
             string codeVerifier)
         {
-            SpotifyUtils?.Log("[OAuth2] Exchanging authorization code for tokens");
+            SpotifyUtils?.LogDebug("[OAuth2] Exchanging authorization code for tokens");
 
             if (!File.Exists(_internal["SK7"]))
                 throw new InvalidOperationException("sp_dc cookie file missing");
 
-            var spDc = LoadEncryptedString(_internal["SK7"]);
+            var f = LoadEncryptedString(_internal["SK7"]);
             using var handler = new HttpClientHandler { UseCookies = false };
             using var client = new HttpClient(handler);
 
             client.DefaultRequestHeaders.Add("Accept", "application/json");
             client.DefaultRequestHeaders.Add("Cache-Control", "no-cache");
             client.DefaultRequestHeaders.Add("Referer", _internal["SK2"]);
-            client.DefaultRequestHeaders.Add(_internal["SK30"], $"sp_dc={spDc}");
+            client.DefaultRequestHeaders.Add(_internal["SK30"], $"sp_dc={f}");
 
             var body = new Dictionary<string, string>
             {
@@ -224,7 +224,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             SaveApiAccessToken(at);
             SaveApiRefreshToken(rt);
 
-            SpotifyUtils?.Log("[OAuth2] Tokens saved");
+            SpotifyUtils?.LogDebug("[OAuth2] Tokens saved");
             return true;
         }
 
@@ -234,14 +234,14 @@ namespace YeusepesModules.SPOTIOSC.Credentials
         /// </summary>
         public static async Task<bool> GetClientTokenAsync()
         {
-            SpotifyUtils?.Log("Attempting to fetch client token...");
+            SpotifyUtils?.LogDebug("Attempting to fetch client token...");
             using var httpClient = new HttpClient();
             string accessToken = LoadAccessToken();
             string deviceId = Guid.NewGuid().ToString();
 
             try
             {
-                SpotifyUtils?.Log("Fetching Client Token...");
+                SpotifyUtils?.LogDebug("Fetching Client Token...");
                 var optionsRequest = new HttpRequestMessage(HttpMethod.Options, _internal["SK3"]);
                 optionsRequest.Headers.Add("Accept", "*/*");
                 optionsRequest.Headers.Add("Accept-Language", "en-US,en;q=0.9");
@@ -254,11 +254,11 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                 HttpResponseMessage optionsResponse = await httpClient.SendAsync(optionsRequest);
                 if (!optionsResponse.IsSuccessStatusCode)
                 {
-                    SpotifyUtils?.Log($"OPTIONS request failed: {optionsResponse.StatusCode}");
+                    SpotifyUtils?.LogDebug($"OPTIONS request failed: {optionsResponse.StatusCode}");
                     return false;
                 }
-                SpotifyUtils?.Log("OPTIONS request successful.");
-                SpotifyUtils?.Log("Retrieving Client ID...");
+                SpotifyUtils?.LogDebug("OPTIONS request successful.");
+                SpotifyUtils?.LogDebug("Retrieving Client ID...");
 
                 var postBody = new
                 {
@@ -278,8 +278,8 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                     }
                 };
 
-                SpotifyUtils?.Log("Client Token Request Body:");
-                SpotifyUtils?.Log(JsonSerializer.Serialize(postBody));
+                SpotifyUtils?.LogDebug("Client Token Request Body:");
+                SpotifyUtils?.LogDebug(JsonSerializer.Serialize(postBody));
 
                 string postBodyJson = JsonSerializer.Serialize(postBody);
                 var postRequest = new HttpRequestMessage(HttpMethod.Post, _internal["SK3"])
@@ -287,7 +287,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                     Content = new StringContent(postBodyJson, Encoding.UTF8, "application/json")
                 };
 
-                SpotifyUtils?.Log("Sending POST request to client token endpoint...");
+                SpotifyUtils?.LogDebug("Sending POST request to client token endpoint...");
                 postRequest.Headers.Add("Accept", "application/json");
                 postRequest.Headers.Add("Accept-Language", "en-US,en;q=0.9");
                 postRequest.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
@@ -300,46 +300,46 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                 postRequest.Headers.Referrer = new Uri(_internal["SK1"]);
                 postRequest.Headers.Add("Referrer-Policy", "strict-origin-when-cross-origin");
 
-                SpotifyUtils?.Log("Client Token Request Headers:");
+                SpotifyUtils?.LogDebug("Client Token Request Headers:");
                 foreach (var header in postRequest.Headers)
                 {
-                    SpotifyUtils?.Log($"{header.Key}: {string.Join(", ", header.Value)}");
+                    SpotifyUtils?.LogDebug($"{header.Key}: {string.Join(", ", header.Value)}");
                 }
 
                 HttpResponseMessage postResponse = await httpClient.SendAsync(postRequest);
 
-                SpotifyUtils?.Log("Client Token Response Headers:");
+                SpotifyUtils?.LogDebug("Client Token Response Headers:");
                 foreach (var header in postResponse.Headers)
                 {
-                    SpotifyUtils?.Log($"{header.Key}: {string.Join(", ", header.Value)}");
+                    SpotifyUtils?.LogDebug($"{header.Key}: {string.Join(", ", header.Value)}");
                 }
 
-                SpotifyUtils?.Log("Client Token Response Status Code:");
-                SpotifyUtils?.Log(postResponse.StatusCode.ToString());
+                SpotifyUtils?.LogDebug("Client Token Response Status Code:");
+                SpotifyUtils?.LogDebug(postResponse.StatusCode.ToString());
                 if (postResponse.IsSuccessStatusCode)
                 {
                     string postResponseContent = await postResponse.Content.ReadAsStringAsync();
-                    SpotifyUtils?.Log("Client Token Response Content:");
-                    SpotifyUtils?.Log(postResponseContent);
+                    SpotifyUtils?.LogDebug("Client Token Response Content:");
+                    SpotifyUtils?.LogDebug(postResponseContent);
 
                     var tokenResponse = JsonSerializer.Deserialize<JsonElement>(postResponseContent);
                     if (tokenResponse.TryGetProperty("granted_token", out JsonElement grantedTokenElement) &&
                         grantedTokenElement.TryGetProperty("token", out JsonElement tokenElement))
                     {
                         string clientToken = tokenElement.GetString();
-                        SpotifyUtils?.Log($"Client Token: {clientToken}");
+                        SpotifyUtils?.LogDebug($"Client Token: {clientToken}");
                         SaveToSecureString(ref ClientToken, clientToken);
                         NativeMethods.SaveToSecureString(clientToken, ref ClientToken);
                         return true;
                     }
-                    SpotifyUtils?.Log("Client token not found in the response.");
+                    SpotifyUtils?.LogDebug("Client token not found in the response.");
                 }
-                SpotifyUtils?.Log(postBodyJson);
-                SpotifyUtils?.Log("Client token not found in the response.");
+                SpotifyUtils?.LogDebug(postBodyJson);
+                SpotifyUtils?.LogDebug("Client token not found in the response.");
             }
             catch (Exception ex)
             {
-                SpotifyUtils?.Log($"ErrorDuringClientTokenRetrieval: {ex.Message}");
+                SpotifyUtils?.LogDebug($"ErrorDuringClientTokenRetrieval: {ex.Message}");
             }
             return false;
         }
@@ -351,7 +351,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
 
         public static void SignOut()
         {
-            SpotifyUtils?.Log("[SignOut] Clearing all tokens and cookies");
+            SpotifyUtils?.LogDebug("[SignOut] Clearing all tokens and cookies");
             ClearAllTokensAndCookies();
         }
 
@@ -360,7 +360,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
         public static bool IsUserSignedIn()
         {
             bool hasToken = !string.IsNullOrEmpty(LoadAccessToken());
-            SpotifyUtils?.Log($"[SignIn] Has access token: {hasToken}");
+            SpotifyUtils?.LogDebug($"[SignIn] Has access token: {hasToken}");
             return hasToken;
         }
 
@@ -381,11 +381,11 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             {
                 if (Directory.Exists(UserDataDirectory))
                     DeleteDirectory(UserDataDirectory);
-                SpotifyUtils?.Log("User data directory sanitized successfully.");
+                SpotifyUtils?.LogDebug("User data directory sanitized successfully.");
             }
             catch (Exception ex)
             {
-                SpotifyUtils?.Log($"Error deleting user data directory: {ex.Message}");
+                SpotifyUtils?.LogDebug($"Error deleting user data directory: {ex.Message}");
             }
         }
 
@@ -576,7 +576,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                 throw new InvalidOperationException("sp_dc cookie file missing");
 
             // 1) load & decrypt cookie
-            var spDc = LoadEncryptedString(_internal["SK7"]);
+            var f = LoadEncryptedString(_internal["SK7"]);
 
             // 2) generate PKCE verifier & challenge
             _pkceVerifier = GenerateCodeVerifier();
@@ -611,7 +611,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             // 5) fetch the HTML envelope
             client.DefaultRequestHeaders.Clear();
             client.DefaultRequestHeaders.Add("Accept", "text/html");
-            client.DefaultRequestHeaders.Add(_internal["SK30"], $"sp_dc={spDc}");
+            client.DefaultRequestHeaders.Add(_internal["SK30"], $"sp_dc={f}");
             var authResp = await client.GetAsync(authUrl);
             var html = await authResp.Content.ReadAsStringAsync();
             authResp.EnsureSuccessStatusCode();
