@@ -418,10 +418,8 @@ namespace YeusepesModules.SPOTIOSC
 
             LogDebug("Starting player event subscription...");
             await _playerEventSubscriber.StartAsync();
-            SendParameter(SpotiParameters.Enabled, true);
+            SendParameter(SpotiParameters.Enabled, true);            
 
-            await CredentialManager.CaptureApiTokensAsync();
-            
             _apiService = new SpotifyApiService();
 
             await _apiService.InitializeAsync();
@@ -661,7 +659,7 @@ namespace YeusepesModules.SPOTIOSC
                 if (!isAuthorized)
                 {
                     Log("Unauthorized response received. Deleting invalid tokens...");
-                    CredentialManager.DeleteTokens(); // Remove invalid tokens
+                    CredentialManager.ClearAllTokensAndCookies(); // Remove invalid tokens
 
                     Log("Attempting to refresh tokens...");
                     if (!await RefreshTokensAsync())
@@ -692,7 +690,7 @@ namespace YeusepesModules.SPOTIOSC
             try
             {
                 Log("Attempting to refresh tokens...");
-                await CredentialManager.AuthenticateAsync();
+                await CredentialManager.LoginAndCaptureCookiesAsync();
 
                 var newAccessToken = CredentialManager.LoadAccessToken();                
                 var newClientToken = CredentialManager.LoadClientToken();

@@ -53,7 +53,7 @@ namespace YeusepesModules.SPOTIOSC.UI
 
         private async Task InitializeUIAsync()
         {
-            // Show spinner overlay on UI thread
+            // show spinner
             await Dispatcher.InvokeAsync(() =>
             {
                 SpinnerOverlay.Visibility = Visibility.Visible;
@@ -62,26 +62,67 @@ namespace YeusepesModules.SPOTIOSC.UI
 
             try
             {
+                // 1) If we already have a valid token, just fetch profile
                 if (CredentialManager.IsUserSignedIn())
                 {
                     using var httpClient = new HttpClient();
-                    var profileRequest = new SpotifyProfileRequest(httpClient, CredentialManager.LoadAccessToken(), CredentialManager.LoadClientToken());
+                    spotifyUtilities.Log($"Tokens: {CredentialManager.LoadAccessToken()}, {CredentialManager.LoadClientToken()}");
+                    var profileRequest = new SpotifyProfileRequest(
+                        httpClient,
+                        CredentialManager.LoadAccessToken(),
+                        CredentialManager.LoadClientToken()
+                    );
                     var userProfile = await profileRequest.GetUserProfileAsync();
 
-                    if (userProfile == null)
+                    if (userProfile != null)
                     {
-                        spotifyUtilities.Log("Failed to fetch user profile.");
-                        await Dispatcher.InvokeAsync(() => DisplaySignedOutState());
+                        spotifyUtilities.Log($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}");
+                        UpdateUIWithUserProfile(
+                            userProfile.DisplayName,
+                            userProfile.Product,
+                            userProfile.Images?.FirstOrDefault()?.Url
+                        );
+                        await Dispatcher.InvokeAsync(DisplaySignedInState);
                         return;
                     }
+                }
+                // 2) Not signed in, but cookie exists → run the non-UI login (no Puppeteer)
+                else if (CredentialManager.HasSavedCookie())
+                {
+                    await CredentialManager.LoginAndCaptureCookiesAsync();
 
-                    spotifyUtilities.Log($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}");
-                    UpdateUIWithUserProfile(userProfile.DisplayName, userProfile.Product, userProfile.Images?.FirstOrDefault()?.Url);
-                    await Dispatcher.InvokeAsync(() => DisplaySignedInState());
+                    if (CredentialManager.IsUserSignedIn())
+                    {
+                        using var httpClient = new HttpClient();
+                        var profileRequest = new SpotifyProfileRequest(
+                            httpClient,
+                            CredentialManager.LoadAccessToken(),
+                            CredentialManager.LoadClientToken()
+                        );
+                        var userProfile = await profileRequest.GetUserProfileAsync();
+
+                        if (userProfile != null)
+                        {
+                            spotifyUtilities.Log($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}");
+                            UpdateUIWithUserProfile(
+                                userProfile.DisplayName,
+                                userProfile.Product,
+                                userProfile.Images?.FirstOrDefault()?.Url
+                            );
+                            await Dispatcher.InvokeAsync(DisplaySignedInState);
+                            return;
+                        }
+                    }
+
+                    await Dispatcher.InvokeAsync(DisplaySignedOutState);
                     return;
                 }
-
-                await Dispatcher.InvokeAsync(() => DisplaySignedOutState());
+                // 3) No token & no cookie → signed out, no browser ever opened
+                else
+                {
+                    await Dispatcher.InvokeAsync(DisplaySignedOutState);
+                    return;
+                }
             }
             catch (Exception ex)
             {
@@ -89,7 +130,7 @@ namespace YeusepesModules.SPOTIOSC.UI
             }
             finally
             {
-                // Hide spinner overlay on UI thread
+                // hide spinner
                 await Dispatcher.InvokeAsync(() =>
                 {
                     SpinnerOverlay.Visibility = Visibility.Collapsed;
@@ -97,6 +138,7 @@ namespace YeusepesModules.SPOTIOSC.UI
                 });
             }
         }
+
 
 
 

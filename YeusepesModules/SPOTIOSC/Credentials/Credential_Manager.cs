@@ -1,765 +1,236 @@
-﻿using System.Security;
-using System.Security.Cryptography;
-using System.Text;
-using YeusepesLowLevelTools;
-using System.Text.Json;
-using System.Net.Http;
+﻿using System;
+using Microsoft.Extensions.Configuration;
+using System.Collections.Generic;
 using System.IO;
-using VRCOSC.App.Utils;
-using PuppeteerSharp;
-using System.Text.RegularExpressions;
-using YeusepesModules.SPOTIOSC.Utils.Requests;
+using System.Linq;
 using System.Net;
+using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Runtime.InteropServices;
+using System.Security;
+using System.Text;
+using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using PuppeteerSharp;
+using YeusepesLowLevelTools;
+using VRCOSC.App.Utils;
+using YeusepesModules.SPOTIOSC.Utils.Requests;
+using System.Security.Cryptography;
 
 namespace YeusepesModules.SPOTIOSC.Credentials
 {
     public class CredentialManager
     {
-        #region Constants and Globals
 
-        // Base URLs for login and token retrieval.
-        private const string SpotifyLoginUrl = "https://accounts.spotify.com/en/login";
-        // Note: the access token endpoint requires these query parameters.
-        private const string AccessTokenEndpoint = "https://open.spotify.com/";        
-        private const string ClientTokenEndpoint = "https://clienttoken.spotify.com/v1/clienttoken";
+        #region Configuration
+        private static readonly IConfiguration _internal;
+        static CredentialManager()
+        {
+            _internal = new ConfigurationBuilder()
+                .AddJsonFile("appsettings.json", optional: true)
+                .AddUserSecrets<CredentialManager>()
+                .Build();
+        }
+        #endregion
 
-        // Developer docs page for “Get Current Playback”
-        private const string DeveloperPlaybackUrl =
-            "https://developer.spotify.com/documentation/web-api/reference/get-information-about-the-users-current-playback";
 
-        // Where we’ll persist the API refresh token
-        private const string ApiRefreshTokenFile = "api_refresh_token.dat";
-        private const string AccessTokenFile = "access_token.dat";
-        private const string ClientTokenFile = "client_token.dat";
 
-        // Global token holders.
+
+        #region In-Memory Tokens
+
         public static SecureString AccessToken = new SecureString();
         public static SecureString ClientToken = new SecureString();
-        public static SecureString ApiAccessToken = new SecureString();
-        private static string clientID = null;
-        public static string ApiClientId = null;
-        public static SecureString ApiRefreshToken = new SecureString();
+        public static SecureString RefreshToken = new SecureString();
+        public static string ClientId = null;
+
+        // For legacy /api/token OAuth2
+        private static SecureString ApiAccessToken = new SecureString();
+        private static SecureString ApiRefreshToken = new SecureString();
+        public static string ApiClientId = "cfe923b2d660439caf2b557b21f31221";
+
+        private const int TotpVer = 5;
+        private const int TotpPeriod = 30;
 
         public static SpotifyUtilities SpotifyUtils { get; set; }
+
         #endregion
 
         #region Public API
 
         /// <summary>
-        /// Headful login flow.
-        /// Opens the Spotify login page so the user can sign in.
-        /// Polls the page URL until it contains "/status?" (indicating a redirect after login),
-        /// then closes the headful browser.
+        /// Head-ful login → capture cookies → call server-time & get_access_token → call OAuth2 → stash
         /// </summary>
-        public static async Task LoginAsync()
+        public static async Task LoginAndCaptureCookiesAsync()
         {
-            SpotifyUtils?.Log("Starting headful login flow...");
+            SpotifyUtils?.Log("[Login] Starting login flow");
 
-            IBrowser browser = null;
-            IPage loginPage = null;
-            bool redirectDetected = false;
-            try
+            List<CookieParam> cookies;
+            string spDc;
+
+            // 1) If we've saved sp_dc previously, load it and skip browser
+            if (File.Exists(_internal["SK7"]))
             {
-                // Launch a headful browser using persistent storage.
-                browser = await LaunchBrowserAsync(headless: false, useAppMode: true);
-
-                // Open the login page.
-                loginPage = await InitializePageAsync(browser, SpotifyLoginUrl);                
-
-                try
+                spDc = LoadEncryptedString(_internal["SK7"]);
+                cookies = new List<CookieParam>
                 {
-                    // Wait for up to 60 seconds for the URL to include "/status?"
-                    await loginPage.WaitForFunctionAsync(
-                        "() => window.location.href.includes('/status?')",
-                        new WaitForFunctionOptions { Timeout = 60000 }
-                    );
-                    SpotifyUtils?.Log("Login detected (URL contains '/status?').");
-                    redirectDetected = true;
-                }
-                catch (Exception ex)
-                {
-                    SpotifyUtils?.Log("Login status not detected within the timeout period.");
-                }
-
-
-                if (!redirectDetected)
-                {
-                    SpotifyUtils?.Log("Login status not detected within the timeout period.");
-                }
-                else
-                {
-                    SpotifyUtils?.Log("Closing login page...");
-                    try
-                    {
-                        await loginPage.CloseAsync();
-                    }
-                    catch (Exception ex)
-                    {
-                        SpotifyUtils?.Log($"Error closing login page: {ex.Message}");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                SpotifyUtils?.Log($"Error during LoginAsync: {ex.Message}");
-                throw;
-            }
-            finally
-            {
-                if (browser != null)
-                {
-                    try
-                    {
-                        await browser.CloseAsync();
-                    }
-                    catch (Exception ex)
-                    {
-                        SpotifyUtils?.Log($"Error closing browser in LoginAsync: {ex.Message}");
-                    }
-                }
-            }
-
-            // At this point, the user's cookies have been saved to disk.
-            await AuthenticateAsync();
-        }
-
-        /// <summary>
-        /// Headless authentication flow.
-        /// Launches a headless browser (using the same persistent user data directory)
-        /// so that it loads the cookies saved during login and navigates to the token endpoint
-        /// to capture the JSON response with the access token.
-        /// </summary>
-        public static async Task AuthenticateAsync()
-        {
-            SpotifyUtils?.Log("Starting headless authentication flow...");
-
-            IBrowser browser = null;
-            IPage tokenPage = null;
-            var tokenReady = new TaskCompletionSource<bool>();
-
-            try
-            {
-                // Launch a headless browser that uses the same persistent user data directory.
-                browser = await LaunchBrowserAsync(headless: true);
-                tokenPage = await InitializePageAsync(browser, AccessTokenEndpoint);
-                await NavigateAndCaptureJsonResponseAsync(tokenPage, tokenReady);
-
-                // Wait until the token has been captured (or timeout/cancellation if desired).
-                await tokenReady.Task;
-            }
-            catch (Exception ex)
-            {
-                SpotifyUtils?.Log($"Error during AuthenticateAsync: {ex.Message}");
-                throw;
-            }
-            finally
-            {
-                if (browser != null)
-                {
-                    try
-                    {
-                        await browser.CloseAsync();
-                    }
-                    catch (Exception ex)
-                    {
-                        SpotifyUtils?.Log($"Error closing headless browser in AuthenticateAsync: {ex.Message}");
-                    }
-                }
-            }
-
-            if (string.IsNullOrEmpty(LoadClientToken()))
-                await GetClientTokenAsync();
-
-            try
-            {
-                await CaptureBrowserTokensAsync(DeveloperPlaybackUrl, interceptApiToken: true);
-            }
-            catch (PuppeteerSharp.NavigationException ex)
-            {
-                // this is harmless once we've captured the tokens
-                SpotifyUtils?.Log($"Ignoring detached-frame error in API capture: {ex.Message}");
-            }
-
-        }
-
-        /// <summary>
-        /// Signs out the user by deleting stored tokens and thoroughly sanitizing browser data.
-        /// </summary>
-        public static void SignOut()
-        {
-            SpotifyUtils?.Log("Signing out...");
-
-            // Delete token files.
-            try
-            {
-                foreach (var f in new[] { AccessTokenFile, ClientTokenFile, ApiRefreshTokenFile })
-                    if (File.Exists(f)) File.Delete(f);
-            }
-            catch (Exception ex)
-            {
-                SpotifyUtils?.Log($"Error deleting token files: {ex.Message}");
-            }
-
-            // Clear secure strings.
-            try
-            {
-                ClearSecureString(ref AccessToken);
-                ClearSecureString(ref ClientToken);
-                ClearSecureString(ref ApiAccessToken);
-                ClearSecureString(ref ApiRefreshToken);
-            }
-            catch (Exception ex)
-            {
-                SpotifyUtils?.Log($"Error clearing secure tokens: {ex.Message}");
-            }
-
-            // Thoroughly delete the persistent browser data directory.
-            const string UserDataDirectory = "user_data";
-            try
-            {
-                if (Directory.Exists(UserDataDirectory))
-                {
-                    DeleteDirectory(UserDataDirectory);
-                    SpotifyUtils?.Log("User data directory sanitized successfully.");
-                }
-                else
-                {
-                    SpotifyUtils?.Log("User data directory not found, nothing to sanitize.");
-                }
-            }
-            catch (Exception ex)
-            {
-                SpotifyUtils?.Log($"Error deleting user data directory: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Returns true if both access and client tokens exist.
-        /// </summary>
-        public static bool IsUserSignedIn()
-        {
-            return !string.IsNullOrEmpty(LoadAccessToken()) &&
-                   !string.IsNullOrEmpty(LoadClientToken());
-        }      
-
-
-        #endregion
-
-        #region Browser and Navigation Helpers
-
-        /// <summary>
-        /// Launches a Chromium browser with persistence enabled.
-        /// Both headful and headless flows use the same persistent user data directory.
-        /// </summary>
-        /// <summary>
-        /// Launches a Chromium browser with persistence enabled and anti-detection flags.
-        /// </summary>
-        private static async Task<IBrowser> LaunchBrowserAsync(bool headless, bool useAppMode = false)
-        {
-            const string UserDataDirectory = "user_data";
-
-            try
-            {
-                SpotifyUtils?.LogDebug("Initializing browser fetcher...");
-                var browserFetcher = new BrowserFetcher();
-                SpotifyUtils?.LogDebug("Downloading supported Chromium version...");
-                var installedBrowser = await browserFetcher.DownloadAsync();
-                string browserPath = installedBrowser.GetExecutablePath();
-                SpotifyUtils?.LogDebug($"Chromium downloaded to: {browserPath}");
-
-                SpotifyUtils?.LogDebug("Launching browser with persistence enabled...");
-
-                var launchArgs = new List<string>();
-
-                // Add the app mode argument if needed.
-                if (useAppMode)
-                {
-                    launchArgs.Add($"--app={SpotifyLoginUrl}");
-                }
-
-                // Anti-detection: disable blink features that reveal automation.
-                launchArgs.Add("--disable-blink-features=AutomationControlled");
-
-                launchArgs.AddRange(new List<string>
-        {
-            "--enable-features=NetworkService,NetworkServiceInProcess",
-            "--disable-extensions",
-            "--disable-infobars",
-            "--disable-popup-blocking",
-            "--no-sandbox",
-            "--disable-setuid-sandbox",
-            "--disable-dev-shm-usage"
-        });
-
-                var launchOptions = new LaunchOptions
-                {
-                    ExecutablePath = browserPath,
-                    Headless = headless,
-                    Args = launchArgs.ToArray(),
-                    DefaultViewport = null,
-                    UserDataDir = Path.GetFullPath(UserDataDirectory),
-                    DumpIO = true
+                    new CookieParam { Name = _internal["SK9"], Value = spDc, Domain = ".spotify.com", Path = "/" }
                 };
-
-                SpotifyUtils?.LogDebug("Attempting to launch the browser...");
-                var browser = await Puppeteer.LaunchAsync(launchOptions);
-                SpotifyUtils?.LogDebug("Browser launched successfully!");
-                return browser;
+                SpotifyUtils?.Log("[Login] Loaded and decrypted profile from file.");
             }
-            catch (PuppeteerSharp.ProcessException ex)
+            else
             {
-                SpotifyUtils?.LogDebug($"ProcessException: Failed to launch browser! {ex.Message}");
-                if (ex.InnerException != null)
+                // 2) Otherwise run Puppeteer to log in and capture cookies
+                SpotifyUtils?.Log("[Login] No saved profile found.");
+                await new BrowserFetcher().DownloadAsync();
+                var browser = await Puppeteer.LaunchAsync(new LaunchOptions
                 {
-                    SpotifyUtils?.LogDebug($"Inner Exception: {ex.InnerException.Message}");
-                }
-                throw;
-            }
-            catch (UnauthorizedAccessException ex)
-            {
-                SpotifyUtils?.LogDebug($"UnauthorizedAccessException: Permission issue detected! {ex.Message}");
-                throw;
-            }
-            catch (IOException ex)
-            {
-                SpotifyUtils?.LogDebug($"IOException: Error accessing files or directories! {ex.Message}");
-                throw;
-            }
-            catch (Exception ex)
-            {
-                SpotifyUtils?.LogDebug($"Exception: An unexpected error occurred! {ex.Message}");
-                throw;
-            }
-        }
-
-        /// <summary>
-        /// Opens a new page in the browser, sets anti-detection overrides, and navigates to the specified URL.
-        /// </summary>
-        private static async Task<IPage> InitializePageAsync(IBrowser browser, string url)
-        {
-            IPage page = null;
-            try
-            {
-                var pages = await browser.PagesAsync();
-                page = pages.FirstOrDefault() ?? await browser.NewPageAsync();
-
-                // Override navigator.webdriver on every new document to hide automation.
-                try
-                {
-                    await page.EvaluateFunctionOnNewDocumentAsync(@"() => {
-                Object.defineProperty(navigator, 'webdriver', { get: () => false });
-            }");
-                }
-                catch (Exception ex)
-                {
-                    SpotifyUtils?.Log("Failed to override navigator.webdriver: " + ex.Message);
-                }
-
-                // Set a standard user agent string.
-                await page.SetUserAgentAsync("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Safari/537.36 Edg/134.0.0.0");
-
-                // Set extra HTTP headers WITHOUT "upgrade-insecure-requests"
-                await page.SetExtraHttpHeadersAsync(new Dictionary<string, string>
-                {
-                    // Remove "accept" header to avoid CORS issues.
-                    { "accept-language", "en-US,en;q=0.9,es-CO;q=0.8,es;q=0.7" },
-                    { "dnt", "1" },
-                    { "sec-ch-ua", "\"Chromium\";v=\"134\", \"Not:A-Brand\";v=\"24\", \"Microsoft Edge\";v=\"134\"" },
-                    { "sec-ch-ua-mobile", "?0" },
-                    { "sec-ch-ua-platform", "\"Windows\"" },
-                    { "sec-fetch-dest", "document" },
-                    { "sec-fetch-mode", "navigate" },
-                    { "sec-fetch-site", "none" },
-                    { "sec-fetch-user", "?1" }
+                    Headless = false,
+                    DefaultViewport = null,
+                    Args = new[] { "--disable-blink-features=AutomationControlled", $"--app={_internal["SK1"]}" },
+                    UserDataDir = Path.GetFullPath("user_data")
                 });
 
-
-                // Navigate to the target URL.
                 try
                 {
-                    await page.GoToAsync(url, WaitUntilNavigation.Networkidle2);
+                    var page = (await browser.PagesAsync()).FirstOrDefault()
+                               ?? await browser.NewPageAsync();
+                    SpotifyUtils?.Log($"[Login] Navigating to {_internal["SK1"]}");
+                    await page.GoToAsync(_internal["SK1"], WaitUntilNavigation.Networkidle2);
+                    while (page.Url.Contains("/login", StringComparison.OrdinalIgnoreCase))
+                        await Task.Delay(500);
+
+                    SpotifyUtils?.Log("[Login] Detected post-login redirect, capturing cookies");
+                    cookies = (await page.GetCookiesAsync()).ToList();
                 }
-                catch (PuppeteerSharp.NavigationException ex)
+                finally
                 {
-                    SpotifyUtils?.Log($"Navigation exception ignored: {ex.Message}");
-                }
-            }
-            catch (Exception ex)
-            {
-                SpotifyUtils?.Log($"Error in InitializePageAsync: {ex.Message}");
-                throw;
-            }
-            return page;
-        }
-
-        private static async Task NavigateAndCaptureJsonResponseAsync(IPage page, TaskCompletionSource<bool> tokenReady)
-        {
-            SpotifyUtils?.Log("Setting up request token retrieval...");
-            try
-            {
-                await page.SetRequestInterceptionAsync(true);
-            }
-            catch (Exception ex)
-            {
-                SpotifyUtils?.Log($"Error setting request interception: {ex.Message}");
-            }
-
-            // Handler for all outgoing requests – simply passes them along.
-            EventHandler<PuppeteerSharp.RequestEventArgs> requestHandler = async (sender, e) =>
-            {
-                try
-                {
-                    // Proceed with the request.
-                    await e.Request.ContinueAsync();
-                }
-                catch (Exception ex)
-                {
-                    SpotifyUtils?.Log($"Error in request handler: {ex.Message}");
-                }
-            };
-            page.Request += requestHandler;
-
-            // Handler for responses to capture JSON from token endpoint.
-            EventHandler<PuppeteerSharp.ResponseCreatedEventArgs> responseHandler = null;
-            responseHandler = async (sender, e) =>
-            {
-                try
-                {
-                    // Check if this response is from the token endpoint and is successful.
-                    if (e.Response.Url.Contains("access_token") &&
-                        e.Response.Status == System.Net.HttpStatusCode.OK)
-                    {
-                        string responseBody = await e.Response.TextAsync();                        
-
-                        try
-                        {
-                            var json = JsonSerializer.Deserialize<JsonElement>(responseBody);
-
-                            // Extract and save the access token.
-                            if (json.TryGetProperty("accessToken", out JsonElement tokenElement))
-                            {
-                                string accessToken = tokenElement.GetString();
-                                SpotifyUtils?.Log($"Access token found!");
-                                SaveAccessToken(accessToken);
-                            }
-                            else
-                            {
-                                SpotifyUtils?.Log("Access token not found in JSON response.");
-                            }
-
-                            // Extract and save the client ID.
-                            if (json.TryGetProperty("clientId", out JsonElement clientIDElement))
-                            {
-                                clientID = clientIDElement.GetString();
-                                SpotifyUtils?.Log($"ClientID found and saved!");
-                            }
-                            else
-                            {
-                                SpotifyUtils?.Log("ClientID not found in JSON response.");
-                            }
-
-                            // Signal that token (and clientID) capture is complete.
-                            tokenReady.TrySetResult(true);
-
-                            // Unregister event handlers to prevent duplicate triggers.
-                            page.Response -= responseHandler;
-                            page.Request -= requestHandler;
-
-                            // Close the browser.
-                            try
-                            {
-                                await page.Browser.CloseAsync();
-                            }
-                            catch (Exception closeEx)
-                            {
-                                SpotifyUtils?.Log($"Error closing browser in response handler: {closeEx.Message}");
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            SpotifyUtils?.Log($"Error parsing JSON response: {ex.Message}");
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    SpotifyUtils?.Log($"Error in response handler: {ex.Message}");
-                }
-            };
-            page.Response += responseHandler;
-
-            // Navigate to the access token endpoint.
-            SpotifyUtils?.Log("Navigating to access token endpoint...");
-            try
-            {
-                await page.GoToAsync(AccessTokenEndpoint, WaitUntilNavigation.Networkidle0);
-            }
-            catch (PuppeteerSharp.NavigationException ex)
-            {
-                SpotifyUtils?.Log($"Navigation exception ignored: {ex.Message}");
-            }
-            catch (Exception ex)
-            {
-                SpotifyUtils?.Log($"Unexpected error navigating to access token endpoint: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Headless‐only flow to capture the Web-API access & refresh tokens.
-        /// </summary>
-        public static Task CaptureApiTokensAsync()
-            => CaptureBrowserTokensAsync(DeveloperPlaybackUrl, interceptApiToken: true);
-
-        private static async Task CaptureBrowserTokensAsync(
-            string url,
-            bool interceptApiToken = false)
-        {
-            IBrowser browser = null;
-            IPage page = null;
-            var tcs = new TaskCompletionSource<bool>();
-
-            try
-            {
-                browser = await LaunchBrowserAsync(headless: true);
-                page = await InitializePageAsync(browser, url);
-
-                // intercept requests
-                await page.SetRequestInterceptionAsync(true);
-
-                // 1) Intercept the API POST to /api/token (if requested)
-                page.Request += async (sender, e) =>
-                {
-                    if (interceptApiToken
-                        && e.Request.Url.Contains("/accounts.spotify.com/api/token")
-                        && e.Request.Method == HttpMethod.Post)
-                    {
-                        var postData = e.Request.PostData;
-                        var m = Regex.Match(postData, @"client_id=([^&]+)");
-                        if (m.Success)
-                        {
-                            ApiClientId = Uri.UnescapeDataString(m.Groups[1].Value);
-                            SpotifyUtils?.Log($"[API] client_id = {ApiClientId}");
-                        }
-                    }
-                    await e.Request.ContinueAsync();
-                };
-
-                // 2) Intercept responses
-                page.Response += async (sender, e) =>
-                {
-                    // --- API‐token flow ---
-                    if (interceptApiToken
-                        && e.Response.Url.Contains("/accounts.spotify.com/api/token")
-                        && e.Response.Status == HttpStatusCode.OK)
-                    {
-                        var body = await e.Response.TextAsync();
-                        var json = JsonSerializer.Deserialize<JsonElement>(body);
-
-                        if (json.TryGetProperty("access_token", out var at))
-                        {
-                            SaveApiAccessToken(at.GetString());
-                            SpotifyUtils?.Log("[API] access_token captured");
-                        }
-                        if (json.TryGetProperty("refresh_token", out var rt))
-                        {
-                            SaveApiRefreshToken(rt.GetString());
-                            SpotifyUtils?.Log("[API] refresh_token saved");
-                        }
-
-                        tcs.TrySetResult(true);
-                        await browser.CloseAsync();
-                    }
-                    // --- original open.spotify.com flow ---
-                    else if (!interceptApiToken
-                        && e.Response.Url.Contains("access_token")
-                        && e.Response.Status == HttpStatusCode.OK)
-                    {
-                        // your existing logic…
-                        // Deserialize, SaveAccessToken(...), clientID = ..., etc.
-                        tcs.TrySetResult(true);
-                        await browser.CloseAsync();
-                    }
-                };
-
-                // navigate _again_ to trigger the token fetch
-                try
-                {
-                    await page.GoToAsync(url, WaitUntilNavigation.Networkidle0);
-                }
-                catch (PuppeteerSharp.NavigationException ex)
-                {
-                    SpotifyUtils?.Log($"Ignored navigation exception during API token capture: {ex.Message}");
-                }
-
-                // await either the API or the original flow
-                await tcs.Task;
-
-            }
-            catch (Exception ex)
-            {
-                SpotifyUtils?.Log($"Error in CaptureBrowserTokensAsync: {ex.Message}");
-                throw;
-            }
-            finally
-            {
-                if (browser != null && browser.IsConnected)
                     await browser.CloseAsync();
-            }
-        }
-
-        #endregion
-
-        #region Token and Cookie Management
-
-        /// <summary>
-        /// Saves the access token securely.
-        /// </summary>
-        private static void SaveAccessToken(string accessToken)
-        {
-            try
-            {
-                NativeMethods.SaveToSecureString(accessToken, ref AccessToken);
-                var encryptedData = ProtectedData.Protect(
-                    Encoding.UTF8.GetBytes(accessToken),
-                    null,
-                    DataProtectionScope.CurrentUser
-                );
-                File.WriteAllBytes(AccessTokenFile, encryptedData);
-                SpotifyUtils?.Log("Access token saved securely.");
-            }
-            catch (Exception ex)
-            {
-                SpotifyUtils?.Log($"Error saving access token: {ex.Message}");
-            }
-        }
-
-        /// <summary>
-        /// Loads the access token from secure storage.
-        /// </summary>
-        public static string LoadAccessToken()
-        {
-            try
-            {
-                if (!File.Exists(AccessTokenFile))
-                {
-                    SpotifyUtils?.Log("Access token file not found.");
-                    return null;
+                    SpotifyUtils?.Log("[Login] Browser closed");
                 }
-                var encryptedData = File.ReadAllBytes(AccessTokenFile);
-                var accessToken = Encoding.UTF8.GetString(
-                    ProtectedData.Unprotect(encryptedData, null, DataProtectionScope.CurrentUser)
-                );
-                NativeMethods.SaveToSecureString(accessToken, ref AccessToken);
-                SpotifyUtils?.Log("Access token loaded successfully.");
-                return accessToken;
+                
+                spDc = cookies.FirstOrDefault(c => c.Name == _internal["SK9"])?.Value
+                       ?? throw new InvalidOperationException("Profile missing");                
+                SaveEncryptedString(_internal["SK7"], spDc);
+                SpotifyUtils?.Log("[Login] Saved and encrypted to file");
             }
-            catch (Exception ex)
-            {
-                SpotifyUtils?.Log($"Error loading access token: {ex.Message}");
-                return null;
-            }
-        }
+            
+            SpotifyUtils?.Log("[Login] Requesting server-time");
+            var stJson = await RequestWithInfoAsync(
+                _internal["SK2"] + _internal["SK5"],
+                HttpMethod.Get,
+                cookies
+            );
+            var serverTimeSec = stJson.GetProperty("serverTime").GetInt64();
+            SpotifyUtils?.Log($"[Login] Server time (s): {serverTimeSec}");
 
-        /// <summary>
-        /// Saves the client token securely.
-        /// </summary>
-        public static void SaveClientToken(string clientToken)
-        {
-            try
-            {
-                NativeMethods.SaveToSecureString(clientToken, ref ClientToken);
-                byte[] encryptedData = ProtectedData.Protect(
-                    Encoding.UTF8.GetBytes(clientToken),
-                    null,
-                    DataProtectionScope.CurrentUser
-                );
-                File.WriteAllBytes(ClientTokenFile, encryptedData);
-                SpotifyUtils?.Log("Client token securely saved.");
-            }
-            catch (Exception ex)
-            {
-                SpotifyUtils?.Log($"Error saving client token: {ex.Message}");
-            }
-        }
+            SpotifyUtils?.Log("[Login] Generating TOTP code");
+            var totp = TOTP.Generate(serverTimeSec * 1000);
+            SpotifyUtils?.Log($"[Login] totp={totp}");
 
-        /// <summary>
-        /// Loads the client token from secure storage.
-        /// </summary>
-        public static string LoadClientToken()
-        {
-            try
+            var clientTs = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var qs = new Dictionary<string, string>
             {
-                if (!File.Exists(ClientTokenFile))
+                ["reason"] = "transport",
+                ["productType"] = "web-player",
+                ["totp"] = totp,
+                ["totpVer"] = TotpVer.ToString(),
+                ["ts"] = clientTs.ToString()
+            };
+            var tokenUrl = _internal["SK2"] + _internal["SK6"] + "?" +
+                           string.Join("&", qs.Select(kv => $"{kv.Key}={WebUtility.UrlEncode(kv.Value)}"));
+            
+            using var handler = new HttpClientHandler { UseCookies = false };
+            using var client = new HttpClient(handler);
+            client.DefaultRequestHeaders.Add(_internal["SK28"],
+                _internal["SK29"]);
+            client.DefaultRequestHeaders.Add(_internal["SK30"], $"{_internal["SK9"]}={spDc}");
+            SpotifyUtils?.Log("[Login] Requesting token");
+            try
+            {                
+                var resp = await client.GetAsync(tokenUrl);                
+
+                var body = await resp.Content.ReadAsStringAsync();                
+
+                resp.EnsureSuccessStatusCode();
+                var webTokenJson = JsonDocument.Parse(body).RootElement;
+
+                if (webTokenJson.TryGetProperty("accessToken", out var at))
                 {
-                    SpotifyUtils?.Log("Client token file not found.");
-                    return null;
+                    SaveToSecureString(ref AccessToken, at.GetString());
+                    SpotifyUtils?.Log("[Login] Access Token saved");
                 }
-                byte[] encryptedData = File.ReadAllBytes(ClientTokenFile);
-                string clientToken = Encoding.UTF8.GetString(
-                    ProtectedData.Unprotect(encryptedData, null, DataProtectionScope.CurrentUser)
-                );
-                NativeMethods.SaveToSecureString(clientToken, ref ClientToken);
-                SpotifyUtils?.Log("Client token successfully loaded.");
-                return clientToken;
+                if (webTokenJson.TryGetProperty("clientId", out var cid))
+                {
+                    ClientId = cid.GetString();
+                    SpotifyUtils?.Log($"[Login] ClientId={ClientId}");
+                }
+
+                await GetClientTokenAsync();
+                await GetOAuth2TokensWithCookiesAsync();
             }
             catch (Exception ex)
             {
-                SpotifyUtils?.Log($"Error loading client token: {ex.Message}");
-                return null;
+                SpotifyUtils?.Log($"[Login] ERROR fetching token: {ex.GetType().Name}: {ex.Message}");
+                throw;
             }
-        }
 
-        public static void SaveApiAccessToken(string token)
-        {
-            NativeMethods.SaveToSecureString(token, ref ApiAccessToken);
-        }
-        public static void SaveApiRefreshToken(string refresh)
-        {
-            NativeMethods.SaveToSecureString(refresh, ref ApiRefreshToken);
-            var encrypted = ProtectedData.Protect(
-                Encoding.UTF8.GetBytes(refresh),
-                null,
-                DataProtectionScope.CurrentUser);
-            File.WriteAllBytes(ApiRefreshTokenFile, encrypted);
-        }
-
-        public static string LoadApiRefreshToken()
-        {
-            if (!File.Exists(ApiRefreshTokenFile)) return null;
-            var encrypted = File.ReadAllBytes(ApiRefreshTokenFile);
-            var refresh = Encoding.UTF8.GetString(
-                ProtectedData.Unprotect(encrypted, null, DataProtectionScope.CurrentUser));
-            NativeMethods.SaveToSecureString(refresh, ref ApiRefreshToken);
-            return refresh;
+            SpotifyUtils?.Log("[Login] Completed login→token flow");
         }
 
         /// <summary>
-        /// Retrieve the API access token we saved earlier.
+        /// Exchanges authorization code for OAuth2 access and refresh tokens using saved cookies
         /// </summary>
-        public static string LoadApiAccessToken()
+        /// <param name="code">Authorization code obtained from /oauth2 flow</param>
+        /// <param name="redirectUri">Redirect URI registered in Spotify application</param>
+        /// <param name="codeVerifier">PKCE code verifier used in the initial auth request</param>
+        public static async Task<bool> ExchangeAuthorizationCodeForTokensAsync(
+            string code,
+            string redirectUri,
+            string codeVerifier)
         {
-            if (ApiAccessToken == null)
-                return null;
+            SpotifyUtils?.Log("[OAuth2] Exchanging authorization code for tokens");
 
-            var ptr = Marshal.SecureStringToBSTR(ApiAccessToken);
-            try
+            if (!File.Exists(_internal["SK7"]))
+                throw new InvalidOperationException("sp_dc cookie file missing");
+
+            var spDc = LoadEncryptedString(_internal["SK7"]);
+            using var handler = new HttpClientHandler { UseCookies = false };
+            using var client = new HttpClient(handler);
+
+            client.DefaultRequestHeaders.Add("Accept", "application/json");
+            client.DefaultRequestHeaders.Add("Cache-Control", "no-cache");
+            client.DefaultRequestHeaders.Add("Referer", _internal["SK2"]);
+            client.DefaultRequestHeaders.Add(_internal["SK30"], $"sp_dc={spDc}");
+
+            var body = new Dictionary<string, string>
             {
-                return Marshal.PtrToStringBSTR(ptr);
-            }
-            finally
-            {
-                Marshal.ZeroFreeBSTR(ptr);
-            }
+                ["grant_type"] = "authorization_code",
+                ["client_id"] = ApiClientId,
+                ["code"] = code,
+                ["redirect_uri"] = redirectUri,
+                ["code_verifier"] = codeVerifier
+            };
+
+            var content = new FormUrlEncodedContent(body);
+            var response = await client.PostAsync(_internal["SK48"], content);
+            var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()).RootElement;
+
+            response.EnsureSuccessStatusCode();
+
+            var at = json.GetProperty(_internal["SK49"]).GetString();
+            var rt = json.GetProperty(_internal["SK50"]).GetString();
+
+            SaveApiAccessToken(at);
+            SaveApiRefreshToken(rt);
+
+            SpotifyUtils?.Log("[OAuth2] Tokens saved");
+            return true;
         }
 
-
-        #endregion
-
-        #region Client Token and ID Retrieval
-
         /// <summary>
-        /// Fetches the client token from Spotify’s client token endpoint.
+        /// Call this after your LoginAndCaptureCookiesAsync has set
+        /// AccessToken and ClientId.
         /// </summary>
         public static async Task<bool> GetClientTokenAsync()
         {
@@ -771,13 +242,13 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             try
             {
                 SpotifyUtils?.Log("Fetching Client Token...");
-                var optionsRequest = new HttpRequestMessage(HttpMethod.Options, ClientTokenEndpoint);
+                var optionsRequest = new HttpRequestMessage(HttpMethod.Options, _internal["SK3"]);
                 optionsRequest.Headers.Add("Accept", "*/*");
                 optionsRequest.Headers.Add("Accept-Language", "en-US,en;q=0.9");
                 optionsRequest.Headers.Add("Sec-Fetch-Dest", "empty");
                 optionsRequest.Headers.Add("Sec-Fetch-Mode", "cors");
                 optionsRequest.Headers.Add("Sec-Fetch-Site", "same-site");
-                optionsRequest.Headers.Referrer = new Uri(SpotifyLoginUrl);
+                optionsRequest.Headers.Referrer = new Uri(_internal["SK1"]);
                 optionsRequest.Headers.Add("Referrer-Policy", "strict-origin-when-cross-origin");
 
                 HttpResponseMessage optionsResponse = await httpClient.SendAsync(optionsRequest);
@@ -794,7 +265,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                     client_data = new
                     {
                         client_version = "1.2.54.124.gc8ffdbcb",
-                        client_id = clientID,
+                        client_id = ClientId,
                         js_sdk_data = new
                         {
                             device_brand = "unknown",
@@ -811,7 +282,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                 SpotifyUtils?.Log(JsonSerializer.Serialize(postBody));
 
                 string postBodyJson = JsonSerializer.Serialize(postBody);
-                var postRequest = new HttpRequestMessage(HttpMethod.Post, ClientTokenEndpoint)
+                var postRequest = new HttpRequestMessage(HttpMethod.Post, _internal["SK3"])
                 {
                     Content = new StringContent(postBodyJson, Encoding.UTF8, "application/json")
                 };
@@ -819,14 +290,14 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                 SpotifyUtils?.Log("Sending POST request to client token endpoint...");
                 postRequest.Headers.Add("Accept", "application/json");
                 postRequest.Headers.Add("Accept-Language", "en-US,en;q=0.9");
-                postRequest.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
+                postRequest.Content.Headers.ContentType = new MediaTypeHeaderValue("application/json");
                 postRequest.Headers.Add("Sec-CH-UA", "\"Microsoft Edge\";v=\"131\", \"Chromium\";v=\"131\", \"Not_A Brand\";v=\"24\"");
                 postRequest.Headers.Add("Sec-CH-UA-Mobile", "?0");
                 postRequest.Headers.Add("Sec-CH-UA-Platform", "\"Windows\"");
                 postRequest.Headers.Add("Sec-Fetch-Dest", "empty");
                 postRequest.Headers.Add("Sec-Fetch-Mode", "cors");
                 postRequest.Headers.Add("Sec-Fetch-Site", "same-site");
-                postRequest.Headers.Referrer = new Uri(SpotifyLoginUrl);
+                postRequest.Headers.Referrer = new Uri(_internal["SK1"]);
                 postRequest.Headers.Add("Referrer-Policy", "strict-origin-when-cross-origin");
 
                 SpotifyUtils?.Log("Client Token Request Headers:");
@@ -857,7 +328,7 @@ namespace YeusepesModules.SPOTIOSC.Credentials
                     {
                         string clientToken = tokenElement.GetString();
                         SpotifyUtils?.Log($"Client Token: {clientToken}");
-                        SaveClientToken(clientToken);
+                        SaveToSecureString(ref ClientToken, clientToken);
                         NativeMethods.SaveToSecureString(clientToken, ref ClientToken);
                         return true;
                     }
@@ -868,78 +339,327 @@ namespace YeusepesModules.SPOTIOSC.Credentials
             }
             catch (Exception ex)
             {
-                SpotifyUtils?.Log($"Error during client token retrieval: {ex.Message}");
+                SpotifyUtils?.Log($"ErrorDuringClientTokenRetrieval: {ex.Message}");
             }
             return false;
         }
 
+        /// <summary>
+        /// Legacy wrapper so other code calling this still works.
+        /// </summary>
+        public static Task LoginAsync() => LoginAndCaptureCookiesAsync();
+
+        public static void SignOut()
+        {
+            SpotifyUtils?.Log("[SignOut] Clearing all tokens and cookies");
+            ClearAllTokensAndCookies();
+        }
+
+        public static bool HasSavedCookie() => File.Exists(_internal["SK7"]);
+
+        public static bool IsUserSignedIn()
+        {
+            bool hasToken = !string.IsNullOrEmpty(LoadAccessToken());
+            SpotifyUtils?.Log($"[SignIn] Has access token: {hasToken}");
+            return hasToken;
+        }
+
         #endregion
 
-        #region Helper Methods
+        #region Legacy Helpers
 
-        /// <summary>
-        /// Clears the contents of a SecureString and reinitializes it.
-        /// If the SecureString is read-only, simply reassign a new instance.
-        /// </summary>
-        private static void ClearSecureString(ref SecureString secureStr)
+        public static void ClearAllTokensAndCookies()
         {
+            AccessToken = new SecureString();
+            ClientToken = new SecureString();
+            RefreshToken = new SecureString();
+            ApiAccessToken = new SecureString();
+            ApiRefreshToken = new SecureString();
+
+            const string UserDataDirectory = "user_data";
             try
             {
-                if (secureStr != null && !secureStr.IsReadOnly())
-                {
-                    secureStr.Clear();
-                }
+                if (Directory.Exists(UserDataDirectory))
+                    DeleteDirectory(UserDataDirectory);
+                SpotifyUtils?.Log("User data directory sanitized successfully.");
             }
             catch (Exception ex)
             {
-                SpotifyUtils?.Log($"Error clearing secure token: {ex.Message}");
+                SpotifyUtils?.Log($"Error deleting user data directory: {ex.Message}");
             }
-            // Always assign a new SecureString instance.
-            secureStr = new SecureString();
         }
 
-        /// <summary>
-        /// Deletes all stored tokens and resets the in-memory SecureStrings.
-        /// </summary>
-        public static void DeleteTokens()
+        public static string LoadAccessToken() => LoadFromSecureString(AccessToken);
+        public static string LoadClientToken() => LoadFromSecureString(ClientToken);
+        public static string LoadApiAccessToken() => LoadFromSecureString(ApiAccessToken);
+        public static string LoadApiRefreshToken() => LoadFromSecureString(ApiRefreshToken);
+        public static void SaveApiAccessToken(string token) => SaveToSecureString(ref ApiAccessToken, token);
+        public static void SaveApiRefreshToken(string token) => SaveToSecureString(ref ApiRefreshToken, token);
+
+        #endregion
+
+        #region HTTP + Cookies
+
+        private static async Task<JsonElement> RequestWithInfoAsync(
+            string url,
+            HttpMethod method,
+            IEnumerable<CookieParam> cookies,
+            Dictionary<string, string> headers = null)
         {
-            try
+            var container = new CookieContainer();
+            foreach (var c in cookies)
+                container.Add(new Cookie(c.Name, c.Value, c.Path, c.Domain));
+
+            using var handler = new HttpClientHandler { CookieContainer = container };
+            using var client = new HttpClient(handler);
+
+            // use SK93 == "Origin"
+            client.DefaultRequestHeaders.Add(_internal["SK93"], _internal["SK2"]);
+            // use SK42 == "Referer"
+            client.DefaultRequestHeaders.Add(_internal["SK42"], _internal["SK2"]);
+
+
+            if (headers != null)
+                foreach (var kv in headers)
+                    client.DefaultRequestHeaders.TryAddWithoutValidation(kv.Key, kv.Value);
+
+            using var req = new HttpRequestMessage(method, url);
+            var resp = await client.SendAsync(req);
+            var body = await resp.Content.ReadAsStringAsync();
+
+            resp.EnsureSuccessStatusCode();
+            return JsonDocument.Parse(body).RootElement.Clone();
+        }
+
+        #endregion
+
+        #region SecureString Helpers
+
+        private static void SaveToSecureString(ref SecureString target, string plaintext)
+        {
+            var newSs = new SecureString();
+            foreach (var c in plaintext)
+                newSs.AppendChar(c);
+            newSs.MakeReadOnly();
+            target = newSs;
+        }
+
+        private static string LoadFromSecureString(SecureString ss)
+        {
+            if (ss == null || ss.Length == 0)
+                return null;
+            var ptr = Marshal.SecureStringToBSTR(ss);
+            try { return Marshal.PtrToStringBSTR(ptr); }
+            finally { Marshal.ZeroFreeBSTR(ptr); }
+        }
+
+        // new: encrypt/decrypt file strings
+        private static void SaveEncryptedString(string path, string plaintext)
+        {
+            var bytes = Encoding.UTF8.GetBytes(plaintext);
+            var encrypted = ProtectedData.Protect(bytes, null, DataProtectionScope.CurrentUser);
+            File.WriteAllBytes(path, encrypted);
+        }
+
+        private static string LoadEncryptedString(string path)
+        {
+            var encrypted = File.ReadAllBytes(path);
+            var bytes = ProtectedData.Unprotect(encrypted, null, DataProtectionScope.CurrentUser);
+            return Encoding.UTF8.GetString(bytes);
+        }
+
+        #endregion
+
+        #region TOTP
+
+        private static class TOTP
+        {
+            private static readonly byte[] _cipher = new byte[] { 12, 56, 76, 33, 88, 44, 88, 33, 78, 78, 11, 66, 22, 22, 55, 69, 54 };
+            public static string Generate(long serverTimeMs)
             {
-                if (File.Exists(AccessTokenFile))
-                {
-                    File.Delete(AccessTokenFile);
-                    SpotifyUtils?.Log("Access token deleted.");
-                }
-                if (File.Exists(ClientTokenFile))
-                {
-                    File.Delete(ClientTokenFile);
-                    SpotifyUtils?.Log("Client token deleted.");
-                }
-                ClearSecureString(ref AccessToken);
-                ClearSecureString(ref ClientToken);
-                SpotifyUtils?.Log("All tokens cleared from memory and storage.");
+                var secretBytes = _cipher.Select((b, i) => (byte)(b ^ ((i % 33) + 9))).ToArray();
+                var joined = string.Concat(secretBytes.Select(b => b.ToString()));
+                var utf8 = Encoding.UTF8.GetBytes(joined);
+                var hex = BitConverter.ToString(utf8).Replace("-", "").ToLowerInvariant();
+                var key = Enumerable.Range(0, hex.Length / 2)
+                           .Select(j => Convert.ToByte(hex.Substring(j * 2, 2), 16)).ToArray();
+                const string ABC = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+                string base32 = Base32Encode(key, ABC);
+                ulong counter = (ulong)(serverTimeMs / 1000 / TotpPeriod);
+                var counterBytes = BitConverter.GetBytes(counter);
+                if (BitConverter.IsLittleEndian) Array.Reverse(counterBytes);
+                using var hmac = new HMACSHA1(key);
+                var hash = hmac.ComputeHash(counterBytes);
+                int offset = hash[^1] & 0x0F;
+                uint binary = (uint)(((hash[offset] & 0x7F) << 24) | ((hash[offset + 1] & 0xFF) << 16) | ((hash[offset + 2] & 0xFF) << 8) | ((hash[offset + 3] & 0xFF)));
+                return (binary % 1_000_000).ToString("D6");
             }
-            catch (Exception ex)
+            private static string Base32Encode(byte[] data, string alphabet)
             {
-                SpotifyUtils?.Log($"Error deleting tokens: {ex.Message}");
+                int bits = 0, value = 0;
+                var sb = new StringBuilder();
+                foreach (var b in data)
+                {
+                    value = (value << 8) | b; bits += 8;
+                    while (bits >= 5) { sb.Append(alphabet[(value >> (bits - 5)) & 31]); bits -= 5; }
+                }
+                if (bits > 0) sb.Append(alphabet[(value << (5 - bits)) & 31]);
+                return sb.ToString();
             }
         }
 
-
-
-
-
-        /// <summary>
-        /// Recursively deletes a directory by first removing read-only attributes.
-        /// </summary>
         private static void DeleteDirectory(string path)
         {
             var di = new DirectoryInfo(path);
             foreach (var file in di.GetFiles("*", SearchOption.AllDirectories))
-            {
                 file.Attributes = FileAttributes.Normal;
-            }
             di.Delete(true);
+        }
+
+        #endregion
+
+        #region PKCE Helpers
+
+        private static string _pkceVerifier;
+        private static string _oauthState;
+
+        /// <summary>
+        /// Generates a random [A–Za–z0–9-._~] string of the given length.
+        /// </summary>
+        private static string GenerateCodeVerifier(int length = 128)
+        {
+            const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~";
+            var sb = new StringBuilder(length);
+            using var rng = RandomNumberGenerator.Create();
+            var buffer = new byte[1];
+            for (int i = 0; i < length; i++)
+            {
+                rng.GetBytes(buffer);
+                sb.Append(chars[buffer[0] % chars.Length]);
+            }
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// SHA256-hash + Base64URL-encode the verifier.
+        /// </summary>
+        private static string GenerateCodeChallenge(string verifier)
+        {
+            using var sha256 = SHA256.Create();
+            var hash = sha256.ComputeHash(Encoding.ASCII.GetBytes(verifier));
+            return Convert.ToBase64String(hash)
+                          .TrimEnd('=')
+                          .Replace('+', '-')
+                          .Replace('/', '_');
+        }
+
+        // Helper to generate a random state string
+        private static string GenerateState(int length = 24)
+        {
+            const string chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+            var data = new byte[length];
+            using var rng = RandomNumberGenerator.Create();
+            rng.GetBytes(data);
+            return new string(data.Select(b => chars[b % chars.Length]).ToArray());
+        }
+
+
+        /// <summary>
+        /// Performs the full PKCE OAuth2 flow via HTTP:
+        ///  1) GET /oauth2/v2/auth (with state & code_challenge)
+        ///  2) extract code & state from HTML
+        ///  3) POST /api/token with code + verifier → save tokens
+        /// </summary>
+        public static async Task<bool> GetOAuth2TokensWithCookiesAsync()
+        {
+            if (!File.Exists(_internal["SK7"]))
+                throw new InvalidOperationException("sp_dc cookie file missing");
+
+            // 1) load & decrypt cookie
+            var spDc = LoadEncryptedString(_internal["SK7"]);
+
+            // 2) generate PKCE verifier & challenge
+            _pkceVerifier = GenerateCodeVerifier();
+            var challenge = GenerateCodeChallenge(_pkceVerifier);
+
+            // 3) generate anti-CSRF state
+            _oauthState = GenerateState();
+
+            // 4) build /authorize URL with EXACT redirect URI + state
+            const string scopes =
+                "email openid profile user-self-provisioning playlist-modify-private " +
+                "playlist-modify-public playlist-read-collaborative playlist-read-private " +
+                "ugc-image-upload user-follow-modify user-follow-read user-library-modify " +
+                "user-library-read user-modify-playback-state user-read-currently-playing " +
+                "user-read-email user-read-playback-position user-read-playback-state " +
+                "user-read-private user-read-recently-played user-top-read";
+
+            var authUrl = $"https://accounts.spotify.com/oauth2/v2/auth" +
+                          $"?response_type=code" +
+                          $"&client_id={ApiClientId}" +
+                          $"&scope={Uri.EscapeDataString(scopes)}" +
+                          $"&redirect_uri={Uri.EscapeDataString(_internal["SK4"])}" +
+                          $"&code_challenge={challenge}" +
+                          $"&code_challenge_method=S256" +
+                          $"&response_mode=web_message" +
+                          $"&prompt=none" +
+                          $"&state={_oauthState}";
+
+            using var handler = new HttpClientHandler { UseCookies = false };
+            using var client = new HttpClient(handler);
+
+            // 5) fetch the HTML envelope
+            client.DefaultRequestHeaders.Clear();
+            client.DefaultRequestHeaders.Add("Accept", "text/html");
+            client.DefaultRequestHeaders.Add(_internal["SK30"], $"sp_dc={spDc}");
+            var authResp = await client.GetAsync(authUrl);
+            var html = await authResp.Content.ReadAsStringAsync();
+            authResp.EnsureSuccessStatusCode();
+
+            // 6) pull out both code & returned state
+            var m = Regex.Match(html,
+                "\"code\"\\s*:\\s*\"(?<code>[^\"]+)\".*?\"state\"\\s*:\\s*\"(?<ret>[^\"]+)\"",
+                RegexOptions.Singleline
+            );
+            if (!m.Success)
+                throw new InvalidOperationException("Authorization code/state not found in response HTML");
+
+            if (m.Groups["ret"].Value != _oauthState)
+                throw new InvalidOperationException("Mismatched OAuth state returned");
+
+            var code = m.Groups["code"].Value;
+
+            // 7) exchange the code for tokens — this time ask for JSON
+            var tokenParams = new Dictionary<string, string>
+            {
+                ["grant_type"] = "authorization_code",
+                ["client_id"] = ApiClientId,
+                ["code"] = code,
+                ["redirect_uri"] = _internal["SK4"],
+                ["code_verifier"] = _pkceVerifier
+            };
+
+            using var tokenMsg = new HttpRequestMessage(HttpMethod.Post, _internal["SK48"])
+            {
+                Content = new FormUrlEncodedContent(tokenParams)
+            };
+            tokenMsg.Headers.Accept.Clear();
+            tokenMsg.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));            
+            tokenMsg.Headers.Add(_internal["SK93"], _internal["SK2"]);            
+            tokenMsg.Headers.Add(_internal["SK42"], _internal["SK4"]);
+
+
+            var tokenResp = await client.SendAsync(tokenMsg);
+            tokenResp.EnsureSuccessStatusCode();
+
+            var j = JsonDocument.Parse(await tokenResp.Content.ReadAsStringAsync()).RootElement;
+            var at = j.GetProperty(_internal["SK49"]).GetString();
+            var rt = j.GetProperty(_internal["SK50"]).GetString();
+
+            SaveApiAccessToken(at);
+            SaveApiRefreshToken(rt);
+
+            return true;
         }
 
         #endregion

@@ -302,7 +302,7 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
         {
             try
             {
-                await CredentialManager.AuthenticateAsync();
+                await CredentialManager.LoginAndCaptureCookiesAsync();
                 string newAccessToken = CredentialManager.LoadAccessToken();
                 return !string.IsNullOrEmpty(newAccessToken);
             }

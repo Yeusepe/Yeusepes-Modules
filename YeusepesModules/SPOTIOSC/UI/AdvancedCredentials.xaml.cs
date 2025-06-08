@@ -8,14 +8,12 @@ namespace YeusepesModules.SPOTIOSC.UI
 {
     public partial class AdvancedCredentials : UserControl
     {
-        private readonly string _accessToken = CredentialManager.LoadAccessToken();
-        private readonly string _clientToken = CredentialManager.LoadClientToken();
+        private string _accessToken;
+        private string _clientToken;
 
         public AdvancedCredentials()
-        {
-            InitializeComponent();
-            AccessTokenText.Text = new string('•', _accessToken.Length);
-            ClientTokenText.Text = new string('•', _clientToken.Length);
+        {            
+            InitializeComponent();                       
         }
 
         private void ToggleButton_Click(object sender, RoutedEventArgs e)
@@ -27,6 +25,10 @@ namespace YeusepesModules.SPOTIOSC.UI
             }
             else
             {
+                _accessToken = CredentialManager.LoadAccessToken() ?? string.Empty;
+                _clientToken = CredentialManager.LoadClientToken() ?? string.Empty;
+                AccessTokenText.Text = new string('•', _accessToken.Length);
+                ClientTokenText.Text = new string('•', _clientToken.Length);
                 Panel.Visibility = Visibility.Visible;
                 ArrowIcon.Text = "▲";
             }

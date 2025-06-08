@@ -130,8 +130,11 @@ public class SpotifyApiService
     {
         var savedRefresh = CredentialManager.LoadApiRefreshToken();
         if (string.IsNullOrEmpty(savedRefresh))
-        {            
-            await CredentialManager.CaptureApiTokensAsync();
+        {
+            var clientToken = CredentialManager.LoadClientToken();
+            var accessToken = CredentialManager.LoadAccessToken();
+            var clientId = CredentialManager.ClientId;
+
             savedRefresh = CredentialManager.LoadApiRefreshToken();
         }
         
