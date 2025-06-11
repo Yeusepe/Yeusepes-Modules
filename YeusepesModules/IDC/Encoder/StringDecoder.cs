@@ -51,8 +51,7 @@ namespace YeusepesModules.IDC.Encoder
         {
             encodingUtilities.LogDebug("Starting decoding process.");
             try
-            {
-                encodingUtilities.ScreenUtilities.BringVRChatToFront();
+            {                
                 Bitmap screenshot = encodingUtilities.ScreenUtilities.TakeScreenshot();
                 if (screenshot != null)
                 {

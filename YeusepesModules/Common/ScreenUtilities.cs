@@ -643,6 +643,7 @@ namespace YeusepesModules.Common.ScreenUtilities
         // In ScreenUtilities class:
         public Bitmap TakeScreenshot()
         {
+            BringVRChatToFront();
             Log("Taking screenshot...");
             if (GetSelectedDisplay() == "Default")
                 selectedDisplay = screenCaptureService.GetDisplays(selectedGraphicsCard.Value).FirstOrDefault();
