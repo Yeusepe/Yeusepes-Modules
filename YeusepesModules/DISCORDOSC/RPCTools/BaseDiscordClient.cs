@@ -12,7 +12,8 @@ namespace DISCORDOSC.RPCTools
     {
         private NamedPipeClientStream _pipeClient;
         private string _pipeName;
-
+        private readonly object _pipeLock = new();
+        private CancellationTokenSource _listenCts;
         // Connect to the IPC
         public void Connect(string pipeName)
         {
@@ -61,24 +62,26 @@ namespace DISCORDOSC.RPCTools
                     .Concat(BitConverter.GetBytes(payloadBytes.Length))
                     .ToArray();
 
-                // Write header and payload to the pipe
-                _pipeClient.Write(header, 0, header.Length);
-                _pipeClient.Write(payloadBytes, 0, payloadBytes.Length);
-                _pipeClient.Flush();
-                Console.WriteLine("Payload sent: " + payloadJson);
+                string responseJson = string.Empty;
+                lock (_pipeLock)
+                {
+                    // Write header and payload to the pipe
+                    _pipeClient.Write(header, 0, header.Length);
+                    _pipeClient.Write(payloadBytes, 0, payloadBytes.Length);
+                    _pipeClient.Flush();
+                    Console.WriteLine("Payload sent: " + payloadJson);
 
-                // Read the response
-                byte[] responseHeader = new byte[8];
-                _pipeClient.Read(responseHeader, 0, 8);
-                int statusCode = BitConverter.ToInt32(responseHeader, 0);
-                int responseLength = BitConverter.ToInt32(responseHeader, 4);
+                    // Read the response
+                    byte[] responseHeader = new byte[8];
+                    _pipeClient.Read(responseHeader, 0, 8);
+                    int statusCode = BitConverter.ToInt32(responseHeader, 0);
+                    int responseLength = BitConverter.ToInt32(responseHeader, 4);
 
-                byte[] responseBytes = new byte[responseLength];
-                _pipeClient.Read(responseBytes, 0, responseLength);
-
-                string responseJson = Encoding.UTF8.GetString(responseBytes);
-                Console.WriteLine("Response received: " + responseJson);
-                return responseJson;
+                    byte[] responseBytes = new byte[responseLength];
+                    _pipeClient.Read(responseBytes, 0, responseLength);
+                    Console.WriteLine("Response received: " + responseJson);
+                    return responseJson;
+                }
             }
             catch (IOException e)
             {
@@ -103,6 +106,47 @@ namespace DISCORDOSC.RPCTools
                 _pipeClient = null;
                 Console.WriteLine("Pipe connection closed.");
             }
+        }
+
+        public void StartListening(Action<JsonElement> onEvent)
+        {
+            if (_pipeClient == null)
+                throw new InvalidOperationException("Client not connected");
+
+            _listenCts = new CancellationTokenSource();
+            var token = _listenCts.Token;
+            Task.Run(() =>
+            {
+                try
+                {
+                    while (!token.IsCancellationRequested)
+                    {
+                        JsonElement evt;
+                        lock (_pipeLock)
+                        {
+                            byte[] header = new byte[8];
+                            int read = _pipeClient.Read(header, 0, 8);
+                            if (read == 0) break;
+                            int op = BitConverter.ToInt32(header, 0);
+                            int len = BitConverter.ToInt32(header, 4);
+                            byte[] data = new byte[len];
+                            _pipeClient.Read(data, 0, len);
+                            string json = Encoding.UTF8.GetString(data);
+                            evt = JsonSerializer.Deserialize<JsonElement>(json);
+                        }
+                        onEvent?.Invoke(evt);
+                    }
+                }
+                catch (Exception)
+                {
+                    // swallow exceptions for simplicity
+                }
+            }, token);
+        }
+
+        public void StopListening()
+        {
+            _listenCts?.Cancel();
         }
     }
 }

@@ -138,10 +138,15 @@ namespace DISCORDOSC.RPCTools
         // Subscribe to an event
         public static object Subscribe(string eventName)
         {
+            return Subscribe(eventName, null);
+        }
+
+        public static object Subscribe(string eventName, object? args)
+        {
             return new
             {
-                cmd = "SUBSCRIBE",
-                args = new { },
+                cmd = "SUBSCRIBE",                
+                args = args ?? new { },
                 evt = eventName,
                 nonce = $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}"
             };
@@ -150,10 +155,15 @@ namespace DISCORDOSC.RPCTools
         // Unsubscribe from an event
         public static object Unsubscribe(string eventName)
         {
+            return Unsubscribe(eventName, null);
+        }
+
+        public static object Unsubscribe(string eventName, object? args)
+        {
             return new
             {
-                cmd = "UNSUBSCRIBE",
-                args = new { },
+                cmd = "UNSUBSCRIBE",                
+                args = args ?? new { },
                 evt = eventName,
                 nonce = $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}"
             };
@@ -173,5 +183,104 @@ namespace DISCORDOSC.RPCTools
             };
         }
 
+        // Get information about a channel
+        public static object GetChannel(string channelId)
+        {
+            return new
+            {
+                cmd = "GET_CHANNEL",
+                args = new { channel_id = channelId },
+                nonce = $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}"
+            };
+        }
+
+        // Request currently selected voice channel
+        public static object GetSelectedVoiceChannel()
+        {
+            return new
+            {
+                cmd = "GET_SELECTED_VOICE_CHANNEL",
+                args = new { },
+                nonce = $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}"
+            };
+        }
+
+        // Select a text channel
+        public static object SelectTextChannel(string channelId)
+        {
+            return new
+            {
+                cmd = "SELECT_TEXT_CHANNEL",
+                args = new { channel_id = channelId },
+                nonce = $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}"
+            };
+        }
+
+        // Modify other user's voice settings
+        public static object SetUserVoiceSettings(string userId, float? left = null, float? right = null, int? volume = null, bool? mute = null)
+        {
+            object pan = null;
+            if (left.HasValue && right.HasValue)
+            {
+                pan = new { left = left.Value, right = right.Value };
+            }
+
+            return new
+            {
+                cmd = "SET_USER_VOICE_SETTINGS",
+                args = new
+                {
+                    user_id = userId,
+                    pan,
+                    volume,
+                    mute
+                },
+                nonce = $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}"
+            };
+        }
+
+        // Send a join invite approval
+        public static object SendActivityJoinInvite(string userId)
+        {
+            return new
+            {
+                cmd = "SEND_ACTIVITY_JOIN_INVITE",
+                args = new { user_id = userId },
+                nonce = $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}"
+            };
+        }
+
+        // Close a join request
+        public static object CloseActivityRequest(string userId)
+        {
+            return new
+            {
+                cmd = "CLOSE_ACTIVITY_REQUEST",
+                args = new { user_id = userId },
+                nonce = $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}"
+            };
+        }
+
+        // Send certified device information
+        public static object SetCertifiedDevices(object[] devices)
+        {
+            return new
+            {
+                cmd = "SET_CERTIFIED_DEVICES",
+                args = new { devices },
+                nonce = $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}"
+            };
+        }
+
+        // Generic payload creator for SET_VOICE_SETTINGS using custom args
+        public static object SetVoiceSettings(Dictionary<string, object> args)
+        {
+            return new
+            {
+                cmd = "SET_VOICE_SETTINGS",
+                args,
+                nonce = $"{DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}"
+            };
+        }
     }
 }
