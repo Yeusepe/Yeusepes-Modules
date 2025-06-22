@@ -1067,6 +1067,9 @@ namespace YeusepesModules.DISCORDOSC
             {
                 LogDebug($"ChatBox GET_VOICE_SETTINGS failed: {ex.Message}");
             }
+
+            // Fix: Call ChangeState to notify VRCOSC ChatBox system that this module is active
+            ChangeState("VoiceState");
         }
 
         private static int VoiceStateToInt(string state)

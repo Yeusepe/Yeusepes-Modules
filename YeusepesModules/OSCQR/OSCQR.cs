@@ -24,6 +24,9 @@ namespace YeusepesModules.OSCQR
         private List<string> savedQRCodes = new List<string>();
         private string lastDetectedQRCode = string.Empty;
 
+        // Event to notify when QR codes list is updated
+        public event Action QRCodesUpdated;
+
         #region Module Enums
 
         public enum OSCQRSettings
@@ -118,6 +121,9 @@ namespace YeusepesModules.OSCQR
             {
                 DetectQRCode(image);
             });
+
+            // Register the runtime view to show saved QR codes in the runtime UI
+            SetRuntimeView(typeof(SavedQRCodesRuntimeView));
         }
 
         protected override Task<bool> OnModuleStart()
@@ -297,6 +303,9 @@ namespace YeusepesModules.OSCQR
             {
                 savedQRCodes.Add(lastDetectedQRCode);
                 Log($"QR Code saved: {lastDetectedQRCode}");
+                
+                // Notify runtime view that QR codes list has been updated
+                QRCodesUpdated?.Invoke();
             }
             else
             {
