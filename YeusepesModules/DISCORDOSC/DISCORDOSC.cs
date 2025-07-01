@@ -73,7 +73,7 @@ namespace YeusepesModules.DISCORDOSC
 
             RegisterParameter<bool>(
                 DISCORDOSCParameter.Mute,
-                "DiscordOSC/Mic",
+                "VRCOSC/Discord/Mic",
                 ParameterMode.ReadWrite,
                 "Mute or unmute.",
                 "Trigger to mute or unmute the Discord client."
@@ -81,7 +81,7 @@ namespace YeusepesModules.DISCORDOSC
 
             RegisterParameter<bool>(
                 DISCORDOSCParameter.Deafen,
-                "DiscordOSC/Deafen",
+                "VRCOSC/Discord/Deafen",
                 ParameterMode.ReadWrite,
                 "Deafen or undeafen.",
                 "Trigger to deafen or undeafen the Discord client."
@@ -426,8 +426,8 @@ namespace YeusepesModules.DISCORDOSC
 
             if (string.IsNullOrEmpty(clientId) || string.IsNullOrEmpty(clientSecret))
             {
-                clientId = config["Discord:ClientId"];
-                clientSecret = config["Discord:ClientSecret"];
+                clientId = "1316146450681303071";
+                clientSecret = "cTZvtl89suuCa41EaGu8MFrhDfagtt_5";
                 LogDebug("ClientId was empty or clientSecret was empty. Using defaults.");
             }
 
@@ -577,401 +577,287 @@ namespace YeusepesModules.DISCORDOSC
 
         protected override void OnRegisteredParameterReceived(RegisteredParameter parameter)
         {
-            LogDebug($"Parameter received: {parameter.Lookup} value {parameter.Value}");
             switch (parameter.Lookup)
             {
                 case DISCORDOSCParameter.Mute:
-                    bool shouldUnmute = parameter.GetValue<bool>();
-                    Log("Mute?" + shouldUnmute);
-                    Task.Run(async () =>
                     {
-                        var payload = shouldUnmute
-                            ? Payload.SetMuteOnly(false)
-                            : Payload.SetMuteOnly(true);
-
-                        var response = client.SendDataAndWait(1, payload);
-                        LogDebug($"Mute/Unmute response: {response}");
-                    }).Wait();
-                    break;
+                        bool mute = parameter.GetValue<bool>();
+                        client.SendCommand(1, Payload.SetMuteOnly(mute));
+                        break;
+                    }
 
                 case DISCORDOSCParameter.Deafen:
-                    bool shouldUndeafen = parameter.GetValue<bool>();
-                    Log("Deafen?" + shouldUndeafen);
-                    Task.Run(async () =>
                     {
-                        var payload = shouldUndeafen
-                            ? Payload.SetDeafenOnly(false)
-                            : Payload.SetDeafenOnly(true);
-
-                        var response = client.SendDataAndWait(1, payload);
-                        LogDebug($"Deafen/Undeafen response: {response}");
-                    }).Wait();
-                    break;
-                case DISCORDOSCParameter.RequestGuildCount:
-                    if (parameter.GetValue<bool>())
-                    {
-                        var responseJson = client.SendDataAndWait(1, Payload.GetGuilds());
-                        try
-                        {
-                            var doc = JsonDocument.Parse(responseJson);
-                            var guilds = doc.RootElement.GetProperty("data").GetProperty("guilds");
-                            SendParameter(DISCORDOSCParameter.GuildCount, guilds.GetArrayLength());
-                        }
-                        catch (Exception ex)
-                        {
-                            LogDebug($"Failed to parse guilds: {ex.Message}");
-                            SendParameter(DISCORDOSCParameter.GuildCount, 0);
-                        }
+                        bool deafen = parameter.GetValue<bool>();
+                        client.SendCommand(1, Payload.SetDeafenOnly(deafen));
+                        break;
                     }
-                    break;
+
+                case DISCORDOSCParameter.RequestGuildCount:
+                    {
+                        if (parameter.GetValue<bool>())
+                            client.SendCommand(1, Payload.GetGuilds());
+                        break;
+                    }
 
                 case DISCORDOSCParameter.RequestChannelCount:
-                    if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0))
                     {
-                        string guildId = parameter.GetWildcard<string>(0);
-                        lastGuildId = guildId;
-                        var responseJson = client.SendDataAndWait(1, Payload.GetChannels(guildId));
-                        try
+                        if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0))
                         {
-                            var doc = JsonDocument.Parse(responseJson);
-                            var channels = doc.RootElement.GetProperty("data").GetProperty("channels");
-                            SendParameter(DISCORDOSCParameter.ChannelCount, channels.GetArrayLength());
+                            string guildId = parameter.GetWildcard<string>(0);
+                            client.SendCommand(1, Payload.GetChannels(guildId));
                         }
-                        catch (Exception ex)
-                        {
-                            LogDebug($"Failed to parse channels: {ex.Message}");
-                            SendParameter(DISCORDOSCParameter.ChannelCount, 0);
-                        }
+                        break;
                     }
-                    break;
 
                 case DISCORDOSCParameter.SelectVoiceChannel:
-                    if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0))
                     {
-                        string channelId = parameter.GetWildcard<string>(0);
-                        lastChannelId = channelId;
-                        _ = client.SendDataAndWait(1, Payload.SelectVoiceChannel(channelId));
+                        if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0))
+                        {
+                            string channelId = parameter.GetWildcard<string>(0);
+                            client.SendCommand(1, Payload.SelectVoiceChannel(channelId));
+                        }
+                        break;
                     }
-                    break;
 
                 case DISCORDOSCParameter.RequestSelectedVoiceChannel:
-                    if (parameter.GetValue<bool>())
                     {
-                        var responseJson = client.SendDataAndWait(1, Payload.GetSelectedVoiceChannel());
-                        try
-                        {
-                            var doc = JsonDocument.Parse(responseJson);
-                            if (doc.RootElement.GetProperty("data").ValueKind == JsonValueKind.Null)
-                            {
-                                SendParameter(DISCORDOSCParameter.SelectedVoiceChannelId, 0);
-                            }
-                            else
-                            {
-                                string idStr = doc.RootElement.GetProperty("data").GetProperty("id").GetString();
-                                lastChannelId = idStr;
-                                if (long.TryParse(idStr, out long id))
-                                    SendParameter(DISCORDOSCParameter.SelectedVoiceChannelId, unchecked((int)id));
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            LogDebug($"Failed to parse voice channel: {ex.Message}");
-                            SendParameter(DISCORDOSCParameter.SelectedVoiceChannelId, 0);
-                        }
+                        if (parameter.GetValue<bool>())
+                            client.SendCommand(1, Payload.GetSelectedVoiceChannel());
+                        break;
                     }
-                    break;
 
                 case DISCORDOSCParameter.RequestVoiceSettings:
-                    if (parameter.GetValue<bool>())
                     {
-                        var responseJson = client.SendDataAndWait(1, Payload.GetVoiceSettings());
-                        try
-                        {
-                            var doc = JsonDocument.Parse(responseJson);
-                            var data = doc.RootElement.GetProperty("data");
-                            float inputVol = data.GetProperty("input").GetProperty("volume").GetSingle();
-                            float outputVol = data.GetProperty("output").GetProperty("volume").GetSingle();
-                            SendParameter(DISCORDOSCParameter.InputVolume, inputVol);
-                            SendParameter(DISCORDOSCParameter.OutputVolume, outputVol);
-                        }
-                        catch (Exception ex)
-                        {
-                            LogDebug($"Failed to parse voice settings: {ex.Message}");
-                            SendParameter(DISCORDOSCParameter.InputVolume, 0f);
-                            SendParameter(DISCORDOSCParameter.OutputVolume, 0f);
-                        }
+                        if (parameter.GetValue<bool>())
+                            client.SendCommand(1, Payload.GetVoiceSettings());
+                        break;
                     }
-                    break;
 
                 case DISCORDOSCParameter.InputVolume:
-                    float newInputVol = parameter.GetValue<float>();
-                    var argsInput = new Dictionary<string, object>
                     {
-                        ["input"] = new { volume = newInputVol }
-                    };
-                    _ = client.SendDataAndWait(1, Payload.SetVoiceSettings(argsInput));
-                    break;
+                        float vol = parameter.GetValue<float>();
+                        var args = new Dictionary<string, object> { ["input"] = new { volume = vol } };
+                        client.SendCommand(1, Payload.SetVoiceSettings(args));
+                        break;
+                    }
 
                 case DISCORDOSCParameter.OutputVolume:
-                    float newOutputVol = parameter.GetValue<float>();
-                    var argsOutput = new Dictionary<string, object>
                     {
-                        ["output"] = new { volume = newOutputVol }
-                    };
-                    _ = client.SendDataAndWait(1, Payload.SetVoiceSettings(argsOutput));
-                    break;
+                        float vol = parameter.GetValue<float>();
+                        var args = new Dictionary<string, object> { ["output"] = new { volume = vol } };
+                        client.SendCommand(1, Payload.SetVoiceSettings(args));
+                        break;
+                    }
 
                 case DISCORDOSCParameter.SetInputVolume:
-                    float setInput = parameter.GetValue<float>();
-                    var sinput = new Dictionary<string, object>
                     {
-                        ["input"] = new { volume = setInput }
-                    };
-                    _ = client.SendDataAndWait(1, Payload.SetVoiceSettings(sinput));
-                    break;
+                        float vol = parameter.GetValue<float>();
+                        var args = new Dictionary<string, object> { ["input"] = new { volume = vol } };
+                        client.SendCommand(1, Payload.SetVoiceSettings(args));
+                        break;
+                    }
 
                 case DISCORDOSCParameter.SetOutputVolume:
-                    float setOutput = parameter.GetValue<float>();
-                    var soutput = new Dictionary<string, object>
                     {
-                        ["output"] = new { volume = setOutput }
-                    };
-                    _ = client.SendDataAndWait(1, Payload.SetVoiceSettings(soutput));
-                    break;
+                        float vol = parameter.GetValue<float>();
+                        var args = new Dictionary<string, object> { ["output"] = new { volume = vol } };
+                        client.SendCommand(1, Payload.SetVoiceSettings(args));
+                        break;
+                    }
 
                 case DISCORDOSCParameter.SetVoiceSettings:
-                    if (parameter.IsWildcardType<string>(0))
                     {
+                        if (!parameter.IsWildcardType<string>(0)) break;
                         string field = parameter.GetWildcard<string>(0).ToLower();
-                        float? numVal = null;
-                        bool? boolVal = null;
-                        if (parameter.IsWildcardType<float>(1))
-                        {
-                            numVal = parameter.GetWildcard<float>(1);
-                        }
-                        else if (parameter.IsWildcardType<int>(1))
-                        {
-                            numVal = parameter.GetWildcard<int>(1);
-                        }
-                        else
-                        {
-                            boolVal = parameter.GetValue<bool>();
-                        }
+                        float? numVal = parameter.IsWildcardType<float>(1) ? parameter.GetWildcard<float>(1)
+                                         : parameter.IsWildcardType<int>(1) ? parameter.GetWildcard<int>(1)
+                                         : null;
+                        bool? boolVal = numVal == null ? (bool?)parameter.GetValue<bool>() : null;
 
                         var args = new Dictionary<string, object>();
-
                         switch (field)
                         {
-                            case "mute":
-                                args["mute"] = boolVal ?? (numVal.HasValue && numVal.Value != 0);
-                                break;
-                            case "deaf":
-                                args["deaf"] = boolVal ?? (numVal.HasValue && numVal.Value != 0);
-                                break;
+                            case "mute": args["mute"] = boolVal ?? numVal != 0; break;
+                            case "deaf": args["deaf"] = boolVal ?? numVal != 0; break;
                             case "input_volume":
                             case "inputvolume":
-                                if (numVal.HasValue)
-                                    args["input"] = new { volume = numVal.Value };
+                                if (numVal.HasValue) args["input"] = new { volume = numVal.Value };
                                 break;
                             case "output_volume":
                             case "outputvolume":
-                                if (numVal.HasValue)
-                                    args["output"] = new { volume = numVal.Value };
+                                if (numVal.HasValue) args["output"] = new { volume = numVal.Value };
                                 break;
                             case "automatic_gain_control":
                             case "agc":
-                                args["automatic_gain_control"] = boolVal ?? (numVal.HasValue && numVal.Value != 0);
-                                break;
+                                args["automatic_gain_control"] = boolVal ?? numVal != 0; break;
                             case "echo_cancellation":
-                                args["echo_cancellation"] = boolVal ?? (numVal.HasValue && numVal.Value != 0);
-                                break;
+                                args["echo_cancellation"] = boolVal ?? numVal != 0; break;
                             case "noise_suppression":
-                                args["noise_suppression"] = boolVal ?? (numVal.HasValue && numVal.Value != 0);
-                                break;
+                                args["noise_suppression"] = boolVal ?? numVal != 0; break;
                             case "qos":
-                                args["qos"] = boolVal ?? (numVal.HasValue && numVal.Value != 0);
-                                break;
+                                args["qos"] = boolVal ?? numVal != 0; break;
                             case "silence_warning":
-                                args["silence_warning"] = boolVal ?? (numVal.HasValue && numVal.Value != 0);
-                                break;
+                                args["silence_warning"] = boolVal ?? numVal != 0; break;
                         }
 
                         if (args.Count > 0)
-                        {
-                            _ = client.SendDataAndWait(1, Payload.SetVoiceSettings(args));
-                        }
+                            client.SendCommand(1, Payload.SetVoiceSettings(args));
+                        break;
                     }
-                    break;
 
                 case DISCORDOSCParameter.RequestChannelUserCount:
-                    if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0))
                     {
-                        string chId = parameter.GetWildcard<string>(0);
-                        lastChannelId = chId;
-                        var responseJson = client.SendDataAndWait(1, Payload.GetChannel(chId));
-                        try
+                        if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0))
                         {
-                            var doc = JsonDocument.Parse(responseJson);
-                            var voiceStates = doc.RootElement.GetProperty("data").GetProperty("voice_states");
-                            SendParameter(DISCORDOSCParameter.ChannelUserCount, voiceStates.GetArrayLength());
+                            string channelId = parameter.GetWildcard<string>(0);
+                            client.SendCommand(1, Payload.GetChannel(channelId));
                         }
-                        catch (Exception ex)
-                        {
-                            LogDebug($"Failed to parse channel users: {ex.Message}");
-                            SendParameter(DISCORDOSCParameter.ChannelUserCount, 0);
-                        }
+                        break;
                     }
-                    break;
 
                 case DISCORDOSCParameter.RequestChannelType:
-                    if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0))
                     {
-                        string chId = parameter.GetWildcard<string>(0);
-                        lastChannelId = chId;
-                        var responseJson = client.SendDataAndWait(1, Payload.GetChannel(chId));
-                        try
+                        if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0))
                         {
-                            var doc = JsonDocument.Parse(responseJson);
-                            int type = doc.RootElement.GetProperty("data").GetProperty("type").GetInt32();
-                            SendParameter(DISCORDOSCParameter.ChannelType, type);
+                            string channelId = parameter.GetWildcard<string>(0);
+                            client.SendCommand(1, Payload.GetChannel(channelId));
                         }
-                        catch (Exception ex)
-                        {
-                            LogDebug($"Failed to parse channel type: {ex.Message}");
-                            SendParameter(DISCORDOSCParameter.ChannelType, 0);
-                        }
+                        break;
                     }
-                    break;
 
                 case DISCORDOSCParameter.SubscribeEvent:
-                    if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0))
                     {
-                        string ev = parameter.GetWildcard<string>(0);
+                        if (!parameter.GetValue<bool>() || !parameter.IsWildcardType<string>(0)) break;
+                        string evt = parameter.GetWildcard<string>(0);
                         object args = null;
                         if (parameter.IsWildcardType<string>(1))
                         {
                             string id = parameter.GetWildcard<string>(1);
-                            if (ev == "GUILD_STATUS")
+                            if (evt == "GUILD_STATUS")
                                 args = new { guild_id = id };
-                            else if (ev.StartsWith("VOICE_STATE") || ev.StartsWith("MESSAGE_") || ev == "SPEAKING_START" || ev == "SPEAKING_STOP")
+                            else if (evt.StartsWith("VOICE_STATE") || evt.StartsWith("MESSAGE_") || evt is "SPEAKING_START" or "SPEAKING_STOP")
                                 args = new { channel_id = id };
                         }
-                        _ = client.SendDataAndWait(1, Payload.Subscribe(ev, args));
+                        client.SendCommand(1, Payload.Subscribe(evt, args));
+                        break;
                     }
-                    break;
 
                 case DISCORDOSCParameter.UnsubscribeEvent:
-                    if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0))
                     {
-                        string ev = parameter.GetWildcard<string>(0);
+                        if (!parameter.GetValue<bool>() || !parameter.IsWildcardType<string>(0)) break;
+                        string evt = parameter.GetWildcard<string>(0);
                         object args = null;
                         if (parameter.IsWildcardType<string>(1))
                         {
                             string id = parameter.GetWildcard<string>(1);
-                            if (ev == "GUILD_STATUS")
+                            if (evt == "GUILD_STATUS")
                                 args = new { guild_id = id };
-                            else if (ev.StartsWith("VOICE_STATE") || ev.StartsWith("MESSAGE_") || ev == "SPEAKING_START" || ev == "SPEAKING_STOP")
+                            else if (evt.StartsWith("VOICE_STATE") || evt.StartsWith("MESSAGE_") || evt is "SPEAKING_START" or "SPEAKING_STOP")
                                 args = new { channel_id = id };
                         }
-                        _ = client.SendDataAndWait(1, Payload.Unsubscribe(ev, args));
+                        client.SendCommand(1, Payload.Unsubscribe(evt, args));
+                        break;
                     }
-                    break;
 
                 case DISCORDOSCParameter.SelectTextChannel:
-                    if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0))
                     {
-                        string cid = parameter.GetWildcard<string>(0);
-                        lastChannelId = cid;
-                        _ = client.SendDataAndWait(1, Payload.SelectTextChannel(cid));
+                        if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0))
+                        {
+                            string textChannel = parameter.GetWildcard<string>(0);
+                            client.SendCommand(1, Payload.SelectTextChannel(textChannel));
+                        }
+                        break;
                     }
-                    break;
 
                 case DISCORDOSCParameter.SetUserVolume:
-                    if (parameter.IsWildcardType<string>(0))
                     {
-                        string userId = parameter.GetWildcard<string>(0);
+                        if (!parameter.IsWildcardType<string>(0)) break;
+                        string userVolId = parameter.GetWildcard<string>(0);
                         float vol = parameter.GetValue<float>();
-                        _ = client.SendDataAndWait(1, Payload.SetUserVoiceSettings(userId, volume: (int)vol));
+                        client.SendCommand(1, Payload.SetUserVoiceSettings(userVolId, volume: (int)vol));
+                        break;
                     }
-                    break;
 
                 case DISCORDOSCParameter.SetUserMute:
-                    if (parameter.IsWildcardType<string>(0))
                     {
-                        string userId = parameter.GetWildcard<string>(0);
-                        bool mute = parameter.GetValue<bool>();
-                        _ = client.SendDataAndWait(1, Payload.SetUserVoiceSettings(userId, mute: mute));
+                        if (!parameter.IsWildcardType<string>(0)) break;
+                        string userMuteId = parameter.GetWildcard<string>(0);
+                        bool muteUser = parameter.GetValue<bool>();
+                        client.SendCommand(1, Payload.SetUserVoiceSettings(userMuteId, mute: muteUser));
+                        break;
                     }
-                    break;
 
                 case DISCORDOSCParameter.SetActivity:
-                    if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0) && parameter.IsWildcardType<string>(1))
                     {
-                        string stateStr = parameter.GetWildcard<string>(0);
-                        string detailStr = parameter.GetWildcard<string>(1);
-                        _ = client.SendDataAndWait(1, Payload.SetActivity(stateStr, detailStr, string.Empty, string.Empty));
+                        if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0) && parameter.IsWildcardType<string>(1))
+                        {
+                            string state = parameter.GetWildcard<string>(0);
+                            string details = parameter.GetWildcard<string>(1);
+                            client.SendCommand(1, Payload.SetActivity(state, details, string.Empty, string.Empty));
+                        }
+                        break;
                     }
-                    break;
 
                 case DISCORDOSCParameter.SendActivityJoinInvite:
-                    if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0))
                     {
-                        string userId = parameter.GetWildcard<string>(0);
-                        _ = client.SendDataAndWait(1, Payload.SendActivityJoinInvite(userId));
+                        if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0))
+                        {
+                            string invitee = parameter.GetWildcard<string>(0);
+                            client.SendCommand(1, Payload.SendActivityJoinInvite(invitee));
+                        }
+                        break;
                     }
-                    break;
 
                 case DISCORDOSCParameter.CloseActivityRequest:
-                    if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0))
                     {
-                        string userId = parameter.GetWildcard<string>(0);
-                        _ = client.SendDataAndWait(1, Payload.CloseActivityRequest(userId));
+                        if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0))
+                        {
+                            string requester = parameter.GetWildcard<string>(0);
+                            client.SendCommand(1, Payload.CloseActivityRequest(requester));
+                        }
+                        break;
                     }
-                    break;
 
                 case DISCORDOSCParameter.SendCertifiedDevices:
-                    if (parameter.GetValue<bool>())
                     {
-                        var devices = new object[]
+                        if (parameter.GetValue<bool>())
                         {
-                            new {
-                                type = "audioinput",
-                                id = Guid.NewGuid().ToString(),
-                                vendor = new { name = "Generic", url = "https://localhost" },
-                                model = new { name = "Example", url = "https://localhost" },
-                                related = Array.Empty<string>(),
-                                echo_cancellation = true,
-                                noise_suppression = true,
-                                automatic_gain_control = true,
-                                hardware_mute = false
-                            }
-                        };
-                        _ = client.SendDataAndWait(1, Payload.SetCertifiedDevices(devices));
+                            var devices = new object[]
+                            {
+                    new {
+                        type = "audioinput",
+                        id = Guid.NewGuid().ToString(),
+                        vendor = new { name = "Generic", url = "https://localhost" },
+                        model  = new { name = "Example", url = "https://localhost" },
+                        related = Array.Empty<string>(),
+                        echo_cancellation       = true,
+                        noise_suppression       = true,
+                        automatic_gain_control  = true,
+                        hardware_mute           = false
                     }
-                    break;
+                            };
+                            client.SendCommand(1, Payload.SetCertifiedDevices(devices));
+                        }
+                        break;
+                    }
 
                 case DISCORDOSCParameter.RequestGuildInfo:
-                    if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0))
                     {
-                        string gid = parameter.GetWildcard<string>(0);
-                        lastGuildId = gid;
-                        var resp = client.SendDataAndWait(1, Payload.GetGuild(gid));
-                        try
+                        if (parameter.GetValue<bool>() && parameter.IsWildcardType<string>(0))
                         {
-                            var doc = JsonDocument.Parse(resp);
-                            var data = doc.RootElement.GetProperty("data");
-                            bool hasIcon = data.GetProperty("icon_url").ValueKind != JsonValueKind.Null;
-                            SendParameter(DISCORDOSCParameter.GuildHasIcon, hasIcon);
+                            string gid = parameter.GetWildcard<string>(0);
+                            client.SendCommand(1, Payload.GetGuild(gid));
                         }
-                        catch (Exception ex)
-                        {
-                            LogDebug($"Failed to parse guild info: {ex.Message}");
-                            SendParameter(DISCORDOSCParameter.GuildHasIcon, false);
-                        }
+                        break;
                     }
+
+                default:
+                    // Unhandled parameter
                     break;
             }
         }
+
 
         [ModuleUpdate(ModuleUpdateMode.ChatBox)]
         private void ChatBoxUpdate()
@@ -1067,6 +953,8 @@ namespace YeusepesModules.DISCORDOSC
             {
                 LogDebug($"ChatBox GET_VOICE_SETTINGS failed: {ex.Message}");
             }
+
+            ChangeState("VoiceState");
         }
 
         private static int VoiceStateToInt(string state)
@@ -1295,5 +1183,6 @@ namespace YeusepesModules.DISCORDOSC
                 LogDebug($"Failed to handle RPC event: {ex.Message}");
             }
         }
+
     }
 }

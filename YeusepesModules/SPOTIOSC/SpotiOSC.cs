@@ -187,8 +187,8 @@ namespace YeusepesModules.SPOTIOSC
 
 
             RegisterParameter<bool>(SpotiParameters.Pause, "SpotiOSC/Pause", ParameterMode.ReadWrite, "Pause", "Pauses playback.");
-            RegisterParameter<bool>(SpotiParameters.NextTrack, "SpotiOSC/NextTrack", ParameterMode.Read, "Next Track", "Skips to the next track.");
-            RegisterParameter<bool>(SpotiParameters.PreviousTrack, "SpotiOSC/PreviousTrack", ParameterMode.Read, "Previous Track", "Skips to the previous track.");                        
+            RegisterParameter<bool>(SpotiParameters.NextTrack, "SpotiOSC/NextTrack", ParameterMode.ReadWrite, "Next Track", "Skips to the next track.");
+            RegisterParameter<bool>(SpotiParameters.PreviousTrack, "SpotiOSC/PreviousTrack", ParameterMode.ReadWrite, "Previous Track", "Skips to the previous track.");                        
             RegisterParameter<bool>(SpotiParameters.TrackChangedEvent, "SpotiOSC/TrackChangedEvent", ParameterMode.Write, "Track Changed Event", "Triggers when succesfully run a ChangedEvent.");                        
 
             // Playback state (root)
@@ -370,6 +370,7 @@ namespace YeusepesModules.SPOTIOSC
 
         protected override async Task<bool> OnModuleStart()
         {
+           
             _cts = new CancellationTokenSource();
             
             _httpClient = new HttpClient();
@@ -427,8 +428,6 @@ namespace YeusepesModules.SPOTIOSC
             SendParameter(SpotiParameters.InAJam, false);
             SendParameter(SpotiParameters.IsJamOwner, false);
             SendParameter(SpotiParameters.Error, false);
-
-
 
             await decoder.OnModuleStart();
             return true;
