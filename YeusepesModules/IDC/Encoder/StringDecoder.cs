@@ -646,7 +646,7 @@ namespace YeusepesModules.IDC.Encoder
                 double dy = candidate.Y - origImage.Height;
                 double distance = Math.Sqrt(dx * dx + dy * dy);
                 double maxDistance = Math.Sqrt(origImage.Width * origImage.Width + origImage.Height * origImage.Height);
-                double locationWeight = 1.0 - (distance / maxDistance);
+                double locationWeight = distance / maxDistance;
 
                 double candidateScore = matchFraction * 0.7 + locationWeight * 0.3;
                 encodingUtilities.LogDebug($"Candidate {candidateIndex}: Match = {matchFraction:F2}, " +
