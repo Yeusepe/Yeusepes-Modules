@@ -255,6 +255,75 @@ namespace YeusepesLowLevelTools
         }
     }
 
+    public static class UriLauncher
+    {
+        // P/Invoke into ShellExecute:
+        [DllImport("shell32.dll", CharSet = CharSet.Auto)]
+        private static extern IntPtr ShellExecute(
+            IntPtr hwnd,
+            string lpOperation,
+            string lpFile,
+            string lpParameters,
+            string lpDirectory,
+            int nShowCmd
+        );
+
+        public static void LaunchUri(string uri)
+        {
+            Console.WriteLine($"[LaunchUri] Received URI: '{uri}'");
+
+            if (string.IsNullOrWhiteSpace(uri))
+            {
+                Console.WriteLine("[LaunchUri] URI is empty or null; aborting.");
+                return;
+            }
+
+            try
+            {
+                const int SW_SHOWNORMAL = 1;
+                Console.WriteLine("[LaunchUri] Calling ShellExecute(\"open\")...");
+                IntPtr result = ShellExecute(
+                    IntPtr.Zero,
+                    "open",
+                    uri,
+                    null,
+                    null,
+                    SW_SHOWNORMAL
+                );
+
+                long code = result.ToInt64();
+                if (code <= 32)
+                {
+                    // ShellExecute returns >32 if successful
+                    throw new InvalidOperationException($"ShellExecute failed with code {code}");
+                }
+
+                Console.WriteLine("[LaunchUri] ShellExecute succeeded.");
+                return;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[LaunchUri] ShellExecute exception: {ex.Message}");
+            }
+
+            // Fallback using explorer.exe
+            try
+            {
+                Console.WriteLine("[LaunchUri] Falling back to explorer.exe");
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = uri,
+                    UseShellExecute = true
+                });
+                Console.WriteLine("[LaunchUri] explorer.exe launch succeeded.");
+            }
+            catch (Exception fallbackEx)
+            {
+                Console.WriteLine($"[LaunchUri] Fallback launch failed: {fallbackEx.Message}");
+            }
+        }
+    }
 
     public static class EarlyLoader
     {
