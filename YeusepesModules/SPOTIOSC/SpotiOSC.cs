@@ -14,9 +14,8 @@ using YeusepesModules.SPOTIOSC.Utils.Events;
 using System.Text.Json;
 using YeusepesModules.Common.ScreenUtilities;
 using VRCOSC.App.Settings;
-using VRCOSC.App.Utils;
-using Windows.Services.Maps;
 using SpotifyAPI.Web;
+
 
 
 namespace YeusepesModules.SPOTIOSC
