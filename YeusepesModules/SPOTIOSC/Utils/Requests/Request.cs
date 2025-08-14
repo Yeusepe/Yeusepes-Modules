@@ -275,7 +275,7 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
                     }
                     else
                     {
-                        utilities.Log($"Failed to fetch playback state. Status: {response.StatusCode}");
+                        utilities.Log($"Spotify seems to either be paused or your device marked as \"Not active\". Try pausing/unpausing to see if your device activates!");
                         string errorContent = await response.Content.ReadAsStringAsync();
                         utilities.LogDebug($"Error response: {errorContent}");
                     }

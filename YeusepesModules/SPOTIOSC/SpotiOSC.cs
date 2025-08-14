@@ -940,6 +940,10 @@ namespace YeusepesModules.SPOTIOSC
                 SetParameterSafe(SpotiParameters.DeviceIsRestricted, device.GetProperty("is_restricted").GetBoolean());
                 SetParameterSafe(SpotiParameters.DeviceSupportsVolume, device.GetProperty("supports_volume").GetBoolean());
                 SetParameterSafe(SpotiParameters.DeviceVolumePercent, device.GetProperty("volume_percent").GetInt32());
+                LogDebug($"Shuffle state: {spotifyRequestContext.DeviceId}");
+                LogDebug($"Shuffle state: {spotifyRequestContext.DeviceName}");
+                LogDebug($"Shuffle state: {spotifyRequestContext.IsActiveDevice}");
+                LogDebug($"Shuffle state: {spotifyRequestContext.VolumePercent}");                
             }
 
             // --- Shuffle and Smart Shuffle ---
@@ -1009,8 +1013,9 @@ namespace YeusepesModules.SPOTIOSC
                     spotifyRequestContext.ContextUri = contextUri.GetString();
                     LogDebug($"Context URI: {spotifyRequestContext.ContextUri}");                    
                 }
-
             }
+
+
 
             // --- Playing status ---
             spotifyRequestContext.IsPlaying = state.GetProperty("is_playing").GetBoolean();

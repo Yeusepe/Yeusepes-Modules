@@ -24,6 +24,8 @@ namespace YeusepesModules.SPOTIOSC.Utils.Events
             _accessToken = spotifyRequestContext.AccessToken;
             httpClient = spotifyRequestContext.HttpClient;
             _webSocketUrl = $"wss://dealer.spotify.com/?access_token={_accessToken}";
+            // Log response
+
         }
 
         public async Task StartAsync()
