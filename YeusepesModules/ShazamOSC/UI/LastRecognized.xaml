@@ -1,0 +1,103 @@
+﻿<UserControl x:Class="YeusepesModules.ShazamOSC.UI.LastRecognized"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:YeusepesModules.ShazamOSC.UI"
+             Background="Transparent">
+
+    <UserControl.Resources>
+
+        <!-- Shazam logo geometry -->
+        <GeometryGroup x:Key="ShazamLogoGeometry">
+            <!-- outer circle -->
+            <Geometry>
+                M1.36133 10.8895C1.36133 16.1517 5.62843 20.4192 10.8912 20.4192C16.1539 20.4192 20.4203 16.1517 20.4203 10.8895C20.4203 5.62594 16.1539 1.36014 10.8912 1.36014C5.62843 1.36014 1.36133 5.62594 1.36133 10.8895Z
+            </Geometry>
+
+            <!-- inner “S” shape -->
+            <Geometry>
+                M13.3723 17.1022C13.6222 16.8616 15.0885 15.4496 15.9319 14.5195C16.7357 13.6307 17.1399 12.4871 17.0673 11.3011C16.9927 10.0799 16.4227 8.94877 15.4611 8.11814C13.8731 6.7451 11.3064 6.773 9.7397 8.17913C9.16821 8.6912 8.52265 9.39373 8.49508 9.42381C8.08314 9.87184 8.11356 10.5694 8.56077 10.9811C9.00866 11.3922 9.70417 11.363 10.1172 10.9155C10.1228 10.9089 10.7182 10.2609 11.2095 9.82099C12.0343 9.08055 13.3535 9.20886 14.0214 9.78634C14.5303 10.2255 14.8308 10.8109 14.869 11.4347C14.9048 12.0233 14.7023 12.5936 14.3 13.0379C13.5051 13.9164 12.0419 15.3244 11.8397 15.519C11.8254 15.5327 11.8175 15.5403 11.8165 15.5414C11.3771 15.9623 11.361 16.6588 11.7817 17.0996C11.998 17.3255 12.2868 17.44 12.578 17.44C12.851 17.44 13.1251 17.3383 13.3378 17.1354C13.3425 17.1309 13.3542 17.1196 13.3723 17.1022ZM6.45462 13.5848C7.23617 14.2606 8.25419 14.598 9.27364 14.598C10.3264 14.598 11.3805 14.2387 12.176 13.5241C12.7 13.0534 13.2877 12.4233 13.4018 12.3008C13.412 12.2899 13.4185 12.283 13.4207 12.2807C13.8325 11.8327 13.8026 11.1346 13.3551 10.7234C12.908 10.311 12.2108 10.3397 11.7994 10.7882C11.7994 10.7882 11.7981 10.7896 11.7963 10.7915C11.7493 10.8422 11.1792 11.4584 10.7067 11.8834C9.88135 12.6225 8.56268 12.496 7.89391 11.9173C7.38571 11.4778 7.08513 10.8922 7.0466 10.268C7.01073 9.67995 7.21357 9.11091 7.61592 8.66479C8.46738 7.72525 10.0829 6.17814 10.0995 6.1624C10.5391 5.74192 10.5541 5.0445 10.1343 4.60426C9.7135 4.16461 9.0171 4.14779 8.57772 4.56885L8.57044 4.57578C8.43464 4.70611 6.86731 6.20961 5.98474 7.18472C5.17967 8.07308 4.77708 9.21662 4.84826 10.4021C4.92343 11.624 5.49344 12.7544 6.45462 13.5848Z
+            </Geometry>
+        </GeometryGroup>
+
+        <!-- converter to bump scale 1 → 1.5 -->
+        <local:LevelToScaleConverter x:Key="LevelToScaleConverter"/>
+        <local:LevelToLogoScaleConverter x:Key="LevelToLogoScaleConverter"/>
+        <local:BooleanToVisibilityConverter x:Key="BooleanToVisibilityConverter"/>
+    </UserControl.Resources>
+
+    <!-- Outer rounded border -->
+    <Border CornerRadius="12"          
+          ClipToBounds="True"
+          Padding="10">
+        <Border.Background>
+            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                <!-- your “shame” blue -->
+                <GradientStop Color="#008ED5" Offset="0"/>
+                <!-- a lighter variant of the same hue -->
+                <GradientStop Color="#5AC8F5" Offset="1"/>
+            </LinearGradientBrush>
+        </Border.Background>
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="*"/>
+            </Grid.ColumnDefinitions>
+
+            <!-- artwork + title/artist -->
+            <StackPanel Orientation="Horizontal" Grid.Column="0" Margin="10">
+                <Rectangle Width="60" Height="60"
+                        RadiusX="8" RadiusY="8">
+                    <Rectangle.Fill>
+                        <ImageBrush ImageSource="{Binding CoverArtUrl}"
+                        Stretch="UniformToFill"/>
+                    </Rectangle.Fill>
+                </Rectangle>
+
+                <StackPanel Orientation="Vertical" Margin="10,0,0,0" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding Title}"
+                     Foreground="White"
+                     FontSize="18"
+                     FontWeight="SemiBold"
+                     TextTrimming="CharacterEllipsis"/>
+                    <TextBlock Text="{Binding Artist}"
+                     Foreground="White"
+                     FontSize="14"
+                     Margin="0,4,0,0"
+                     TextTrimming="CharacterEllipsis"/>
+                </StackPanel>
+            </StackPanel>
+
+            <!-- pulse circle + logo -->
+            <Grid Grid.Column="1"
+                  HorizontalAlignment="Right"
+                  VerticalAlignment="Center"
+                  Visibility="{Binding IsListening, Converter={StaticResource BooleanToVisibilityConverter}}"
+                  Width="48" Height="48">
+
+                <!-- circle behind -->
+                <Ellipse Fill="#80FFFFFF"
+                         Width="40" Height="40"
+                         HorizontalAlignment="Center"
+                         VerticalAlignment="Center"
+                         RenderTransformOrigin="0.5,0.5">
+                    <Ellipse.RenderTransform>
+                        <ScaleTransform x:Name="CircleScale" ScaleX="1" ScaleY="1"/>
+                    </Ellipse.RenderTransform>
+                </Ellipse>
+
+                <!-- Shazam logo on top -->
+                <Path Data="{StaticResource ShazamLogoGeometry}"
+                      Fill="White"
+                      Stretch="Uniform"
+                      HorizontalAlignment="Center"
+                      VerticalAlignment="Center"
+                      RenderTransformOrigin="0.5,0.5">
+                    <Path.RenderTransform>
+                        <ScaleTransform x:Name="LogoScale" ScaleX="1" ScaleY="1"/>
+                    </Path.RenderTransform>
+                </Path>
+
+            </Grid>
+        </Grid>
+    </Border>
+</UserControl>
