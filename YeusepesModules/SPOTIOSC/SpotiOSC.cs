@@ -14,9 +14,8 @@ using YeusepesModules.SPOTIOSC.Utils.Events;
 using System.Text.Json;
 using YeusepesModules.Common.ScreenUtilities;
 using VRCOSC.App.Settings;
-using VRCOSC.App.Utils;
-using Windows.Services.Maps;
 using SpotifyAPI.Web;
+
 
 
 namespace YeusepesModules.SPOTIOSC
@@ -187,8 +186,8 @@ namespace YeusepesModules.SPOTIOSC
 
 
             RegisterParameter<bool>(SpotiParameters.Pause, "SpotiOSC/Pause", ParameterMode.ReadWrite, "Pause", "Pauses playback.");
-            RegisterParameter<bool>(SpotiParameters.NextTrack, "SpotiOSC/NextTrack", ParameterMode.Read, "Next Track", "Skips to the next track.");
-            RegisterParameter<bool>(SpotiParameters.PreviousTrack, "SpotiOSC/PreviousTrack", ParameterMode.Read, "Previous Track", "Skips to the previous track.");                        
+            RegisterParameter<bool>(SpotiParameters.NextTrack, "SpotiOSC/NextTrack", ParameterMode.ReadWrite, "Next Track", "Skips to the next track.");
+            RegisterParameter<bool>(SpotiParameters.PreviousTrack, "SpotiOSC/PreviousTrack", ParameterMode.ReadWrite, "Previous Track", "Skips to the previous track.");                        
             RegisterParameter<bool>(SpotiParameters.TrackChangedEvent, "SpotiOSC/TrackChangedEvent", ParameterMode.Write, "Track Changed Event", "Triggers when succesfully run a ChangedEvent.");                        
 
             // Playback state (root)
@@ -370,6 +369,7 @@ namespace YeusepesModules.SPOTIOSC
 
         protected override async Task<bool> OnModuleStart()
         {
+           
             _cts = new CancellationTokenSource();
             
             _httpClient = new HttpClient();
@@ -427,8 +427,6 @@ namespace YeusepesModules.SPOTIOSC
             SendParameter(SpotiParameters.InAJam, false);
             SendParameter(SpotiParameters.IsJamOwner, false);
             SendParameter(SpotiParameters.Error, false);
-
-
 
             await decoder.OnModuleStart();
             return true;
@@ -942,6 +940,10 @@ namespace YeusepesModules.SPOTIOSC
                 SetParameterSafe(SpotiParameters.DeviceIsRestricted, device.GetProperty("is_restricted").GetBoolean());
                 SetParameterSafe(SpotiParameters.DeviceSupportsVolume, device.GetProperty("supports_volume").GetBoolean());
                 SetParameterSafe(SpotiParameters.DeviceVolumePercent, device.GetProperty("volume_percent").GetInt32());
+                LogDebug($"Shuffle state: {spotifyRequestContext.DeviceId}");
+                LogDebug($"Shuffle state: {spotifyRequestContext.DeviceName}");
+                LogDebug($"Shuffle state: {spotifyRequestContext.IsActiveDevice}");
+                LogDebug($"Shuffle state: {spotifyRequestContext.VolumePercent}");                
             }
 
             // --- Shuffle and Smart Shuffle ---
@@ -1011,8 +1013,9 @@ namespace YeusepesModules.SPOTIOSC
                     spotifyRequestContext.ContextUri = contextUri.GetString();
                     LogDebug($"Context URI: {spotifyRequestContext.ContextUri}");                    
                 }
-
             }
+
+
 
             // --- Playing status ---
             spotifyRequestContext.IsPlaying = state.GetProperty("is_playing").GetBoolean();

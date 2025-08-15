@@ -4,11 +4,24 @@ using System.Drawing;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Security;
-using System.IO;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Configuration.UserSecrets;
 
 
 namespace YeusepesLowLevelTools
 {
+    public class SecretsMarker { }
+
+    public static class GlobalSecrets
+    {
+        private static readonly IConfiguration _config = new ConfigurationBuilder()
+            .AddUserSecrets<SecretsMarker>()    // picks up your secrets.json by GUID
+            .Build();
+
+        /// <summary>Fetch any secret by its full key path, e.g. "Discord:ClientId" or "SK1".</summary>
+        public static string Get(string key) => _config[key];
+    }
+
     public static class NativeMethods
     {
         public const int SHOWNORMAL = 1;
@@ -16,6 +29,20 @@ namespace YeusepesLowLevelTools
         public const int SHOWMAXIMIZED = 3;
         public const int SW_RESTORE = 9; // Restore window if minimized
 
+        [DllImport("user32.dll")]
+        private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+        [DllImport("kernel32.dll")]
+        private static extern uint GetCurrentThreadId();
+
+        [DllImport("user32.dll")]
+        private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+        [DllImport("user32.dll")]
+        private static extern bool BringWindowToTop(IntPtr hWnd);
+
+        [DllImport("user32.dll")]
+        private static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
         [DllImport("user32.dll")]
         public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
@@ -54,6 +81,31 @@ namespace YeusepesLowLevelTools
         {
             var process = Process.GetProcessesByName("VRChat").FirstOrDefault();
             return process?.MainWindowHandle ?? IntPtr.Zero;
+        }
+        public static void ForceForegroundWindow(IntPtr hWnd)
+        {
+            // 1. Figure out which thread is currently in the foreground
+            IntPtr fg = GetForegroundWindow();
+            uint fgThread = GetWindowThreadProcessId(fg, out _);
+            uint thisThread = GetCurrentThreadId();
+
+            // 2. If they’re different, attach them
+            if (fgThread != thisThread)
+            {
+                AttachThreadInput(fgThread, thisThread, true);
+                BringWindowToTop(hWnd);
+                ShowWindow(hWnd, SW_RESTORE);
+                AttachThreadInput(fgThread, thisThread, false);
+            }
+            else
+            {
+                // Same thread, just force it
+                BringWindowToTop(hWnd);
+                ShowWindow(hWnd, SW_RESTORE);
+            }
+
+            // 3. Finally attempt the normal call
+            SetForegroundWindow(hWnd);
         }
 
         public static IntPtr FindWindowByTitle(string title)
@@ -203,6 +255,75 @@ namespace YeusepesLowLevelTools
         }
     }
 
+    public static class UriLauncher
+    {
+        // P/Invoke into ShellExecute:
+        [DllImport("shell32.dll", CharSet = CharSet.Auto)]
+        private static extern IntPtr ShellExecute(
+            IntPtr hwnd,
+            string lpOperation,
+            string lpFile,
+            string lpParameters,
+            string lpDirectory,
+            int nShowCmd
+        );
+
+        public static void LaunchUri(string uri)
+        {
+            Console.WriteLine($"[LaunchUri] Received URI: '{uri}'");
+
+            if (string.IsNullOrWhiteSpace(uri))
+            {
+                Console.WriteLine("[LaunchUri] URI is empty or null; aborting.");
+                return;
+            }
+
+            try
+            {
+                const int SW_SHOWNORMAL = 1;
+                Console.WriteLine("[LaunchUri] Calling ShellExecute(\"open\")...");
+                IntPtr result = ShellExecute(
+                    IntPtr.Zero,
+                    "open",
+                    uri,
+                    null,
+                    null,
+                    SW_SHOWNORMAL
+                );
+
+                long code = result.ToInt64();
+                if (code <= 32)
+                {
+                    // ShellExecute returns >32 if successful
+                    throw new InvalidOperationException($"ShellExecute failed with code {code}");
+                }
+
+                Console.WriteLine("[LaunchUri] ShellExecute succeeded.");
+                return;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[LaunchUri] ShellExecute exception: {ex.Message}");
+            }
+
+            // Fallback using explorer.exe
+            try
+            {
+                Console.WriteLine("[LaunchUri] Falling back to explorer.exe");
+                Process.Start(new ProcessStartInfo
+                {
+                    FileName = "explorer.exe",
+                    Arguments = uri,
+                    UseShellExecute = true
+                });
+                Console.WriteLine("[LaunchUri] explorer.exe launch succeeded.");
+            }
+            catch (Exception fallbackEx)
+            {
+                Console.WriteLine($"[LaunchUri] Fallback launch failed: {fallbackEx.Message}");
+            }
+        }
+    }
 
     public static class EarlyLoader
     {
@@ -281,7 +402,8 @@ namespace YeusepesLowLevelTools
                 log("Error during native library initialization: " + ex.Message);
                 throw;
             }
-        }
+
+        }        
 
     }
 

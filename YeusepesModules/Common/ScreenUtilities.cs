@@ -643,8 +643,13 @@ namespace YeusepesModules.Common.ScreenUtilities
         // In ScreenUtilities class:
         public Bitmap TakeScreenshot()
         {
-            BringVRChatToFront();
+            var vr = NativeMethods.GetVRChatWindowHandle();
+            if (vr != IntPtr.Zero)
+                NativeMethods.ForceForegroundWindow(vr);
+            else
+                Log("VRChat window handle not found.");
             Log("Taking screenshot...");
+            
             if (GetSelectedDisplay() == "Default")
                 selectedDisplay = screenCaptureService.GetDisplays(selectedGraphicsCard.Value).FirstOrDefault();
             else
@@ -657,7 +662,10 @@ namespace YeusepesModules.Common.ScreenUtilities
                 return null;
             }
 
-            BringVRChatToFront();
+            if (vr != IntPtr.Zero)
+                NativeMethods.ForceForegroundWindow(vr);
+            else
+                Log("VRChat window handle not found.");
 
             try
             {

@@ -36,10 +36,8 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
                 });
             }
             catch (JsonException ex)
-            {
-                //Logger.Log($"Deserialization error: {ex.Message}");
-                //Logger.Log($"Response content: {response}");
-                throw;
+            {                
+                throw new Exception($"Deserialization error: {ex.Message}, Deserialization error: {ex.Message}");
             }
         }
 

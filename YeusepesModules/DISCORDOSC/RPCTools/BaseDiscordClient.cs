@@ -11,18 +11,22 @@ namespace DISCORDOSC.RPCTools
     public class BaseDiscordClient : IDisposable
     {
         private NamedPipeClientStream _pipeClient;
+        private readonly object _writeLock = new object();
+        private readonly object _readLock = new object();
+        private CancellationTokenSource _cts;
         private string _pipeName;
         private readonly object _pipeLock = new();
         private CancellationTokenSource _listenCts;
         // Connect to the IPC
         public void Connect(string pipeName)
         {
-            _pipeName = pipeName;
-            if (_pipeClient == null || !_pipeClient.IsConnected)
-            {
-                _pipeClient = new NamedPipeClientStream(".", pipeName, PipeDirection.InOut);
-                _pipeClient.Connect();                
-            }
+            _pipeClient = new NamedPipeClientStream(
+                serverName: ".",
+                pipeName: pipeName,
+                direction: PipeDirection.InOut,          // full-duplex
+                options: PipeOptions.Asynchronous      // enable async under the hood
+            );
+            _pipeClient.Connect(timeout: 1000);
         }
 
         // Perform a handshake
@@ -96,57 +100,90 @@ namespace DISCORDOSC.RPCTools
             }
         }
 
-        // Dispose method to properly close the pipe
-        public void Dispose()
+        /// <summary>
+        /// Fire-and-forget send.  Never blocks on reads.
+        /// </summary>
+        public void SendCommand(int op, object payload)
         {
-            if (_pipeClient != null)
+            if (_pipeClient == null || !_pipeClient.IsConnected)
+                throw new InvalidOperationException(
+                    "Must call Connect(...) before sending commands.");
+
+            // 1) Serialize payload
+            string json = JsonSerializer.Serialize(payload);
+            byte[] body = Encoding.UTF8.GetBytes(json);
+
+            // 2) Build 8-byte header: [ op (4 bytes) | length (4 bytes) ]
+            byte[] header = BitConverter.GetBytes(op)
+                              .Concat(BitConverter.GetBytes(body.Length))
+                              .ToArray();
+
+            // 3) Atomically write header + body
+            lock (_writeLock)
             {
-                _pipeClient.Close();
-                _pipeClient.Dispose();
-                _pipeClient = null;
-                Console.WriteLine("Pipe connection closed.");
+                _pipeClient.Write(header, 0, header.Length);
+                _pipeClient.Write(body, 0, body.Length);
+                _pipeClient.Flush();
             }
         }
 
+        /// <summary>
+        /// Start pumping incoming messages.  onEvent is called for each JSON payload.
+        /// </summary>
         public void StartListening(Action<JsonElement> onEvent)
         {
-            if (_pipeClient == null)
-                throw new InvalidOperationException("Client not connected");
+            if (_pipeClient == null || !_pipeClient.IsConnected)
+                throw new InvalidOperationException(
+                    "Must call Connect(...) before listening.");
 
-            _listenCts = new CancellationTokenSource();
-            var token = _listenCts.Token;
+            _cts = new CancellationTokenSource();
             Task.Run(() =>
             {
+                var header = new byte[8];
                 try
                 {
-                    while (!token.IsCancellationRequested)
+                    while (!_cts.Token.IsCancellationRequested)
                     {
-                        JsonElement evt;
-                        lock (_pipeLock)
+                        // 1) Read header
+                        lock (_readLock)
                         {
-                            byte[] header = new byte[8];
-                            int read = _pipeClient.Read(header, 0, 8);
-                            if (read == 0) break;
-                            int op = BitConverter.ToInt32(header, 0);
-                            int len = BitConverter.ToInt32(header, 4);
-                            byte[] data = new byte[len];
-                            _pipeClient.Read(data, 0, len);
-                            string json = Encoding.UTF8.GetString(data);
-                            evt = JsonSerializer.Deserialize<JsonElement>(json);
+                            int got = _pipeClient.Read(header, 0, 8);
+                            if (got == 0) break;  // pipe closed
                         }
+
+                        // Extract length
+                        int length = BitConverter.ToInt32(header, 4);
+                        var body = new byte[length];
+
+                        // 2) Read body
+                        lock (_readLock)
+                        {
+                            int read = 0;
+                            while (read < length)
+                                read += _pipeClient.Read(body, read, length - read);
+                        }
+
+                        // 3) Deserialize + dispatch
+                        string json = Encoding.UTF8.GetString(body);
+                        var evt = JsonSerializer.Deserialize<JsonElement>(json);
                         onEvent?.Invoke(evt);
                     }
                 }
-                catch (Exception)
-                {
-                    // swallow exceptions for simplicity
-                }
-            }, token);
+                catch (IOException) { /* pipe broken, swallow or log */ }
+            }, _cts.Token);
         }
 
         public void StopListening()
         {
-            _listenCts?.Cancel();
+            _cts?.Cancel();
         }
+
+        public void Dispose()
+        {
+            StopListening();
+            _pipeClient?.Dispose();
+            _pipeClient = null;
+        }
+
     }
 }

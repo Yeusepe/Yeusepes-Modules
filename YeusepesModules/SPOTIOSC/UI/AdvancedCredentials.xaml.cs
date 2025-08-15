@@ -10,6 +10,7 @@ namespace YeusepesModules.SPOTIOSC.UI
     {
         private string _accessToken;
         private string _clientToken;
+        private string _apiAccessToken;
 
         public AdvancedCredentials()
         {            
@@ -27,8 +28,10 @@ namespace YeusepesModules.SPOTIOSC.UI
             {
                 _accessToken = CredentialManager.LoadAccessToken() ?? string.Empty;
                 _clientToken = CredentialManager.LoadClientToken() ?? string.Empty;
+                _apiAccessToken = CredentialManager.LoadApiAccessToken() ?? string.Empty;
                 AccessTokenText.Text = new string('•', _accessToken.Length);
                 ClientTokenText.Text = new string('•', _clientToken.Length);
+                ApiAccessTokenText.Text = new string('•', _apiAccessToken.Length);
                 Panel.Visibility = Visibility.Visible;
                 ArrowIcon.Text = "▲";
             }
@@ -40,10 +43,14 @@ namespace YeusepesModules.SPOTIOSC.UI
         private void ClientTokenBorder_MouseEnter(object s, MouseEventArgs _) =>
             ClientTokenText.Text = _clientToken;
 
+        private void ApiAccessTokenBorder_MouseEnter(object s, MouseEventArgs _) => 
+            ApiAccessTokenText.Text = _apiAccessToken;
+
         private void TokenBorder_MouseLeave(object s, MouseEventArgs _)
         {
             AccessTokenText.Text = new string('•', _accessToken.Length);
             ClientTokenText.Text = new string('•', _clientToken.Length);
+            ApiAccessTokenText.Text = new string('•', _apiAccessToken.Length);
         }
 
         private void CopyAccessToken_Click(object s, RoutedEventArgs _)
@@ -55,6 +62,8 @@ namespace YeusepesModules.SPOTIOSC.UI
         {
             CopyToClipboard(_clientToken);
         }
+
+        private void CopyApiAccessToken_Click(object s, RoutedEventArgs _) => CopyToClipboard(_apiAccessToken);
 
         private void CopyToClipboard(string text)
         {
