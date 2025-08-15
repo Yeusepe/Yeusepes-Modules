@@ -953,7 +953,7 @@ namespace YeusepesModules.DISCORDOSC
             {
                 LogDebug($"ChatBox GET_VOICE_SETTINGS failed: {ex.Message}");
             }
-
+            
             ChangeState("VoiceState");
         }
 
