@@ -116,6 +116,29 @@ namespace YeusepesModules.SPOTIOSC
             TrackChangedEvent
 
         }
+        private enum UiState
+        {
+            Playing_Jam_Explicit_Shuffle,
+            Playing_Jam_Explicit_NoShuffle,
+            Playing_Jam_Clean_Shuffle,
+            Playing_Jam_Clean_NoShuffle,
+            Paused_Jam,
+            Playing_Explicit_Shuffle,
+            Playing_Explicit_NoShuffle,
+            Playing_Clean_Shuffle,
+            Playing_Clean_NoShuffle,
+            Paused_Normal
+        }
+
+        private UiState? _lastUiState = null;
+
+        // Event debouncers
+        private bool _lastIsPlaying = false;
+        private string _lastTrackUri = string.Empty;
+        private bool _lastShuffle = false;
+        private string _lastRepeat = "off";
+        private int _lastVolume = -1;
+
 
 
         protected override void OnPreLoad()
@@ -733,7 +756,9 @@ namespace YeusepesModules.SPOTIOSC
                         HandleSessionDeletion(payload);
                     }
                 }
+                setState();
             }
+
             catch (Exception ex)
             {
                 spotifyUtilities.Log($"Error processing player event: {ex.Message}");
@@ -1329,75 +1354,95 @@ namespace YeusepesModules.SPOTIOSC
         // -- Switching logic: choose the state based on several booleans.
         private void setState()
         {
+            // Compute the target UI state from the current context
+            UiState newState;
+
             if (spotifyRequestContext.IsInJam)
             {
                 if (spotifyRequestContext.IsPlaying)
                 {
                     if (spotifyRequestContext.IsExplicit)
-                    {
-                        if (spotifyRequestContext.ShuffleState)
-                            ChangeState("Playing_Jam_Explicit_Shuffle");
-                        else
-                            ChangeState("Playing_Jam_Explicit_NoShuffle");
-                    }
+                        newState = spotifyRequestContext.ShuffleState
+                            ? UiState.Playing_Jam_Explicit_Shuffle
+                            : UiState.Playing_Jam_Explicit_NoShuffle;
                     else
-                    {
-                        if (spotifyRequestContext.ShuffleState)
-                            ChangeState("Playing_Jam_Clean_Shuffle");
-                        else
-                            ChangeState("Playing_Jam_Clean_NoShuffle");
-                    }
+                        newState = spotifyRequestContext.ShuffleState
+                            ? UiState.Playing_Jam_Clean_Shuffle
+                            : UiState.Playing_Jam_Clean_NoShuffle;
                 }
                 else
                 {
-                    ChangeState("Paused_Jam");
+                    newState = UiState.Paused_Jam;
                 }
             }
-            else // not in a jam
+            else
             {
                 if (spotifyRequestContext.IsPlaying)
                 {
                     if (spotifyRequestContext.IsExplicit)
-                    {
-                        if (spotifyRequestContext.ShuffleState)
-                            ChangeState("Playing_Explicit_Shuffle");
-                        else
-                            ChangeState("Playing_Explicit_NoShuffle");
-                    }
+                        newState = spotifyRequestContext.ShuffleState
+                            ? UiState.Playing_Explicit_Shuffle
+                            : UiState.Playing_Explicit_NoShuffle;
                     else
-                    {
-                        if (spotifyRequestContext.ShuffleState)
-                            ChangeState("Playing_Clean_Shuffle");
-                        else
-                            ChangeState("Playing_Clean_NoShuffle");
-                    }
+                        newState = spotifyRequestContext.ShuffleState
+                            ? UiState.Playing_Clean_Shuffle
+                            : UiState.Playing_Clean_NoShuffle;
                 }
                 else
                 {
-                    ChangeState("Paused_Normal");
+                    newState = UiState.Paused_Normal;
+                }
+            }
+
+            // Only switch if different from last state
+            if (_lastUiState == null || _lastUiState.Value != newState)
+            {
+                _lastUiState = newState;
+
+                switch (newState)
+                {
+                    case UiState.Playing_Jam_Explicit_Shuffle: ChangeState("Playing_Jam_Explicit_Shuffle"); break;
+                    case UiState.Playing_Jam_Explicit_NoShuffle: ChangeState("Playing_Jam_Explicit_NoShuffle"); break;
+                    case UiState.Playing_Jam_Clean_Shuffle: ChangeState("Playing_Jam_Clean_Shuffle"); break;
+                    case UiState.Playing_Jam_Clean_NoShuffle: ChangeState("Playing_Jam_Clean_NoShuffle"); break;
+                    case UiState.Paused_Jam: ChangeState("Paused_Jam"); break;
+                    case UiState.Playing_Explicit_Shuffle: ChangeState("Playing_Explicit_Shuffle"); break;
+                    case UiState.Playing_Explicit_NoShuffle: ChangeState("Playing_Explicit_NoShuffle"); break;
+                    case UiState.Playing_Clean_Shuffle: ChangeState("Playing_Clean_Shuffle"); break;
+                    case UiState.Playing_Clean_NoShuffle: ChangeState("Playing_Clean_NoShuffle"); break;
+                    case UiState.Paused_Normal: ChangeState("Paused_Normal"); break;
                 }
             }
         }
 
-        // -- ChatBoxUpdate: update all variables, then call setState() once.
+
         [ModuleUpdate(ModuleUpdateMode.ChatBox)]
         private void ChatBoxUpdate()
         {
-            // Update device info
+            // Device
             SetVariableValue("DeviceId", spotifyRequestContext.DeviceId);
             SetVariableValue("DeviceName", spotifyRequestContext.DeviceName);
             SetVariableValue("IsActiveDevice", spotifyRequestContext.IsActiveDevice);
             SetVariableValue("VolumePercent", spotifyRequestContext.VolumePercent);
 
-            // Update context info
+            // Context
             SetVariableValue("ContextExternalUrl", spotifyRequestContext.ContextExternalUrl);
             SetVariableValue("ContextHref", spotifyRequestContext.ContextHref);
             SetVariableValue("ContextType", spotifyRequestContext.ContextType);
             SetVariableValue("ContextUri", spotifyRequestContext.ContextUri);
 
-            // Update media info
+            // Media
             SetVariableValue("TrackName", spotifyRequestContext.TrackName);
-            SetVariableValue("TrackArtist", spotifyRequestContext.Artists.FirstOrDefault().Name ?? string.Empty);
+
+            // First artist (works for named or unnamed (string,string) tuples)
+            string firstArtist = string.Empty;
+            if (spotifyRequestContext.Artists != null && spotifyRequestContext.Artists.Count > 0)
+            {
+                var (name, _) = spotifyRequestContext.Artists[0];
+                firstArtist = name ?? string.Empty;
+            }
+            SetVariableValue("TrackArtist", firstArtist);
+
             SetVariableValue("TrackDurationMs", spotifyRequestContext.TrackDurationMs);
             SetVariableValue("DiscNumber", spotifyRequestContext.DiscNumber);
             SetVariableValue("IsExplicit", spotifyRequestContext.IsExplicit);
@@ -1406,27 +1451,33 @@ namespace YeusepesModules.SPOTIOSC
             SetVariableValue("TrackUri", spotifyRequestContext.TrackUri);
             SetVariableValue("CurrentlyPlayingType", spotifyRequestContext.CurrentlyPlayingType);
 
+            // Album
             SetVariableValue("AlbumName", spotifyRequestContext.AlbumName);
             SetVariableValue("AlbumArtworkUrl", spotifyRequestContext.AlbumArtworkUrl);
             SetVariableValue("AlbumType", spotifyRequestContext.AlbumType);
             SetVariableValue("AlbumReleaseDate", spotifyRequestContext.AlbumReleaseDate);
             SetVariableValue("AlbumTotalTracks", spotifyRequestContext.AlbumTotalTracks);
 
+            // Playback flags
             SetVariableValue("ShuffleState", spotifyRequestContext.ShuffleState);
             SetVariableValue("SmartShuffle", spotifyRequestContext.SmartShuffle);
             SetVariableValue("RepeatState", spotifyRequestContext.RepeatState);
             SetVariableValue("Timestamp", spotifyRequestContext.Timestamp.ToString());
             SetVariableValue("ProgressMs", spotifyRequestContext.ProgressMs);
 
-            // Update artists info
-            SetVariableValue("Artists", string.Join(", ", spotifyRequestContext.Artists.Select(a => a.Name)));
+            // All artists (use Item1 so it works for named/unnamed tuples)
+            string artistsJoined = (spotifyRequestContext.Artists != null && spotifyRequestContext.Artists.Count > 0)
+                ? string.Join(", ", spotifyRequestContext.Artists.Select(a => a.Item1 ?? string.Empty))
+                : string.Empty;
+            SetVariableValue("Artists", artistsJoined);
 
-            // Update jam state
+            // Jam flag as variable
             SetVariableValue("InAJam", spotifyRequestContext.IsInJam);
 
-            // Switch state (only one ChangeState call)
-            setState();
+            // IMPORTANT: do NOT call setState() here anymore.
         }
+
+
 
         // Async version for asynchronous methods.
         private async Task ExecuteWithErrorHandlingAsync(Func<Task> asyncAction)
