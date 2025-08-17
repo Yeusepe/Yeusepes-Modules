@@ -113,7 +113,10 @@ namespace YeusepesModules.SPOTIOSC
             QueueOnlyMode,          // from session.queue_only_mode            
             HostIsGroup,             // from session.host_device_info.is_group
 
-            TrackChangedEvent
+            TrackChangedEvent,
+            
+            // URI Playback
+            PlayUri
 
         }
         private enum UiState
@@ -212,6 +215,13 @@ namespace YeusepesModules.SPOTIOSC
             RegisterParameter<bool>(SpotiParameters.NextTrack, "SpotiOSC/NextTrack", ParameterMode.ReadWrite, "Next Track", "Skips to the next track.");
             RegisterParameter<bool>(SpotiParameters.PreviousTrack, "SpotiOSC/PreviousTrack", ParameterMode.ReadWrite, "Previous Track", "Skips to the previous track.");                        
             RegisterParameter<bool>(SpotiParameters.TrackChangedEvent, "SpotiOSC/TrackChangedEvent", ParameterMode.Write, "Track Changed Event", "Triggers when succesfully run a ChangedEvent.");                        
+            RegisterParameter<bool>(
+                SpotiParameters.PlayUri,
+                "SpotiOSC/PlayUri/*",
+                ParameterMode.ReadWrite,
+                "Play URI (Local)",
+                "Set to true with a Spotify URI to launch it locally through the system's URI handler (this is LOCAL and does NOT go thru the API). Supports all Spotify URI types: track, album, artist, playlist, episode, show, collection, genre, charts, search, radio, station, user, concert."
+            );
 
             // Playback state (root)
             RegisterParameter<bool>(SpotiParameters.ShuffleEnabled, "SpotiOSC/ShuffleEnabled", ParameterMode.ReadWrite, "Shuffle", "Shuffle state.");
@@ -534,6 +544,47 @@ namespace YeusepesModules.SPOTIOSC
                 {
                     // no URI ⇒ just resume current playback
                     _ = _apiService.PlayAsync(spotifyRequestContext.DeviceId);
+                }
+            }
+
+            if (parameter.Lookup is SpotiParameters p2 && p2 == SpotiParameters.PlayUri && parameter.GetValue<bool>())
+            {
+                // Check if there's a URI in the wildcard
+                if (parameter.IsWildcardType<string>(0) && !string.IsNullOrEmpty(parameter.GetWildcard<string>(0)))
+                {
+                    var uri = parameter.GetWildcard<string>(0);
+                    
+                    // Validate that it's a Spotify URI
+                    if (uri.StartsWith("spotify:", StringComparison.OrdinalIgnoreCase))
+                    {
+                        Log($"Playing Spotify URI locally: {uri}");
+                        try
+                        {
+                            // Use Process.Start to launch the Spotify URI through the system's URI handler
+                            // This is equivalent to running "start spotify:playlist:..." in the terminal
+                            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                            {
+                                FileName = uri,
+                                UseShellExecute = true
+                            });
+                            Log($"Successfully launched Spotify URI: {uri}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Log($"Error launching Spotify URI: {ex.Message}");
+                            SendParameter(SpotiParameters.Error, true);
+                        }
+                    }
+                    else
+                    {
+                        Log($"Invalid Spotify URI format: {uri}. URI must start with 'spotify:'");
+                        SendParameter(SpotiParameters.Error, true);
+                    }
+                }
+                else
+                {
+                    Log("PlayUri parameter received but no URI provided in wildcard");
+                    SendParameter(SpotiParameters.Error, true);
                 }
             }
 
