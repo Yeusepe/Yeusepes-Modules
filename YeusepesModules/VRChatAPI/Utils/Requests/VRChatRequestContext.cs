@@ -163,6 +163,84 @@ namespace YeusepesModules.VRChatAPI.Utils.Requests
             set => SetProperty(ref _instanceIsInviteOnly, value);
         }
 
+        // Collections for VRChat data
+        private List<FriendInfo> _friends;
+        public List<FriendInfo> Friends
+        {
+            get => _friends ??= new List<FriendInfo>();
+            set => SetProperty(ref _friends, value);
+        }
+
+        private List<WorldInfo> _worlds;
+        public List<WorldInfo> Worlds
+        {
+            get => _worlds ??= new List<WorldInfo>();
+            set => SetProperty(ref _worlds, value);
+        }
+
+        private List<InstanceInfo> _instances;
+        public List<InstanceInfo> Instances
+        {
+            get => _instances ??= new List<InstanceInfo>();
+            set => SetProperty(ref _instances, value);
+        }
+
+        private List<CalendarEvent> _calendarEvents;
+        public List<CalendarEvent> CalendarEvents
+        {
+            get => _calendarEvents ??= new List<CalendarEvent>();
+            set => SetProperty(ref _calendarEvents, value);
+        }
+
+        private List<Notification> _notifications;
+        public List<Notification> Notifications
+        {
+            get => _notifications ??= new List<Notification>();
+            set => SetProperty(ref _notifications, value);
+        }
+
+        private List<Favorite> _favorites;
+        public List<Favorite> Favorites
+        {
+            get => _favorites ??= new List<Favorite>();
+            set => SetProperty(ref _favorites, value);
+        }
+
+        private List<GroupInfo> _groups;
+        public List<GroupInfo> Groups
+        {
+            get => _groups ??= new List<GroupInfo>();
+            set => SetProperty(ref _groups, value);
+        }
+
+        private List<AvatarInfo> _avatars;
+        public List<AvatarInfo> Avatars
+        {
+            get => _avatars ??= new List<AvatarInfo>();
+            set => SetProperty(ref _avatars, value);
+        }
+
+        private List<AvatarInfo> _avatarFavorites;
+        public List<AvatarInfo> AvatarFavorites
+        {
+            get => _avatarFavorites ??= new List<AvatarInfo>();
+            set => SetProperty(ref _avatarFavorites, value);
+        }
+
+        private string _currentAvatarId;
+        public string CurrentAvatarId
+        {
+            get => _currentAvatarId;
+            set => SetProperty(ref _currentAvatarId, value);
+        }
+
+        private string _currentAvatarName;
+        public string CurrentAvatarName
+        {
+            get => _currentAvatarName;
+            set => SetProperty(ref _currentAvatarName, value);
+        }
+
         protected virtual void OnPropertyChanged([CallerMemberName] string propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
@@ -175,5 +253,106 @@ namespace YeusepesModules.VRChatAPI.Utils.Requests
             OnPropertyChanged(propertyName);
             return true;
         }
+    }
+
+    // Data models for VRChat API responses
+    public class FriendInfo
+    {
+        public string Id { get; set; }
+        public string Username { get; set; }
+        public string DisplayName { get; set; }
+        public string Status { get; set; }
+        public string StatusDescription { get; set; }
+        public string Location { get; set; }
+        public string UserIcon { get; set; }
+        public bool IsOnline { get; set; }
+        public DateTime LastLogin { get; set; }
+    }
+
+    public class WorldInfo
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public int Capacity { get; set; }
+        public int Occupants { get; set; }
+        public string[] Tags { get; set; }
+        public string ImageUrl { get; set; }
+        public string AuthorName { get; set; }
+        public string AuthorId { get; set; }
+        public bool IsPublic { get; set; }
+        public bool IsPrivate { get; set; }
+        public bool IsFeatured { get; set; }
+        public bool IsLabs { get; set; }
+        public bool IsCommunityLabs { get; set; }
+        public bool IsLive { get; set; }
+    }
+
+    public class InstanceInfo
+    {
+        public string Id { get; set; }
+        public string Type { get; set; }
+        public string Owner { get; set; }
+        public int Capacity { get; set; }
+        public int Occupants { get; set; }
+        public bool CanRequestInvite { get; set; }
+        public bool IsFull { get; set; }
+        public bool IsHidden { get; set; }
+        public bool IsFriendsOnly { get; set; }
+        public bool IsFriendsOfFriends { get; set; }
+        public bool IsInviteOnly { get; set; }
+        public bool IsActive { get; set; }
+    }
+
+    public class CalendarEvent
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public DateTime StartTime { get; set; }
+        public DateTime EndTime { get; set; }
+        public string Location { get; set; }
+        public string WorldId { get; set; }
+        public string InstanceId { get; set; }
+    }
+
+    public class Notification
+    {
+        public string Id { get; set; }
+        public string Type { get; set; }
+        public string Message { get; set; }
+        public DateTime CreatedAt { get; set; }
+        public bool IsRead { get; set; }
+    }
+
+    public class Favorite
+    {
+        public string Id { get; set; }
+        public string Type { get; set; }
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public string WorldId { get; set; }
+        public string InstanceId { get; set; }
+    }
+
+    public class GroupInfo
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public int MemberCount { get; set; }
+        public bool IsActive { get; set; }
+    }
+
+    public class AvatarInfo
+    {
+        public string Id { get; set; }
+        public string Name { get; set; }
+        public string Description { get; set; }
+        public string AuthorName { get; set; }
+        public string AuthorId { get; set; }
+        public string ImageUrl { get; set; }
+        public bool IsPublic { get; set; }
+        public bool IsFeatured { get; set; }
     }
 }

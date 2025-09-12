@@ -11,7 +11,8 @@
 		<WindowsSdkPackageVersion>10.0.26100.1</WindowsSdkPackageVersion>
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 		<UserSecretsId>95a0142d-ef1a-437e-961e-1322c4a8427d</UserSecretsId>		
-		<Platforms>AnyCPU;x64</Platforms>
+		<Platforms>x64</Platforms>
+		<PlatformTarget>x64</PlatformTarget>
 	</PropertyGroup>
 
 	<PropertyGroup>

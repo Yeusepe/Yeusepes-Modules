@@ -21,6 +21,21 @@ namespace YeusepesModules.VRChatAPI.UI
         private readonly string _tempFontDirectory = Path.GetTempPath();
         private VRChatUtilities vrchatUtilities;
 
+        public SignIn()
+        {
+            InitializeComponent();
+            
+            // Initialize utilities for XAML usage
+            vrchatUtilities = new VRChatUtilities
+            {
+                Log = message => System.Diagnostics.Debug.WriteLine(message),
+                LogDebug = message => System.Diagnostics.Debug.WriteLine(message),
+                SendParameter = (param, value) => { }
+            };
+
+            VRChatCredentialManager.VRChatUtils = vrchatUtilities;
+        }
+
         public SignIn(VRCOSC.App.SDK.Modules.Module module, ModuleSetting setting)
         {
             InitializeComponent();

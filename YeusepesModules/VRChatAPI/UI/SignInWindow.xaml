@@ -2,13 +2,312 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:local="clr-namespace:YeusepesModules.VRChatAPI.UI"
-        Title="VRChat API Interactor - Sign In"
-        Width="600"
-        Height="500"
+        xmlns:converters="clr-namespace:YeusepesModules.VRChatAPI.UI.Converters"
+        Title="VRChat API Interactor - Settings"
+        Width="800"
+        Height="700"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize"
         Background="#2D2D30"
         WindowStyle="SingleBorderWindow">
+    <Window.Resources>
+        <converters:BoolToColorConverter x:Key="BoolToColorConverter"/>
+    </Window.Resources>
     <Grid x:Name="MainGrid">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        
+        <!-- Header -->
+        <Border Grid.Row="0" Background="#3F3F46" Padding="20,15">
+            <StackPanel>
+                <TextBlock Text="VRChat API Interactor" 
+                           FontSize="24" 
+                           FontWeight="Bold" 
+                           Foreground="White" 
+                           HorizontalAlignment="Center"/>
+                <TextBlock Text="Connect to VRChat API and manage your data" 
+                           FontSize="14" 
+                           Foreground="#CCCCCC" 
+                           HorizontalAlignment="Center" 
+                           Margin="0,5,0,0"/>
+            </StackPanel>
+        </Border>
+        
+        <!-- Main Content -->
+        <TabControl Grid.Row="1" Background="#2D2D30" BorderThickness="0">
+            <TabItem Header="Authentication" Foreground="White">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
+                    <local:SignIn x:Name="SignInControl"/>
+                </ScrollViewer>
+            </TabItem>
+            
+            <TabItem Header="API Data" Foreground="White">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
+                    <StackPanel>
+                        <TextBlock Text="VRChat API Data Management" 
+                                   FontSize="18" 
+                                   FontWeight="Bold" 
+                                   Foreground="White" 
+                                   Margin="0,0,0,20"/>
+                        
+                        <!-- User Information -->
+                        <GroupBox Header="User Information" 
+                                  Foreground="White" 
+                                  Margin="0,0,0,15"
+                                  Background="#3F3F46"
+                                  BorderBrush="#555555">
+                            <StackPanel Margin="10">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto"/>
+                                        <ColumnDefinition Width="*"/>
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                        <RowDefinition Height="Auto"/>
+                                    </Grid.RowDefinitions>
+                                    
+                                    <TextBlock Text="Display Name:" Grid.Row="0" Grid.Column="0" 
+                                               Foreground="White" Margin="0,5" Width="100"/>
+                                    <TextBlock x:Name="UserDisplayName" Grid.Row="0" Grid.Column="1" 
+                                               Foreground="#CCCCCC" Margin="10,5,0,5"/>
+                                    
+                                    <TextBlock Text="Username:" Grid.Row="1" Grid.Column="0" 
+                                               Foreground="White" Margin="0,5" Width="100"/>
+                                    <TextBlock x:Name="Username" Grid.Row="1" Grid.Column="1" 
+                                               Foreground="#CCCCCC" Margin="10,5,0,5"/>
+                                    
+                                    <TextBlock Text="Status:" Grid.Row="2" Grid.Column="0" 
+                                               Foreground="White" Margin="0,5" Width="100"/>
+                                    <TextBlock x:Name="UserStatus" Grid.Row="2" Grid.Column="1" 
+                                               Foreground="#CCCCCC" Margin="10,5,0,5"/>
+                                    
+                                    <TextBlock Text="Location:" Grid.Row="3" Grid.Column="0" 
+                                               Foreground="White" Margin="0,5" Width="100"/>
+                                    <TextBlock x:Name="UserLocation" Grid.Row="3" Grid.Column="1" 
+                                               Foreground="#CCCCCC" Margin="10,5,0,5"/>
+                                </Grid>
+                            </StackPanel>
+                        </GroupBox>
+                        
+                        <!-- Friends List -->
+                        <GroupBox Header="Friends" 
+                                  Foreground="White" 
+                                  Margin="0,0,0,15"
+                                  Background="#3F3F46"
+                                  BorderBrush="#555555">
+                            <StackPanel Margin="10">
+                                <Button x:Name="RefreshFriendsButton" 
+                                        Content="Refresh Friends List" 
+                                        Background="#0078D4" 
+                                        Foreground="White" 
+                                        Padding="10,5" 
+                                        Margin="0,0,0,10"
+                                        Click="RefreshFriendsButton_Click"/>
+                                <ListBox x:Name="FriendsListBox" 
+                                         Height="150" 
+                                         Background="#2D2D30" 
+                                         BorderBrush="#555555"
+                                         Foreground="White">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal">
+                                                <Ellipse Width="12" Height="12" 
+                                                         Fill="{Binding IsOnline, Converter={StaticResource BoolToColorConverter}}" 
+                                                         Margin="0,0,8,0"/>
+                                                <TextBlock Text="{Binding DisplayName}" 
+                                                           Foreground="White" 
+                                                           VerticalAlignment="Center"/>
+                                                <TextBlock Text=" - " 
+                                                           Foreground="#CCCCCC" 
+                                                           VerticalAlignment="Center"/>
+                                                <TextBlock Text="{Binding Status}" 
+                                                           Foreground="#CCCCCC" 
+                                                           VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+                        </GroupBox>
+                        
+                        <!-- Calendar Events -->
+                        <GroupBox Header="Calendar Events" 
+                                  Foreground="White" 
+                                  Margin="0,0,0,15"
+                                  Background="#3F3F46"
+                                  BorderBrush="#555555">
+                            <StackPanel Margin="10">
+                                <Button x:Name="RefreshCalendarButton" 
+                                        Content="Refresh Calendar" 
+                                        Background="#0078D4" 
+                                        Foreground="White" 
+                                        Padding="10,5" 
+                                        Margin="0,0,0,10"
+                                        Click="RefreshCalendarButton_Click"/>
+                                <ListBox x:Name="CalendarListBox" 
+                                         Height="150" 
+                                         Background="#2D2D30" 
+                                         BorderBrush="#555555"
+                                         Foreground="White">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Name}" 
+                                                           FontWeight="Bold" 
+                                                           Foreground="White"/>
+                                                <TextBlock Text="{Binding Description}" 
+                                                           Foreground="#CCCCCC" 
+                                                           TextWrapping="Wrap"/>
+                                                <TextBlock Text="{Binding StartTime}" 
+                                                           Foreground="#888888" 
+                                                           FontSize="12"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+                        </GroupBox>
+                        
+                        <!-- Notifications -->
+                        <GroupBox Header="Notifications" 
+                                  Foreground="White" 
+                                  Margin="0,0,0,15"
+                                  Background="#3F3F46"
+                                  BorderBrush="#555555">
+                            <StackPanel Margin="10">
+                                <Button x:Name="RefreshNotificationsButton" 
+                                        Content="Refresh Notifications" 
+                                        Background="#0078D4" 
+                                        Foreground="White" 
+                                        Padding="10,5" 
+                                        Margin="0,0,0,10"
+                                        Click="RefreshNotificationsButton_Click"/>
+                                <ListBox x:Name="NotificationsListBox" 
+                                         Height="150" 
+                                         Background="#2D2D30" 
+                                         BorderBrush="#555555"
+                                         Foreground="White">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Message}" 
+                                                           Foreground="White" 
+                                                           TextWrapping="Wrap"/>
+                                                <TextBlock Text="{Binding CreatedAt}" 
+                                                           Foreground="#888888" 
+                                                           FontSize="12"/>
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            
+            <TabItem Header="API Endpoints" Foreground="White">
+                <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="20">
+                    <StackPanel>
+                        <TextBlock Text="Available VRChat API Endpoints" 
+                                   FontSize="18" 
+                                   FontWeight="Bold" 
+                                   Foreground="White" 
+                                   Margin="0,0,0,20"/>
+                        
+                        <GroupBox Header="User Endpoints" 
+                                  Foreground="White" 
+                                  Margin="0,0,0,15"
+                                  Background="#3F3F46"
+                                  BorderBrush="#555555">
+                            <StackPanel Margin="10">
+                                <TextBlock Text="• /auth/user - Get current user information" 
+                                           Foreground="#CCCCCC" Margin="0,2"/>
+                                <TextBlock Text="• /auth/user/friends - Get friends list" 
+                                           Foreground="#CCCCCC" Margin="0,2"/>
+                                <TextBlock Text="• /auth/user/blocklist - Get blocked users" 
+                                           Foreground="#CCCCCC" Margin="0,2"/>
+                                <TextBlock Text="• /auth/user/mutelist - Get muted users" 
+                                           Foreground="#CCCCCC" Margin="0,2"/>
+                                <TextBlock Text="• /auth/user/notifications - Get notifications" 
+                                           Foreground="#CCCCCC" Margin="0,2"/>
+                            </StackPanel>
+                        </GroupBox>
+                        
+                        <GroupBox Header="World and Instance Endpoints" 
+                                  Foreground="White" 
+                                  Margin="0,0,0,15"
+                                  Background="#3F3F46"
+                                  BorderBrush="#555555">
+                            <StackPanel Margin="10">
+                                <TextBlock Text="• /worlds/active - Get active worlds" 
+                                           Foreground="#CCCCCC" Margin="0,2"/>
+                                <TextBlock Text="• /instances/active - Get active instances" 
+                                           Foreground="#CCCCCC" Margin="0,2"/>
+                                <TextBlock Text="• /worlds/{worldId} - Get specific world info" 
+                                           Foreground="#CCCCCC" Margin="0,2"/>
+                                <TextBlock Text="• /instances/{instanceId} - Get specific instance info" 
+                                           Foreground="#CCCCCC" Margin="0,2"/>
+                            </StackPanel>
+                        </GroupBox>
+                        
+                        <GroupBox Header="Calendar and Events" 
+                                  Foreground="White" 
+                                  Margin="0,0,0,15"
+                                  Background="#3F3F46"
+                                  BorderBrush="#555555">
+                            <StackPanel Margin="10">
+                                <TextBlock Text="• /calendar/featured - Get featured calendar events" 
+                                           Foreground="#CCCCCC" Margin="0,2"/>
+                                <TextBlock Text="• /calendar/following - Get following calendar events" 
+                                           Foreground="#CCCCCC" Margin="0,2"/>
+                                <TextBlock Text="• /jams - Get jam sessions" 
+                                           Foreground="#CCCCCC" Margin="0,2"/>
+                            </StackPanel>
+                        </GroupBox>
+                        
+                        <GroupBox Header="Favorites and Inventory" 
+                                  Foreground="White" 
+                                  Margin="0,0,0,15"
+                                  Background="#3F3F46"
+                                  BorderBrush="#555555">
+                            <StackPanel Margin="10">
+                                <TextBlock Text="• /favorites - Get user favorites" 
+                                           Foreground="#CCCCCC" Margin="0,2"/>
+                                <TextBlock Text="• /inventory - Get user inventory" 
+                                           Foreground="#CCCCCC" Margin="0,2"/>
+                                <TextBlock Text="• /user/{userId}/economy/account - Get economy account" 
+                                           Foreground="#CCCCCC" Margin="0,2"/>
+                            </StackPanel>
+                        </GroupBox>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+        
+        <!-- Footer -->
+        <Border Grid.Row="2" Background="#3F3F46" Padding="20,10">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="CloseButton" 
+                        Content="Close" 
+                        Background="#555555" 
+                        Foreground="White" 
+                        Padding="15,8" 
+                        Margin="0,0,10,0"
+                        Click="CloseButton_Click"/>
+                <Button x:Name="RefreshAllButton" 
+                        Content="Refresh All Data" 
+                        Background="#0078D4" 
+                        Foreground="White" 
+                        Padding="15,8"
+                        Click="RefreshAllButton_Click"/>
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>
