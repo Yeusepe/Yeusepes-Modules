@@ -49,6 +49,7 @@ namespace YeusepesModules.SPOTIOSC
         public ScreenUtilities screenUtilities;
 
         private CancellationTokenSource _cts = new CancellationTokenSource();
+        private bool _getTrackFeaturesEnabled = false;
 
         public enum SpotiSettings
         {
@@ -116,7 +117,22 @@ namespace YeusepesModules.SPOTIOSC
             TrackChangedEvent,
             
             // URI Playback
-            PlayUri
+            PlayUri,
+
+            // Audio Features
+            GetTrackFeatures,
+            Danceability,
+            Energy,
+            Key,
+            Loudness,
+            Mode,
+            Speechiness,
+            Acousticness,
+            Instrumentalness,
+            Liveness,
+            Valence,
+            Tempo,
+            TimeSignature
 
         }
         private enum UiState
@@ -267,6 +283,21 @@ namespace YeusepesModules.SPOTIOSC
             RegisterParameter<bool>(SpotiParameters.QueueOnlyMode, "SpotiOSC/QueueOnlyMode", ParameterMode.Write, "Queue Only Mode", "Whether the session is in queue-only mode.");            
             RegisterParameter<bool>(SpotiParameters.HostIsGroup, "SpotiOSC/HostIsGroup", ParameterMode.Write, "Host Is Group", "Whether the host device is a group device.");
 
+            // Audio Features
+            RegisterParameter<bool>(SpotiParameters.GetTrackFeatures, "SpotiOSC/GetTrackFeatures", ParameterMode.ReadWrite, "Get Track Features", "Enable to fetch audio features for the current track.");
+            RegisterParameter<float>(SpotiParameters.Danceability, "SpotiOSC/Danceability", ParameterMode.Write, "Danceability", "How suitable a track is for dancing (0.0-1.0).");
+            RegisterParameter<float>(SpotiParameters.Energy, "SpotiOSC/Energy", ParameterMode.Write, "Energy", "Perceptual measure of intensity and activity (0.0-1.0).");
+            RegisterParameter<int>(SpotiParameters.Key, "SpotiOSC/Key", ParameterMode.Write, "Key", "Key the track is in (Pitch Class Notation, 0-11).");
+            RegisterParameter<float>(SpotiParameters.Loudness, "SpotiOSC/Loudness", ParameterMode.Write, "Loudness", "Overall loudness in decibels (-60 to 0 dB).");
+            RegisterParameter<int>(SpotiParameters.Mode, "SpotiOSC/Mode", ParameterMode.Write, "Mode", "Major (1) or minor (0) mode.");
+            RegisterParameter<float>(SpotiParameters.Speechiness, "SpotiOSC/Speechiness", ParameterMode.Write, "Speechiness", "Presence of spoken words (0.0-1.0).");
+            RegisterParameter<float>(SpotiParameters.Acousticness, "SpotiOSC/Acousticness", ParameterMode.Write, "Acousticness", "Confidence measure of acoustic recording (0.0-1.0).");
+            RegisterParameter<float>(SpotiParameters.Instrumentalness, "SpotiOSC/Instrumentalness", ParameterMode.Write, "Instrumentalness", "Predicts whether track contains vocals (0.0-1.0).");
+            RegisterParameter<float>(SpotiParameters.Liveness, "SpotiOSC/Liveness", ParameterMode.Write, "Liveness", "Detects presence of audience in recording (0.0-1.0).");
+            RegisterParameter<float>(SpotiParameters.Valence, "SpotiOSC/Valence", ParameterMode.Write, "Valence", "Musical positiveness (mood indicator) (0.0-1.0).");
+            RegisterParameter<float>(SpotiParameters.Tempo, "SpotiOSC/Tempo", ParameterMode.Write, "Tempo", "Overall estimated tempo in BPM.");
+            RegisterParameter<int>(SpotiParameters.TimeSignature, "SpotiOSC/TimeSignature", ParameterMode.Write, "Time Signature", "Estimated time signature (3-7).");
+
             #endregion
 
             #region Settings
@@ -339,6 +370,20 @@ namespace YeusepesModules.SPOTIOSC
 
             // --- Jam-related variable ---
             var inAJamVar = CreateVariable<bool>("InAJam", "In a Jam");
+
+            // --- Audio Features variables ---
+            var danceabilityVar = CreateVariable<float>("Danceability", "Danceability");
+            var energyVar = CreateVariable<float>("Energy", "Energy");
+            var keyVar = CreateVariable<int>("Key", "Key");
+            var loudnessVar = CreateVariable<float>("Loudness", "Loudness");
+            var modeVar = CreateVariable<int>("Mode", "Mode");
+            var speechinessVar = CreateVariable<float>("Speechiness", "Speechiness");
+            var acousticnessVar = CreateVariable<float>("Acousticness", "Acousticness");
+            var instrumentalnessVar = CreateVariable<float>("Instrumentalness", "Instrumentalness");
+            var livenessVar = CreateVariable<float>("Liveness", "Liveness");
+            var valenceVar = CreateVariable<float>("Valence", "Valence");
+            var tempoVar = CreateVariable<float>("Tempo", "Tempo");
+            var timeSignatureVar = CreateVariable<int>("TimeSignature", "Time Signature");
 
             // --- Events for changes ---            
             CreateEvent("PlayEvent", "Play Event", "Playback started: {0}", new[] { trackNameVar });
@@ -460,6 +505,7 @@ namespace YeusepesModules.SPOTIOSC
             SendParameter(SpotiParameters.InAJam, false);
             SendParameter(SpotiParameters.IsJamOwner, false);
             SendParameter(SpotiParameters.Error, false);
+            SendParameter(SpotiParameters.GetTrackFeatures, false); // Initialize as disabled
 
             await decoder.OnModuleStart();
             return true;
@@ -628,6 +674,27 @@ namespace YeusepesModules.SPOTIOSC
                 case SpotiParameters.DeviceVolumePercent
                     when parameter.GetValue<int>() is var vol && vol is >= 0 and <= 100:
                     Do(svc => svc.SetVolumeAsync(vol, spotifyRequestContext.DeviceId));
+                    break;
+
+                case SpotiParameters.GetTrackFeatures:
+                    bool isEnabled = parameter.GetValue<bool>();
+                    _getTrackFeaturesEnabled = isEnabled;
+                    LogDebug($"GetTrackFeatures set to: {isEnabled}");
+                    
+                    if (isEnabled)
+                    {
+                        LogDebug("GetTrackFeatures enabled - fetching audio features for current track");
+                        // Trigger audio features fetch for current track if there's one playing
+                        if (spotifyRequestContext != null && !string.IsNullOrEmpty(spotifyRequestContext.TrackUri))
+                        {
+                            // Extract track ID from URI (format: spotify:track:ID)
+                            if (spotifyRequestContext.TrackUri.StartsWith("spotify:track:"))
+                            {
+                                string trackId = spotifyRequestContext.TrackUri.Replace("spotify:track:", "");
+                                _ = FetchAudioFeaturesForTrackId(trackId);
+                            }
+                        }
+                    }
                     break;
 
             }
@@ -1222,6 +1289,12 @@ namespace YeusepesModules.SPOTIOSC
                     LogDebug($"Album total tracks: {spotifyRequestContext.AlbumTotalTracks}");                    
                 }
             }
+
+            // --- Fetch Audio Features if enabled ---
+            if (_getTrackFeaturesEnabled)
+            {
+                _ = FetchAudioFeaturesIfEnabled(item);
+            }
             
             TriggerEvent("TrackChangedEvent");
         }
@@ -1235,6 +1308,158 @@ namespace YeusepesModules.SPOTIOSC
             if (payload.TryGetProperty("reason", out var reason) && reason.GetString() == "SESSION_DELETED")
             {
                 SpotifyJamRequests.HandleJamLeave(spotifyRequestContext, spotifyUtilities);
+            }
+        }
+
+        private async Task FetchAudioFeaturesIfEnabled(JsonElement item)
+        {
+            try
+            {
+                LogDebug("FetchAudioFeaturesIfEnabled called");
+                
+                // Get track ID from the item
+                if (!item.TryGetProperty("id", out var trackIdElement))
+                {
+                    LogDebug("No track ID found, cannot fetch audio features");
+                    return;
+                }
+
+                string trackId = trackIdElement.GetString();
+                if (string.IsNullOrEmpty(trackId))
+                {
+                    LogDebug("Track ID is null or empty, cannot fetch audio features");
+                    return;
+                }
+
+                LogDebug($"Fetching audio features for track ID: {trackId}");
+
+                // Check if _apiService is initialized
+                if (_apiService == null)
+                {
+                    LogDebug("API service is null, cannot fetch audio features");
+                    return;
+                }
+
+                // Fetch audio features using the API service
+                var audioFeatures = await _apiService.GetTrackFeaturesAsync(trackId);
+                if (audioFeatures != null)
+                {
+                    LogDebug($"Successfully fetched audio features for track: {spotifyRequestContext.TrackName}");
+                    
+                    // Update context with audio features
+                    spotifyRequestContext.Danceability = audioFeatures.Danceability;
+                    spotifyRequestContext.Energy = audioFeatures.Energy;
+                    spotifyRequestContext.Key = audioFeatures.Key;
+                    spotifyRequestContext.Loudness = audioFeatures.Loudness;
+                    spotifyRequestContext.Mode = audioFeatures.Mode;
+                    spotifyRequestContext.Speechiness = audioFeatures.Speechiness;
+                    spotifyRequestContext.Acousticness = audioFeatures.Acousticness;
+                    spotifyRequestContext.Instrumentalness = audioFeatures.Instrumentalness;
+                    spotifyRequestContext.Liveness = audioFeatures.Liveness;
+                    spotifyRequestContext.Valence = audioFeatures.Valence;
+                    spotifyRequestContext.Tempo = audioFeatures.Tempo;
+                    spotifyRequestContext.TimeSignature = audioFeatures.TimeSignature;
+
+                    // Send parameters
+                    SetParameterSafe(SpotiParameters.Danceability, audioFeatures.Danceability);
+                    SetParameterSafe(SpotiParameters.Energy, audioFeatures.Energy);
+                    SetParameterSafe(SpotiParameters.Key, audioFeatures.Key);
+                    SetParameterSafe(SpotiParameters.Loudness, audioFeatures.Loudness);
+                    SetParameterSafe(SpotiParameters.Mode, audioFeatures.Mode);
+                    SetParameterSafe(SpotiParameters.Speechiness, audioFeatures.Speechiness);
+                    SetParameterSafe(SpotiParameters.Acousticness, audioFeatures.Acousticness);
+                    SetParameterSafe(SpotiParameters.Instrumentalness, audioFeatures.Instrumentalness);
+                    SetParameterSafe(SpotiParameters.Liveness, audioFeatures.Liveness);
+                    SetParameterSafe(SpotiParameters.Valence, audioFeatures.Valence);
+                    SetParameterSafe(SpotiParameters.Tempo, audioFeatures.Tempo);
+                    SetParameterSafe(SpotiParameters.TimeSignature, audioFeatures.TimeSignature);
+
+                    LogDebug($"Audio features updated for track: {spotifyRequestContext.TrackName}");
+                    LogDebug($"Danceability: {audioFeatures.Danceability}, Energy: {audioFeatures.Energy}, Valence: {audioFeatures.Valence}");
+                }
+                else
+                {
+                    LogDebug("Failed to fetch audio features - received null response");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Error fetching audio features: {ex.Message}");
+                LogDebug($"Stack trace: {ex.StackTrace}");
+                
+                // Log more details about the error
+                if (ex.InnerException != null)
+                {
+                    LogDebug($"Inner exception: {ex.InnerException.Message}");
+                }
+            }
+        }
+
+        private async Task FetchAudioFeaturesForTrackId(string trackId)
+        {
+            try
+            {
+                LogDebug($"Fetching audio features for track ID: {trackId}");
+
+                // Check if _apiService is initialized
+                if (_apiService == null)
+                {
+                    LogDebug("API service is null, cannot fetch audio features");
+                    return;
+                }
+
+                // Fetch audio features using the API service
+                var audioFeatures = await _apiService.GetTrackFeaturesAsync(trackId);
+                if (audioFeatures != null)
+                {
+                    LogDebug($"Successfully fetched audio features for track ID: {trackId}");
+                    
+                    // Update context with audio features
+                    spotifyRequestContext.Danceability = audioFeatures.Danceability;
+                    spotifyRequestContext.Energy = audioFeatures.Energy;
+                    spotifyRequestContext.Key = audioFeatures.Key;
+                    spotifyRequestContext.Loudness = audioFeatures.Loudness;
+                    spotifyRequestContext.Mode = audioFeatures.Mode;
+                    spotifyRequestContext.Speechiness = audioFeatures.Speechiness;
+                    spotifyRequestContext.Acousticness = audioFeatures.Acousticness;
+                    spotifyRequestContext.Instrumentalness = audioFeatures.Instrumentalness;
+                    spotifyRequestContext.Liveness = audioFeatures.Liveness;
+                    spotifyRequestContext.Valence = audioFeatures.Valence;
+                    spotifyRequestContext.Tempo = audioFeatures.Tempo;
+                    spotifyRequestContext.TimeSignature = audioFeatures.TimeSignature;
+
+                    // Send parameters
+                    SetParameterSafe(SpotiParameters.Danceability, audioFeatures.Danceability);
+                    SetParameterSafe(SpotiParameters.Energy, audioFeatures.Energy);
+                    SetParameterSafe(SpotiParameters.Key, audioFeatures.Key);
+                    SetParameterSafe(SpotiParameters.Loudness, audioFeatures.Loudness);
+                    SetParameterSafe(SpotiParameters.Mode, audioFeatures.Mode);
+                    SetParameterSafe(SpotiParameters.Speechiness, audioFeatures.Speechiness);
+                    SetParameterSafe(SpotiParameters.Acousticness, audioFeatures.Acousticness);
+                    SetParameterSafe(SpotiParameters.Instrumentalness, audioFeatures.Instrumentalness);
+                    SetParameterSafe(SpotiParameters.Liveness, audioFeatures.Liveness);
+                    SetParameterSafe(SpotiParameters.Valence, audioFeatures.Valence);
+                    SetParameterSafe(SpotiParameters.Tempo, audioFeatures.Tempo);
+                    SetParameterSafe(SpotiParameters.TimeSignature, audioFeatures.TimeSignature);
+
+                    LogDebug($"Audio features updated for track: {spotifyRequestContext.TrackName}");
+                    LogDebug($"Danceability: {audioFeatures.Danceability}, Energy: {audioFeatures.Energy}, Valence: {audioFeatures.Valence}");
+                }
+                else
+                {
+                    LogDebug("Failed to fetch audio features - received null response");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Error fetching audio features: {ex.Message}");
+                LogDebug($"Stack trace: {ex.StackTrace}");
+                
+                // Log more details about the error
+                if (ex.InnerException != null)
+                {
+                    LogDebug($"Inner exception: {ex.InnerException.Message}");
+                }
             }
         }
 
@@ -1524,6 +1749,20 @@ namespace YeusepesModules.SPOTIOSC
 
             // Jam flag as variable
             SetVariableValue("InAJam", spotifyRequestContext.IsInJam);
+
+            // Audio Features
+            SetVariableValue("Danceability", spotifyRequestContext.Danceability);
+            SetVariableValue("Energy", spotifyRequestContext.Energy);
+            SetVariableValue("Key", spotifyRequestContext.Key);
+            SetVariableValue("Loudness", spotifyRequestContext.Loudness);
+            SetVariableValue("Mode", spotifyRequestContext.Mode);
+            SetVariableValue("Speechiness", spotifyRequestContext.Speechiness);
+            SetVariableValue("Acousticness", spotifyRequestContext.Acousticness);
+            SetVariableValue("Instrumentalness", spotifyRequestContext.Instrumentalness);
+            SetVariableValue("Liveness", spotifyRequestContext.Liveness);
+            SetVariableValue("Valence", spotifyRequestContext.Valence);
+            SetVariableValue("Tempo", spotifyRequestContext.Tempo);
+            SetVariableValue("TimeSignature", spotifyRequestContext.TimeSignature);
 
             // IMPORTANT: do NOT call setState() here anymore.
         }

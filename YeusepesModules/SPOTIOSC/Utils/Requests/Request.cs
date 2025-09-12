@@ -455,6 +455,90 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
             }
         }
 
+        // Audio Features
+        private float _danceability;
+        public float Danceability
+        {
+            get => _danceability;
+            set { _danceability = value; OnPropertyChanged(); }
+        }
+
+        private float _energy;
+        public float Energy
+        {
+            get => _energy;
+            set { _energy = value; OnPropertyChanged(); }
+        }
+
+        private int _key;
+        public int Key
+        {
+            get => _key;
+            set { _key = value; OnPropertyChanged(); }
+        }
+
+        private float _loudness;
+        public float Loudness
+        {
+            get => _loudness;
+            set { _loudness = value; OnPropertyChanged(); }
+        }
+
+        private int _mode;
+        public int Mode
+        {
+            get => _mode;
+            set { _mode = value; OnPropertyChanged(); }
+        }
+
+        private float _speechiness;
+        public float Speechiness
+        {
+            get => _speechiness;
+            set { _speechiness = value; OnPropertyChanged(); }
+        }
+
+        private float _acousticness;
+        public float Acousticness
+        {
+            get => _acousticness;
+            set { _acousticness = value; OnPropertyChanged(); }
+        }
+
+        private float _instrumentalness;
+        public float Instrumentalness
+        {
+            get => _instrumentalness;
+            set { _instrumentalness = value; OnPropertyChanged(); }
+        }
+
+        private float _liveness;
+        public float Liveness
+        {
+            get => _liveness;
+            set { _liveness = value; OnPropertyChanged(); }
+        }
+
+        private float _valence;
+        public float Valence
+        {
+            get => _valence;
+            set { _valence = value; OnPropertyChanged(); }
+        }
+
+        private float _tempo;
+        public float Tempo
+        {
+            get => _tempo;
+            set { _tempo = value; OnPropertyChanged(); }
+        }
+
+        private int _timeSignature;
+        public int TimeSignature
+        {
+            get => _timeSignature;
+            set { _timeSignature = value; OnPropertyChanged(); }
+        }
 
         // Helper to notify UI of property changes
         private void OnPropertyChanged([CallerMemberName] string propertyName = null)

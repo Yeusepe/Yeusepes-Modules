@@ -1,8 +1,11 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Microsoft.VisualBasic.Logging;
 using SpotifyAPI.Web;
 using YeusepesModules.SPOTIOSC.Credentials;
+using System.Net.Http;
+using System.Text.Json;
 
 public class SpotifyApiService
 {
@@ -118,9 +121,94 @@ public class SpotifyApiService
             Play = play
         });
 
-    /// <summary> Add a track or episode to the end of the user’s queue. </summary>
+    /// <summary> Add a track or episode to the end of the user's queue. </summary>
     public async Task AddToQueueAsync(string uri, string deviceId = null)
         => await _client.Player.AddToQueue(new PlayerAddToQueueRequest(uri) { DeviceId = deviceId });
+
+    /// <summary> Get audio features for a single track using direct HTTP request. </summary>
+    public async Task<TrackAudioFeatures> GetTrackFeaturesAsync(string trackId)
+    {
+        try
+        {
+            // Use direct HTTP request with the same token that works for the rest of the module
+            var accessToken = CredentialManager.LoadAccessToken();
+            if (string.IsNullOrEmpty(accessToken))
+            {
+                throw new Exception("No access token available");
+            }
+
+            var url = $"https://api.spotify.com/v1/audio-features/{trackId}";
+            using var httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+            var response = await httpClient.GetAsync(url);
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            if (response.IsSuccessStatusCode)
+            {
+                var audioFeatures = System.Text.Json.JsonSerializer.Deserialize<TrackAudioFeatures>(responseContent, new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+                    PropertyNameCaseInsensitive = true
+                });
+                return audioFeatures;
+            }
+            else
+            {
+                throw new Exception($"Spotify API Error: {response.StatusCode} - {responseContent}");
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Error fetching audio features: {ex.Message}");
+        }
+    }
+
+    /// <summary> Get audio features for multiple tracks using direct HTTP request. </summary>
+    public async Task<List<TrackAudioFeatures>> GetMultipleTrackFeaturesAsync(List<string> trackIds)
+    {
+        try
+        {
+            // Use direct HTTP request with the same token that works for the rest of the module
+            var accessToken = CredentialManager.LoadAccessToken();
+            if (string.IsNullOrEmpty(accessToken))
+            {
+                throw new Exception("No access token available");
+            }
+
+            var idsParam = string.Join(",", trackIds);
+            var url = $"https://api.spotify.com/v1/audio-features?ids={idsParam}";
+            using var httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", accessToken);
+
+            var response = await httpClient.GetAsync(url);
+            var responseContent = await response.Content.ReadAsStringAsync();
+
+            if (response.IsSuccessStatusCode)
+            {
+                var result = System.Text.Json.JsonSerializer.Deserialize<AudioFeaturesResponse>(responseContent, new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+                    PropertyNameCaseInsensitive = true
+                });
+
+                return result.AudioFeatures ?? new List<TrackAudioFeatures>();
+            }
+            else
+            {
+                throw new Exception($"Spotify API Error: {response.StatusCode} - {responseContent}");
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Error fetching audio features: {ex.Message}");
+        }
+    }
+
+    public class AudioFeaturesResponse
+    {
+        public List<TrackAudioFeatures> AudioFeatures { get; set; }
+    }
 
     /// <summary>
     /// Refreshes the access token using the saved refresh token, persists the new pair,
