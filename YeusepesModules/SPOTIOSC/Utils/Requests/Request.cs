@@ -131,7 +131,7 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
                 {
                     // Use the access token stored in the context.
                     request.Headers.Add("Authorization", $"Bearer {context.ApiToken}");
-                    utilities.Log("Fetching current playback state...");
+                    utilities.LogDebug("Fetching current playback state...");
 
                     HttpResponseMessage response = await context.HttpClient.SendAsync(request);
 
@@ -292,7 +292,7 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
                 }
 
                 // Log any other exceptions.
-                utilities.Log($"An error occurred while fetching playback state: {ex.Message}");
+                utilities.LogDebug($"An error occurred while fetching playback state: {ex.Message}");
             }
 
         }

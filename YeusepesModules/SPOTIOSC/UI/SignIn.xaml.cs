@@ -76,7 +76,7 @@ namespace YeusepesModules.SPOTIOSC.UI
 
                     if (userProfile != null)
                     {
-                        spotifyUtilities.Log($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}");
+                        spotifyUtilities.LogDebug($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}");
                         UpdateUIWithUserProfile(
                             userProfile.DisplayName,
                             userProfile.Product,
@@ -103,7 +103,7 @@ namespace YeusepesModules.SPOTIOSC.UI
 
                         if (userProfile != null)
                         {
-                            spotifyUtilities.Log($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}");
+                            spotifyUtilities.LogDebug($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}");
                             UpdateUIWithUserProfile(
                                 userProfile.DisplayName,
                                 userProfile.Product,
@@ -126,7 +126,7 @@ namespace YeusepesModules.SPOTIOSC.UI
             }
             catch (Exception ex)
             {
-                spotifyUtilities.Log($"Error initializing UI: {ex.Message}");
+                spotifyUtilities.LogDebug($"Error initializing UI: {ex.Message}");
             }
             finally
             {
@@ -173,7 +173,7 @@ namespace YeusepesModules.SPOTIOSC.UI
 
         private void UpdateUIWithUserProfile(string name, string plan, string imageUrl)
         {
-            spotifyUtilities.Log($"Updating UI with profile: {name}, {plan}, {imageUrl}");
+            spotifyUtilities.LogDebug($"Updating UI with profile: {name}, {plan}, {imageUrl}");
 
             UserName.Text = name;
             PlanText.Text = NativeMethods.CapitalizeFirstLetter(plan);
@@ -201,7 +201,7 @@ namespace YeusepesModules.SPOTIOSC.UI
                 }
                 catch (Exception ex)
                 {
-                    spotifyUtilities.Log($"Error loading profile image: {ex.Message}");
+                    spotifyUtilities.LogDebug($"Error loading profile image: {ex.Message}");
                 }
             }
         }

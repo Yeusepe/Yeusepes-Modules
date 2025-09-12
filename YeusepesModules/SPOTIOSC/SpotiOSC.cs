@@ -315,7 +315,7 @@ namespace YeusepesModules.SPOTIOSC
             #endregion
 
 
-            Log("Registering parameters...");
+            LogDebug("Registering parameters...");
             encoder.RegisterParameters((parameter, name, mode, title, description) =>
             {
                 RegisterParameter<int>(parameter, name, mode, title, description);
@@ -324,7 +324,7 @@ namespace YeusepesModules.SPOTIOSC
                 RegisterParameter<bool>(parameter, name, mode, title, description);
             });
 
-            Log("Initializing StringDecoder...");
+            LogDebug("Initializing StringDecoder...");
 
             SetRuntimeView(typeof(NowPlayingRuntimeView));
             base.OnPreLoad();
@@ -463,7 +463,7 @@ namespace YeusepesModules.SPOTIOSC
 
             encodingUtilities.IsDebug = SettingsManager.GetInstance().GetValue<bool>(VRCOSCSetting.EnableAppDebug);
 
-            Log("Starting Spotify Cookie Manager...");
+            LogDebug("Starting Spotify Cookie Manager...");
 
             // Validate tokens and fetch profile
             bool isProfileFetched = await ValidateAndFetchProfileAsync();
@@ -473,7 +473,7 @@ namespace YeusepesModules.SPOTIOSC
                 return false;
             }
 
-            Log("Spotify Cookie Manager initialized successfully.");
+            LogDebug("Spotify Cookie Manager initialized successfully.");
 
             AccessToken = CredentialManager.AccessToken;
             ClientToken = CredentialManager.ClientToken;
@@ -535,14 +535,14 @@ namespace YeusepesModules.SPOTIOSC
                                 }
                                 else
                                 {
-                                    Log("Devices separated. Stopping decoding process.");
+                                    LogDebug("Devices separated. Stopping decoding process.");
                                     StopDecodingProcess();
                                 }
                                 break;
                             case EncodingParameter.Ready:
-                                Log("Decoder is ready to receive data.");
+                                LogDebug("Decoder is ready to receive data.");
                                 SpotifyJamRequests._shareableUrl = decoder.StartDecode();
-                                Log($"Decoding process started. Session ID: {SpotifyJamRequests._shareableUrl}");
+                                LogDebug($"Decoding process started. Session ID: {SpotifyJamRequests._shareableUrl}");
                                 // Start the asynchronous join process.
                                 HandleJoinJam();
                                 break;
@@ -573,7 +573,7 @@ namespace YeusepesModules.SPOTIOSC
             async void Do(Action<SpotifyApiService> work)
             {
                 try { await Task.Yield(); work(_apiService); }
-                catch (Exception ex) { Log($"Spotify API error: {ex.Message}"); }
+                catch (Exception ex) { LogDebug($"Spotify API error: {ex.Message}"); }
             }
 
             if (parameter.Lookup is SpotiParameters p && p == SpotiParameters.Play && parameter.GetValue<bool>())
@@ -603,7 +603,7 @@ namespace YeusepesModules.SPOTIOSC
                     // Validate that it's a Spotify URI
                     if (uri.StartsWith("spotify:", StringComparison.OrdinalIgnoreCase))
                     {
-                        Log($"Playing Spotify URI locally: {uri}");
+                        LogDebug($"Playing Spotify URI locally: {uri}");
                         try
                         {
                             // Use Process.Start to launch the Spotify URI through the system's URI handler
@@ -613,23 +613,23 @@ namespace YeusepesModules.SPOTIOSC
                                 FileName = uri,
                                 UseShellExecute = true
                             });
-                            Log($"Successfully launched Spotify URI: {uri}");
+                            LogDebug($"Successfully launched Spotify URI: {uri}");
                         }
                         catch (Exception ex)
                         {
-                            Log($"Error launching Spotify URI: {ex.Message}");
+                            LogDebug($"Error launching Spotify URI: {ex.Message}");
                             SendParameter(SpotiParameters.Error, true);
                         }
                     }
                     else
                     {
-                        Log($"Invalid Spotify URI format: {uri}. URI must start with 'spotify:'");
+                        LogDebug($"Invalid Spotify URI format: {uri}. URI must start with 'spotify:'");
                         SendParameter(SpotiParameters.Error, true);
                     }
                 }
                 else
                 {
-                    Log("PlayUri parameter received but no URI provided in wildcard");
+                    LogDebug("PlayUri parameter received but no URI provided in wildcard");
                     SendParameter(SpotiParameters.Error, true);
                 }
             }
@@ -703,7 +703,7 @@ namespace YeusepesModules.SPOTIOSC
         private void StopDecodingProcess()
         {
             encoder.CancelEncoding();
-            Log("Decoding process halted.");
+            LogDebug("Decoding process halted.");
         }
 
         private async void EncodeAndSendSessionId(string sessionId)
@@ -717,7 +717,7 @@ namespace YeusepesModules.SPOTIOSC
 
         protected override async Task OnModuleStop()
         {
-            Log("Stopping SpotiOSC module...");
+            LogDebug("Stopping SpotiOSC module...");
             _cts.Cancel(); // Cancel all ongoing operations
 
             try
@@ -756,12 +756,12 @@ namespace YeusepesModules.SPOTIOSC
                     _httpClient = null;
                 }
 
-                Log("SpotiOSC module stopped successfully.");
+                LogDebug("SpotiOSC module stopped successfully.");
                 SendParameter(SpotiParameters.Enabled, false);
             }
             catch (Exception ex)
             {
-                Log($"Error during module stop: {ex.Message}");
+                LogDebug($"Error during module stop: {ex.Message}");
             }
             finally
             {
@@ -772,14 +772,14 @@ namespace YeusepesModules.SPOTIOSC
 
         private async Task<bool> ValidateAndFetchProfileAsync()
         {
-            Log("Validating tokens and fetching profile data...");
+            LogDebug("Validating tokens and fetching profile data...");
 
             string accessToken = CredentialManager.LoadAccessToken();
             string clientToken = CredentialManager.LoadClientToken();
 
             if (string.IsNullOrEmpty(accessToken) || string.IsNullOrEmpty(clientToken))
             {
-                Log("Tokens are missing. Attempting to fetch new tokens...");
+                LogDebug("Tokens are missing. Attempting to fetch new tokens...");
                 if (!await RefreshTokensAsync())
                 {
                     Log("Failed to fetch new tokens. Exiting.");
@@ -797,10 +797,10 @@ namespace YeusepesModules.SPOTIOSC
 
                 if (!isAuthorized)
                 {
-                    Log("Unauthorized response received. Deleting invalid tokens...");
+                    LogDebug("Unauthorized response received. Deleting invalid tokens...");
                     CredentialManager.ClearAllTokensAndCookies(); // Remove invalid tokens
 
-                    Log("Attempting to refresh tokens...");
+                    LogDebug("Attempting to refresh tokens...");
                     if (!await RefreshTokensAsync())
                     {
                         Log("Failed to refresh tokens after unauthorized response. Exiting.");
@@ -818,7 +818,7 @@ namespace YeusepesModules.SPOTIOSC
             }
             catch (Exception ex)
             {
-                Log($"Error during token validation and profile fetch: {ex.Message}");
+                LogDebug($"Error during token validation and profile fetch: {ex.Message}");
                 return false;
             }
         }
@@ -828,7 +828,7 @@ namespace YeusepesModules.SPOTIOSC
         {
             try
             {
-                Log("Attempting to refresh tokens...");
+                LogDebug("Attempting to refresh tokens...");
                 await CredentialManager.LoginAndCaptureCookiesAsync();
 
                 var newAccessToken = CredentialManager.LoadAccessToken();                
@@ -840,12 +840,12 @@ namespace YeusepesModules.SPOTIOSC
                     return false;
                 }
 
-                Log("Tokens refreshed successfully.");
+                LogDebug("Tokens refreshed successfully.");
                 return true;
             }
             catch (Exception ex)
             {
-                Log($"Error refreshing tokens: {ex.Message}");
+                LogDebug($"Error refreshing tokens: {ex.Message}");
                 return false;
             }
         }
@@ -879,7 +879,7 @@ namespace YeusepesModules.SPOTIOSC
 
             catch (Exception ex)
             {
-                spotifyUtilities.Log($"Error processing player event: {ex.Message}");
+                spotifyUtilities.LogDebug($"Error processing player event: {ex.Message}");
             }
         }
 
@@ -1028,7 +1028,7 @@ namespace YeusepesModules.SPOTIOSC
             }
             catch (Exception ex)
             {
-                Log($"Error updating session details: {ex.Message}");
+                LogDebug($"Error updating session details: {ex.Message}");
             }
         }
 
@@ -1042,11 +1042,11 @@ namespace YeusepesModules.SPOTIOSC
                 bool joinResult = await SpotifyJamRequests.JoinSpotifyJam(joinSessionId, spotifyRequestContext, spotifyUtilities);
                 if (joinResult)
                 {
-                    spotifyUtilities.Log("Successfully joined the jam session.");
+                    spotifyUtilities.LogDebug("Successfully joined the jam session.");
                 }
                 else
                 {
-                    spotifyUtilities.Log("Failed to join the jam session.");
+                    spotifyUtilities.LogDebug("Failed to join the jam session.");
                     SendParameter(SpotiParameters.Error, true);
                 }
             });
@@ -1504,7 +1504,7 @@ namespace YeusepesModules.SPOTIOSC
                 }
                 catch (Exception ex)
                 {
-                    Log("Exception while creating Spotify Jam: " + ex.ToString());
+                    LogDebug("Exception while creating Spotify Jam: " + ex.ToString());
                 }
             }
             else if (!wantJam && _isInJam)
@@ -1567,7 +1567,7 @@ namespace YeusepesModules.SPOTIOSC
             }
             catch (Exception ex)
             {
-                Log($"Failed to set parameter {parameter}: {ex.Message}");
+                LogDebug($"Failed to set parameter {parameter}: {ex.Message}");
             }
         }
 

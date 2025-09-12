@@ -43,7 +43,7 @@ namespace YeusepesModules.SPOTIOSC.Utils
                 // Send the request via the centralized SendAsync method.
                 string responseBody = await genericRequest.SendRequestAsync(request);
 
-                utilities.Log("Spotify Jam session created successfully");
+                utilities.LogDebug("Spotify Jam session created successfully");
                 utilities.LogDebug(responseBody);
 
                 // Parse JSON response.
@@ -68,7 +68,7 @@ namespace YeusepesModules.SPOTIOSC.Utils
                 if (sessionData.TryGetProperty("shareable_url", out JsonElement shareableUrlElement))
                 {
                     _shareableUrl = shareableUrlElement.GetString();
-                    utilities.Log($"Join through this URL: {_shareableUrl}");
+                    utilities.LogDebug($"Join through this URL: {_shareableUrl}");
                 }
 
                 if (sessionData.TryGetProperty("active", out JsonElement activeElement))
@@ -84,12 +84,12 @@ namespace YeusepesModules.SPOTIOSC.Utils
             }
             catch (UnauthorizedAccessException)
             {
-                utilities.Log("Token refresh failed. Please sign in again.");
+                utilities.LogDebug("Token refresh failed. Please sign in again.");
                 return false;
             }
             catch (Exception ex)
             {
-                utilities.Log($"An error occurred: {ex.Message}");
+                utilities.LogDebug($"An error occurred: {ex.Message}");
                 utilities.SendParameter(SpotiOSC.SpotiParameters.Error, true);
                 return false;
             }
@@ -99,17 +99,17 @@ namespace YeusepesModules.SPOTIOSC.Utils
 
         public static void HandleJamJoin(SpotifyRequestContext context, SpotifyUtilities utilities)
         {
-            utilities.Log("Joining the current jam...");
+            utilities.LogDebug("Joining the current jam...");
             _isInJam = true;
             context.IsInJam = _isInJam;
             utilities.SendParameter(SpotiOSC.SpotiParameters.InAJam, true);
             utilities.SendParameter(SpotiOSC.SpotiParameters.IsJamOwner, false);
-            utilities.Log("Successfully joined the jam.");
+            utilities.LogDebug("Successfully joined the jam.");
         }
 
         public static void HandleJamLeave(SpotifyRequestContext context, SpotifyUtilities utilities)
         {
-            utilities.Log("Leaving the current jam...");
+            utilities.LogDebug("Leaving the current jam...");
             _currentSessionId = null;
             _joinSessionToken = null;
             _isInJam = false;
@@ -117,7 +117,7 @@ namespace YeusepesModules.SPOTIOSC.Utils
             utilities.SendParameter(SpotiOSC.SpotiParameters.InAJam, false);
             utilities.SendParameter(SpotiOSC.SpotiParameters.IsJamOwner, false);
             utilities.SendParameter(SpotiOSC.SpotiParameters.WantJam, false);
-            utilities.Log("Successfully left the jam.");
+            utilities.LogDebug("Successfully left the jam.");
         }
 
 
@@ -144,7 +144,7 @@ namespace YeusepesModules.SPOTIOSC.Utils
                     var optionsResponse = await context.HttpClient.SendAsync(optionsRequest);
                     if (!optionsResponse.IsSuccessStatusCode)
                     {
-                        utilities.Log($"Failed OPTIONS request. Status: {optionsResponse.StatusCode}");
+                        utilities.LogDebug($"Failed OPTIONS request. Status: {optionsResponse.StatusCode}");
                         return false;
                     }
                 }
@@ -170,7 +170,7 @@ namespace YeusepesModules.SPOTIOSC.Utils
                 utilities.LogDebug("Sending POST request to leave Spotify Jam...");
                 string postResponseBody = await genericRequest.SendRequestAsync(postRequest);
 
-                utilities.Log("Successfully left the Spotify Jam session.");
+                utilities.LogDebug("Successfully left the Spotify Jam session.");
                 utilities.SendParameter(SpotiOSC.SpotiParameters.InAJam, false);
                 _currentSessionId = null;
                 _isInJam = false;
@@ -180,12 +180,12 @@ namespace YeusepesModules.SPOTIOSC.Utils
             }
             catch (UnauthorizedAccessException)
             {
-                utilities.Log("Token refresh failed. Please sign in again.");
+                utilities.LogDebug("Token refresh failed. Please sign in again.");
                 return false;
             }
             catch (Exception ex)
             {
-                utilities.Log($"An error occurred while leaving the Spotify Jam session: {ex.Message}");
+                utilities.LogDebug($"An error occurred while leaving the Spotify Jam session: {ex.Message}");
                 utilities.SendParameter(SpotiOSC.SpotiParameters.Error, true);
                 return false;
             }
@@ -202,7 +202,7 @@ namespace YeusepesModules.SPOTIOSC.Utils
                 string deviceId = context.DeviceId;
                 if (string.IsNullOrEmpty(deviceId))
                 {
-                    utilities.Log("Failed to find an active device. Cannot join Spotify Jam.");
+                    utilities.LogDebug("Failed to find an active device. Cannot join Spotify Jam.");
                     return false;
                 }
 
@@ -243,7 +243,7 @@ namespace YeusepesModules.SPOTIOSC.Utils
                     utilities.LogDebug("Response Content: " + responseBody);
 
                     // Update the session state if the request was successful.
-                    utilities.Log("Successfully joined the Spotify Jam session.");
+                    utilities.LogDebug("Successfully joined the Spotify Jam session.");
                     _currentSessionId = sessionId;
                     _isInJam = true;
                     context.IsInJam = _isInJam;
@@ -252,12 +252,12 @@ namespace YeusepesModules.SPOTIOSC.Utils
             }
             catch (UnauthorizedAccessException)
             {
-                utilities.Log("Token refresh failed. Please sign in again.");
+                utilities.LogDebug("Token refresh failed. Please sign in again.");
                 return false;
             }
             catch (Exception ex)
             {
-                utilities.Log($"An error occurred while joining the Spotify Jam session: {ex.Message}");
+                utilities.LogDebug($"An error occurred while joining the Spotify Jam session: {ex.Message}");
                 utilities.SendParameter(SpotiOSC.SpotiParameters.Error, true);
                 return false;
             }
@@ -385,7 +385,7 @@ namespace YeusepesModules.SPOTIOSC.Utils
 
                     if (response == null || !response.IsSuccessStatusCode)
                     {
-                        utilities.Log("Failed to load the short link page.");
+                        utilities.LogDebug("Failed to load the short link page.");
                         return null;
                     }
 
@@ -405,7 +405,7 @@ namespace YeusepesModules.SPOTIOSC.Utils
 
                     if (!match.Success)
                     {
-                        utilities.Log("No share token found in the HTML.");
+                        utilities.LogDebug("No share token found in the HTML.");
                         return null;
                     }
                     string shareToken = match.Groups[1].Value;
@@ -416,7 +416,7 @@ namespace YeusepesModules.SPOTIOSC.Utils
             }
             catch (Exception ex)
             {
-                utilities.Log("An error occurred in GetJoinSessionIdAsync: " + ex.Message);
+                utilities.LogDebug("An error occurred in GetJoinSessionIdAsync: " + ex.Message);
                 return null;
             }
         }
@@ -521,7 +521,7 @@ namespace YeusepesModules.SPOTIOSC.Utils
             }
             catch (Exception ex)
             {
-                utilities.Log($"Failed to generate shareable URL: {ex.Message}");
+                utilities.LogDebug($"Failed to generate shareable URL: {ex.Message}");
                 throw;
             }
         }
