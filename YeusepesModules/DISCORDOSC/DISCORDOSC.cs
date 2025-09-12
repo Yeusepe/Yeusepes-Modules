@@ -1,11 +1,12 @@
 using DISCORDOSC.RPCTools;
 using DISCORDOSC.UI;
+using Microsoft.Extensions.Configuration;
+using System.Text.Json;
+using System.Threading;
 using VRCOSC.App.SDK.Modules;
 using VRCOSC.App.SDK.Modules.Attributes.Settings;
 using VRCOSC.App.SDK.Parameters;
 using YeusepesModules.Common;
-using Microsoft.Extensions.Configuration;
-using System.Text.Json;
 
 
 #pragma warning disable CA1416 // Validate platform compatibility
@@ -582,6 +583,7 @@ namespace YeusepesModules.DISCORDOSC
                 case DISCORDOSCParameter.Mute:
                     {
                         bool mute = parameter.GetValue<bool>();
+                        LogDebug($"Mute state: {mute}");
                         client.SendCommand(1, Payload.SetMuteOnly(mute));
                         break;
                     }
@@ -589,6 +591,7 @@ namespace YeusepesModules.DISCORDOSC
                 case DISCORDOSCParameter.Deafen:
                     {
                         bool deafen = parameter.GetValue<bool>();
+                        LogDebug($"Deafen state: {deafen}");
                         client.SendCommand(1, Payload.SetDeafenOnly(deafen));
                         break;
                     }

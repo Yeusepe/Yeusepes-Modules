@@ -131,6 +131,11 @@ namespace YeusepesModules.ShazamOSC
             _provider = services.BuildServiceProvider();
             LogDebug($"OnPreLoad: DI container built. _provider {(_provider == null ? "IS NULL" : "is ready")}");
 
+            // Initialize the live listening timer
+            _liveTimer = new DispatcherTimer();
+            _liveTimer.Interval = TimeSpan.FromSeconds(25); // Scan every 25 seconds
+            _liveTimer.Tick += OnLiveTimerTick;
+
             LogDebug("OnPreLoad: end");
             base.OnPreLoad();
         }
@@ -185,7 +190,7 @@ namespace YeusepesModules.ShazamOSC
                 if (LiveListening)
                 {
                     // start the recurring scan
-                    if (!_liveTimer.IsEnabled)
+                    if (_liveTimer != null && !_liveTimer.IsEnabled)
                     {
                         LogDebug($"LiveListening started!");
                         _liveTimer.Start();                        
@@ -194,7 +199,7 @@ namespace YeusepesModules.ShazamOSC
                 else
                 {
                     // stop future scans
-                    if (_liveTimer.IsEnabled)
+                    if (_liveTimer != null && _liveTimer.IsEnabled)
                     {
                         LogDebug($"LiveListening stopped!");
                         _liveTimer.Stop();
@@ -495,6 +500,33 @@ namespace YeusepesModules.ShazamOSC
         {
             //LogDebug("Updating chatbox with last recognized song.");
             SetVariableValue("RecognizedSong", lastSong);
+        }
+
+        private void OnLiveTimerTick(object sender, EventArgs e)
+        {
+            try
+            {
+                // Only proceed if live listening is still enabled and module is ready
+                if (!LiveListening || _provider == null)
+                {
+                    LogDebug("Live listening disabled or module not ready, stopping timer");
+                    _liveTimer?.Stop();
+                    return;
+                }
+
+                LogDebug("Live listening timer tick - starting recognition attempt");
+                
+                // Cancel any existing recognition
+                _recognitionCts?.Cancel();
+                _recognitionCts = new CancellationTokenSource();
+                
+                // Start recognition in background
+                _ = Task.Run(() => RecognizeFromDesktop(_recognitionCts.Token), _recognitionCts.Token);
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Live listening timer error: {ex.Message}");
+            }
         }
     }
 }
