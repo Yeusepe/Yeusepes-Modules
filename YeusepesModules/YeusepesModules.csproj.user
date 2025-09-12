@@ -8,6 +8,15 @@
     <Compile Update="IDC\UI\DecoderToleranceControl.xaml.cs">
       <SubType>Code</SubType>
     </Compile>
+    <Compile Update="ShazamOSC\UI\LastRecognized.xaml.cs">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Update="ShazamOSC\UI\SavedSongsView.xaml.cs">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Update="ShazamOSC\UI\SavedSongsWindow.xaml.cs">
+      <SubType>Code</SubType>
+    </Compile>
     <Compile Update="OSCQR\UI\SavedQRCodesWindow.xaml.cs">
       <SubType>Code</SubType>
     </Compile>

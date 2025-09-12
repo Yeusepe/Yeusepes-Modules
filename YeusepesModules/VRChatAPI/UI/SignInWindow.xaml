@@ -1,0 +1,14 @@
+<Window x:Class="YeusepesModules.VRChatAPI.UI.SignInWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:YeusepesModules.VRChatAPI.UI"
+        Title="VRChat API Interactor - Sign In"
+        Width="600"
+        Height="500"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="CanResize"
+        Background="#2D2D30"
+        WindowStyle="SingleBorderWindow">
+    <Grid x:Name="MainGrid">
+    </Grid>
+</Window>

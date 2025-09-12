@@ -1,0 +1,6 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <FontFamily x:Key="NotoSans300">pack://application:,,,/YeusepesModules;component/VRChatAPI/Resources/Fonts/noto-sans-300.woff2#Noto Sans</FontFamily>
+    <FontFamily x:Key="NotoSansRegular">pack://application:,,,/YeusepesModules;component/VRChatAPI/Resources/Fonts/noto-sans-regular.woff2#Noto Sans</FontFamily>
+    <FontFamily x:Key="NotoSans700">pack://application:,,,/YeusepesModules;component/VRChatAPI/Resources/Fonts/noto-sans-700.woff2#Noto Sans</FontFamily>
+</ResourceDictionary>
