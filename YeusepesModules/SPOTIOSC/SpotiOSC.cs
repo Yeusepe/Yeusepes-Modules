@@ -619,18 +619,39 @@ namespace YeusepesModules.SPOTIOSC
                         {
                             LogDebug($"Error launching Spotify URI: {ex.Message}");
                             SendParameter(SpotiParameters.Error, true);
+                            
+                            // Reset the Error trigger after a short delay to allow for one-shot behavior
+                            _ = Task.Run(async () =>
+                            {
+                                await Task.Delay(100); // Small delay to ensure the trigger is processed
+                                SendParameter(SpotiParameters.Error, false);
+                            });
                         }
                     }
                     else
                     {
                         LogDebug($"Invalid Spotify URI format: {uri}. URI must start with 'spotify:'");
                         SendParameter(SpotiParameters.Error, true);
+                        
+                        // Reset the Error trigger after a short delay to allow for one-shot behavior
+                        _ = Task.Run(async () =>
+                        {
+                            await Task.Delay(100); // Small delay to ensure the trigger is processed
+                            SendParameter(SpotiParameters.Error, false);
+                        });
                     }
                 }
                 else
                 {
                     LogDebug("PlayUri parameter received but no URI provided in wildcard");
                     SendParameter(SpotiParameters.Error, true);
+                    
+                    // Reset the Error trigger after a short delay to allow for one-shot behavior
+                    _ = Task.Run(async () =>
+                    {
+                        await Task.Delay(100); // Small delay to ensure the trigger is processed
+                        SendParameter(SpotiParameters.Error, false);
+                    });
                 }
             }
 
@@ -1048,6 +1069,13 @@ namespace YeusepesModules.SPOTIOSC
                 {
                     spotifyUtilities.LogDebug("Failed to join the jam session.");
                     SendParameter(SpotiParameters.Error, true);
+                    
+                    // Reset the Error trigger after a short delay to allow for one-shot behavior
+                    _ = Task.Run(async () =>
+                    {
+                        await Task.Delay(100); // Small delay to ensure the trigger is processed
+                        SendParameter(SpotiParameters.Error, false);
+                    });
                 }
             });
         }
@@ -1624,6 +1652,13 @@ namespace YeusepesModules.SPOTIOSC
             if (isError)
             {
                 SendParameter(SpotiParameters.Error, true);
+                
+                // Reset the Error trigger after a short delay to allow for one-shot behavior
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(100); // Small delay to ensure the trigger is processed
+                    SendParameter(SpotiParameters.Error, false);
+                });
             }
         }
 
@@ -1779,7 +1814,14 @@ namespace YeusepesModules.SPOTIOSC
             catch (Exception ex)
             {
                 LogWithError("An error occurred during asynchronous execution", true, ex);
-                SendParameter(SpotiParameters.Error, true);                
+                SendParameter(SpotiParameters.Error, true);
+                
+                // Reset the Error trigger after a short delay to allow for one-shot behavior
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(100); // Small delay to ensure the trigger is processed
+                    SendParameter(SpotiParameters.Error, false);
+                });
             }
         }
 

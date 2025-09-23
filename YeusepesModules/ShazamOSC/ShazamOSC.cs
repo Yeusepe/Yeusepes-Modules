@@ -388,6 +388,13 @@ namespace YeusepesModules.ShazamOSC
                     SendParameter(ShazamParameters.OSCTrackID, key);
                     SendParameter(ShazamParameters.Recognized, true);
                     SendParameter(ShazamParameters.Error, false);
+                    
+                    // Reset the Recognized trigger after a short delay to allow for one-shot behavior
+                    _ = Task.Run(async () =>
+                    {
+                        await Task.Delay(100); // Small delay to ensure the trigger is processed
+                        SendParameter(ShazamParameters.Recognized, false);
+                    });
 
                     // --- Here’s the merge logic ---
                     // 1) Build a JsonNode you can mutate
@@ -441,6 +448,14 @@ namespace YeusepesModules.ShazamOSC
                 SendParameter(ShazamParameters.Listening, false);
                 SendParameter(ShazamParameters.Error, true);
                 LogDebug($"Recognition error: {ex.Message}");
+                
+                // Reset the Error trigger after a short delay to allow for one-shot behavior
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(100); // Small delay to ensure the trigger is processed
+                    SendParameter(ShazamParameters.Error, false);
+                });
+                
                 return false;
             }
             finally
