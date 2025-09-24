@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.VisualBasic.Logging;
 using SpotifyAPI.Web;
@@ -67,25 +68,105 @@ public class SpotifyApiService
 
     /// <summary> Start or resume playback. </summary>
     public async Task PlayAsync(string deviceId = null)
-        => await _client.Player.ResumePlayback(new PlayerResumePlaybackRequest { DeviceId = deviceId });
+    {
+        try
+        {
+            await _client.Player.ResumePlayback(new PlayerResumePlaybackRequest { DeviceId = deviceId });
+        }
+        catch (APIUnauthorizedException)
+        {
+            await RefreshAndReinitializeAsync();
+            await _client.Player.ResumePlayback(new PlayerResumePlaybackRequest { DeviceId = deviceId });
+        }
+        catch (APIException ex) when (ex.Message.Contains("Device not found"))
+        {
+            // Device not found - try to get current active device
+            var activeDevice = await GetActiveDeviceAsync();
+            if (activeDevice != null)
+            {
+                await _client.Player.ResumePlayback(new PlayerResumePlaybackRequest { DeviceId = activeDevice.Id });
+            }
+            else
+            {
+                // No active device - try without device ID (Spotify will use default)
+                await _client.Player.ResumePlayback(new PlayerResumePlaybackRequest());
+            }
+        }
+        catch (APIException ex) when (ex.Message.Contains("Device not found") || ex.Message.Contains("Resuming is not allowed"))
+        {
+            // Try using the melody API as a fallback
+            await TryMelodyResumeAsync(deviceId);
+        }
+        catch (APIException ex)
+        {
+            throw new Exception($"Spotify API error during play: {ex.Message}");
+        }
+    }
 
     public async Task PlayUriAsync(string uri, string deviceId = null)
     {
-        // Spotify only accepts single‐track URIs in `uris`, but albums/artists/playlists
-        // as `context_uri`.
-        var req = new PlayerResumePlaybackRequest { DeviceId = deviceId };
-        if (uri.StartsWith("spotify:track:"))
-            req.Uris = new List<string> { uri };
-        else
-            req.ContextUri = uri;
+        try
+        {
+            // Spotify only accepts single‐track URIs in `uris`, but albums/artists/playlists
+            // as `context_uri`.
+            var req = new PlayerResumePlaybackRequest { DeviceId = deviceId };
+            if (uri.StartsWith("spotify:track:"))
+                req.Uris = new List<string> { uri };
+            else
+                req.ContextUri = uri;
 
-        await _client.Player.ResumePlayback(req);
+            await _client.Player.ResumePlayback(req);
+        }
+        catch (APIUnauthorizedException)
+        {
+            await RefreshAndReinitializeAsync();
+            var req = new PlayerResumePlaybackRequest { DeviceId = deviceId };
+            if (uri.StartsWith("spotify:track:"))
+                req.Uris = new List<string> { uri };
+            else
+                req.ContextUri = uri;
+            await _client.Player.ResumePlayback(req);
+        }
+        catch (APIException ex) when (ex.Message.Contains("Device not found"))
+        {
+            // Device not found - try to get current active device
+            var activeDevice = await GetActiveDeviceAsync();
+            var req = new PlayerResumePlaybackRequest { DeviceId = activeDevice?.Id };
+            if (uri.StartsWith("spotify:track:"))
+                req.Uris = new List<string> { uri };
+            else
+                req.ContextUri = uri;
+            await _client.Player.ResumePlayback(req);
+        }
+        catch (APIException ex)
+        {
+            throw new Exception($"Spotify API error during play URI: {ex.Message}");
+        }
     }
 
 
     /// <summary> Pause playback. </summary>
     public async Task PauseAsync(string deviceId = null)
-        => await _client.Player.PausePlayback(new PlayerPausePlaybackRequest { DeviceId = deviceId });
+    {
+        try
+        {
+            await _client.Player.PausePlayback(new PlayerPausePlaybackRequest { DeviceId = deviceId });
+        }
+        catch (APIUnauthorizedException)
+        {
+            await RefreshAndReinitializeAsync();
+            await _client.Player.PausePlayback(new PlayerPausePlaybackRequest { DeviceId = deviceId });
+        }
+        catch (APIException ex) when (ex.Message.Contains("Device not found") || ex.Message.Contains("Pausing is not allowed"))
+        {
+            // Try using the melody API as a fallback
+            await TryMelodyPauseAsync(deviceId);
+        }
+        catch (APIException ex)
+        {
+            throw new Exception($"Spotify API error during pause: {ex.Message}");
+        }
+    }
 
     /// <summary> Skip to next track. </summary>
     public async Task NextTrackAsync()
@@ -124,6 +205,196 @@ public class SpotifyApiService
     /// <summary> Add a track or episode to the end of the user's queue. </summary>
     public async Task AddToQueueAsync(string uri, string deviceId = null)
         => await _client.Player.AddToQueue(new PlayerAddToQueueRequest(uri) { DeviceId = deviceId });
+
+    /// <summary> Get the currently active device. </summary>
+    public async Task<Device> GetActiveDeviceAsync()
+    {
+        try
+        {
+            var devices = await _client.Player.GetAvailableDevices();
+            return devices.Devices.FirstOrDefault(d => d.IsActive);
+        }
+        catch (APIUnauthorizedException)
+        {
+            await RefreshAndReinitializeAsync();
+            var devices = await _client.Player.GetAvailableDevices();
+            return devices.Devices.FirstOrDefault(d => d.IsActive);
+        }
+        catch (Exception)
+        {
+            return null;
+        }
+    }
+
+    /// <summary> Try to resume playback using Spotify's melody API as a fallback. </summary>
+    private async Task TryMelodyResumeAsync(string deviceId = null)
+    {
+        try
+        {
+            var accessToken = CredentialManager.LoadAccessToken();
+            var clientToken = CredentialManager.LoadClientToken();
+            
+            if (string.IsNullOrEmpty(accessToken) || string.IsNullOrEmpty(clientToken))
+            {
+                throw new Exception("Missing access token or client token for melody API");
+            }
+
+            // If no device ID provided, try to get the desktop device (most reliable)
+            if (string.IsNullOrEmpty(deviceId))
+            {
+                var devices = await _client.Player.GetAvailableDevices();
+                var desktopDevice = devices.Devices.FirstOrDefault(d => d.Type == "Computer");
+                deviceId = desktopDevice?.Id;
+            }
+
+            if (string.IsNullOrEmpty(deviceId))
+            {
+                throw new Exception("No suitable device found for melody API");
+            }
+
+            // Create the melody API request
+            var melodyRequest = new
+            {
+                messages = new[]
+                {
+                    new
+                    {
+                        type = "jssdk_connect_command",
+                        message = new
+                        {
+                            ms_ack_duration = 327,
+                            ms_request_latency = 299,
+                            command_id = Guid.NewGuid().ToString("N"),
+                            command_type = "resume",
+                            target_device_brand = "spotify",
+                            target_device_model = "PC desktop",
+                            target_device_client_id = "65b708073fc0480ea92a077233ca87bd",
+                            target_device_id = deviceId,
+                            interaction_ids = "",
+                            play_origin = "",
+                            result = "success",
+                            http_response = "",
+                            http_status_code = 200
+                        }
+                    }
+                },
+                sdk_id = "harmony:4.58.0-a717498aa",
+                platform = "web_player windows 10;microsoft edge 140.0.0.0;desktop",
+                client_version = "0.0.0"
+            };
+
+            var jsonContent = System.Text.Json.JsonSerializer.Serialize(melodyRequest);
+            
+            using var httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {accessToken}");
+            httpClient.DefaultRequestHeaders.Add("Client-Token", clientToken);
+            httpClient.DefaultRequestHeaders.Add("Accept", "*/*");
+            httpClient.DefaultRequestHeaders.Add("Content-Type", "text/plain;charset=UTF-8");
+
+            var content = new StringContent(jsonContent, System.Text.Encoding.UTF8, "text/plain");
+            var response = await httpClient.PostAsync("https://gue1-spclient.spotify.com/melody/v1/msg/batch", content);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                // Melody API call succeeded
+                return;
+            }
+            else
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new Exception($"Melody API failed with status {response.StatusCode}: {errorContent}");
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Melody API error: {ex.Message}");
+        }
+    }
+
+    /// <summary> Try to pause playback using Spotify's melody API as a fallback. </summary>
+    private async Task TryMelodyPauseAsync(string deviceId = null)
+    {
+        try
+        {
+            var accessToken = CredentialManager.LoadAccessToken();
+            var clientToken = CredentialManager.LoadClientToken();
+            
+            if (string.IsNullOrEmpty(accessToken) || string.IsNullOrEmpty(clientToken))
+            {
+                throw new Exception("Missing access token or client token for melody API");
+            }
+
+            // If no device ID provided, try to get the desktop device (most reliable)
+            if (string.IsNullOrEmpty(deviceId))
+            {
+                var devices = await _client.Player.GetAvailableDevices();
+                var desktopDevice = devices.Devices.FirstOrDefault(d => d.Type == "Computer");
+                deviceId = desktopDevice?.Id;
+            }
+
+            if (string.IsNullOrEmpty(deviceId))
+            {
+                throw new Exception("No suitable device found for melody API");
+            }
+
+            // Create the melody API request for pause
+            var melodyRequest = new
+            {
+                messages = new[]
+                {
+                    new
+                    {
+                        type = "jssdk_connect_command",
+                        message = new
+                        {
+                            ms_ack_duration = 327,
+                            ms_request_latency = 299,
+                            command_id = Guid.NewGuid().ToString("N"),
+                            command_type = "pause",
+                            target_device_brand = "spotify",
+                            target_device_model = "PC desktop",
+                            target_device_client_id = "65b708073fc0480ea92a077233ca87bd",
+                            target_device_id = deviceId,
+                            interaction_ids = "",
+                            play_origin = "",
+                            result = "success",
+                            http_response = "",
+                            http_status_code = 200
+                        }
+                    }
+                },
+                sdk_id = "harmony:4.58.0-a717498aa",
+                platform = "web_player windows 10;microsoft edge 140.0.0.0;desktop",
+                client_version = "0.0.0"
+            };
+
+            var jsonContent = System.Text.Json.JsonSerializer.Serialize(melodyRequest);
+            
+            using var httpClient = new HttpClient();
+            httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {accessToken}");
+            httpClient.DefaultRequestHeaders.Add("Client-Token", clientToken);
+            httpClient.DefaultRequestHeaders.Add("Accept", "*/*");
+            httpClient.DefaultRequestHeaders.Add("Content-Type", "text/plain;charset=UTF-8");
+
+            var content = new StringContent(jsonContent, System.Text.Encoding.UTF8, "text/plain");
+            var response = await httpClient.PostAsync("https://gue1-spclient.spotify.com/melody/v1/msg/batch", content);
+            
+            if (response.IsSuccessStatusCode)
+            {
+                // Melody API call succeeded
+                return;
+            }
+            else
+            {
+                var errorContent = await response.Content.ReadAsStringAsync();
+                throw new Exception($"Melody API failed with status {response.StatusCode}: {errorContent}");
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Melody API error: {ex.Message}");
+        }
+    }
 
     /// <summary> Get audio features for a single track using direct HTTP request. </summary>
     public async Task<TrackAudioFeatures> GetTrackFeaturesAsync(string trackId)

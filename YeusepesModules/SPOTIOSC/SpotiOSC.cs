@@ -578,18 +578,78 @@ namespace YeusepesModules.SPOTIOSC
 
             if (parameter.Lookup is SpotiParameters p && p == SpotiParameters.Play && parameter.GetValue<bool>())
             {
+                LogDebug($"Play parameter received. DeviceId: {spotifyRequestContext?.DeviceId ?? "null"}");
+                
+                // Check if we have a valid device ID
+                if (string.IsNullOrEmpty(spotifyRequestContext?.DeviceId))
+                {
+                    LogDebug("Warning: No device ID available. Play command may not work properly.");
+                    LogDebug("Make sure Spotify is open and a device is active.");
+                }
+                else
+                {
+                    LogDebug($"Using device: {spotifyRequestContext.DeviceName} (ID: {spotifyRequestContext.DeviceId})");
+                    
+                    // Check if resuming is disallowed on this device
+                    if (spotifyRequestContext.DisallowResuming)
+                    {
+                        LogDebug("WARNING: This device has resuming disallowed. The play command may not work.");
+                        LogDebug("Try using a different device or check your Spotify account restrictions.");
+                    }
+                }
+                
                 // is there something in that * ?
                 if (parameter.IsWildcardType<string>(0)
                     && !string.IsNullOrEmpty(parameter.GetWildcard<string>(0)))
                 {
                     var uri = parameter.GetWildcard<string>(0);
+                    LogDebug($"Playing URI: {uri}");
                     // fire‐and‐forget
-                    _ = _apiService.PlayUriAsync(uri, spotifyRequestContext.DeviceId);
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _apiService.PlayUriAsync(uri, spotifyRequestContext.DeviceId);
+                            LogDebug($"Successfully started playing URI: {uri}");
+                        }
+                        catch (Exception ex)
+                        {
+                            LogDebug($"Error playing URI {uri}: {ex.Message}");
+                            SendParameter(SpotiParameters.Error, true);
+                            // Reset error after delay
+                            await Task.Delay(100);
+                            SendParameter(SpotiParameters.Error, false);
+                        }
+                    });
                 }
                 else
                 {
+                    LogDebug("Resuming current playback");
                     // no URI ⇒ just resume current playback
-                    _ = _apiService.PlayAsync(spotifyRequestContext.DeviceId);
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await _apiService.PlayAsync(spotifyRequestContext.DeviceId);
+                            LogDebug("Successfully resumed playback");
+                        }
+                        catch (Exception ex)
+                        {
+                            LogDebug($"Error resuming playback: {ex.Message}");
+                            if (ex.Message.Contains("Device not found"))
+                            {
+                                LogDebug("Device not found - this usually means the device went offline. Try opening Spotify on your computer or another device.");
+                            }
+                            else if (ex.Message.Contains("Melody API"))
+                            {
+                                LogDebug("Tried melody API fallback but it also failed. This might be a device restriction issue.");
+                            }
+                            SendParameter(SpotiParameters.Error, true);
+                            // Reset error after delay
+                            await Task.Delay(100);
+                            SendParameter(SpotiParameters.Error, false);
+                        }
+                    });
                 }
             }
 
@@ -1102,19 +1162,23 @@ namespace YeusepesModules.SPOTIOSC
             // --- Device info ---
             if (state.TryGetProperty("device", out JsonElement device))
             {
-                spotifyRequestContext.DeviceId = device.GetProperty("id").GetString();
-                spotifyRequestContext.DeviceName = device.GetProperty("name").GetString();
-                spotifyRequestContext.IsActiveDevice = device.GetProperty("is_active").GetBoolean();
+                string newDeviceId = device.GetProperty("id").GetString();
+                string newDeviceName = device.GetProperty("name").GetString();
+                bool isActive = device.GetProperty("is_active").GetBoolean();
+                
+                // Update device info
+                spotifyRequestContext.DeviceId = newDeviceId;
+                spotifyRequestContext.DeviceName = newDeviceName;
+                spotifyRequestContext.IsActiveDevice = isActive;
                 spotifyRequestContext.VolumePercent = device.GetProperty("volume_percent").GetInt32();
-                SetParameterSafe(SpotiParameters.DeviceIsActive, device.GetProperty("is_active").GetBoolean());
+                
+                SetParameterSafe(SpotiParameters.DeviceIsActive, isActive);
                 SetParameterSafe(SpotiParameters.DeviceIsPrivate, device.GetProperty("is_private_session").GetBoolean());
                 SetParameterSafe(SpotiParameters.DeviceIsRestricted, device.GetProperty("is_restricted").GetBoolean());
                 SetParameterSafe(SpotiParameters.DeviceSupportsVolume, device.GetProperty("supports_volume").GetBoolean());
                 SetParameterSafe(SpotiParameters.DeviceVolumePercent, device.GetProperty("volume_percent").GetInt32());
-                LogDebug($"Shuffle state: {spotifyRequestContext.DeviceId}");
-                LogDebug($"Shuffle state: {spotifyRequestContext.DeviceName}");
-                LogDebug($"Shuffle state: {spotifyRequestContext.IsActiveDevice}");
-                LogDebug($"Shuffle state: {spotifyRequestContext.VolumePercent}");                
+                
+                LogDebug($"Device updated: {newDeviceName} (ID: {newDeviceId}, Active: {isActive})");
             }
 
             // --- Shuffle and Smart Shuffle ---
@@ -1201,6 +1265,35 @@ namespace YeusepesModules.SPOTIOSC
                 // Trigger pause event
                 TriggerEvent("PauseEvent");
                 LogDebug("Playback paused.");
+            }
+
+            // --- Check for playback restrictions ---
+            if (state.TryGetProperty("actions", out JsonElement actions) && 
+                actions.TryGetProperty("disallows", out JsonElement disallows))
+            {
+                if (disallows.TryGetProperty("resuming", out JsonElement resumingDisallowed))
+                {
+                    spotifyRequestContext.DisallowResuming = resumingDisallowed.GetBoolean();
+                    SetParameterSafe(SpotiParameters.DisallowResuming, resumingDisallowed.GetBoolean());
+                    if (resumingDisallowed.GetBoolean())
+                    {
+                        LogDebug("WARNING: Resuming playback is disallowed on this device. This may prevent the Play command from working.");
+                    }
+                }
+                if (disallows.TryGetProperty("pausing", out JsonElement pausingDisallowed))
+                {
+                    spotifyRequestContext.DisallowPausing = pausingDisallowed.GetBoolean();
+                    SetParameterSafe(SpotiParameters.DisallowPausing, pausingDisallowed.GetBoolean());
+                    if (pausingDisallowed.GetBoolean())
+                    {
+                        LogDebug("WARNING: Pausing playback is disallowed on this device.");
+                    }
+                }
+                if (disallows.TryGetProperty("skipping_prev", out JsonElement skippingPrevDisallowed))
+                {
+                    spotifyRequestContext.DisallowSkippingPrev = skippingPrevDisallowed.GetBoolean();
+                    SetParameterSafe(SpotiParameters.DisallowSkippingPrev, skippingPrevDisallowed.GetBoolean());
+                }
             }
 
             // --- Trigger other events ---

@@ -369,6 +369,28 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
             set { _isPlaying = value; OnPropertyChanged(); }
         }
 
+        // Playback Restrictions
+        private bool _disallowPausing;
+        public bool DisallowPausing
+        {
+            get => _disallowPausing;
+            set { _disallowPausing = value; OnPropertyChanged(); }
+        }
+
+        private bool _disallowResuming;
+        public bool DisallowResuming
+        {
+            get => _disallowResuming;
+            set { _disallowResuming = value; OnPropertyChanged(); }
+        }
+
+        private bool _disallowSkippingPrev;
+        public bool DisallowSkippingPrev
+        {
+            get => _disallowSkippingPrev;
+            set { _disallowSkippingPrev = value; OnPropertyChanged(); }
+        }
+
         // Track Details
         private string _trackName;
         public string TrackName
