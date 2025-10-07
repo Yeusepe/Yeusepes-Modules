@@ -4,6 +4,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <UserSecretsId>21b0f942-aba1-456f-8206-8dac8598225d</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
@@ -32,6 +33,10 @@
     <EmbeddedResource Include="Natives\System.Memory.dll" />
     <EmbeddedResource Include="Natives\vcruntime140.dll" />
     <EmbeddedResource Include="Natives\vcruntime140_1.dll" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="6.0.1" />
   </ItemGroup>
 
 </Project>

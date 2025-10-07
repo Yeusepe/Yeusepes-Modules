@@ -490,6 +490,11 @@ namespace YeusepesModules.ShazamOSC
             }
         }
 
+        /// <summary>
+        /// Public wrapper for LogDebug to allow UI components to log.
+        /// </summary>
+        public new void LogDebug(string message) => base.LogDebug(message);
+
 
 
 

@@ -21,7 +21,7 @@ namespace YeusepesModules.ShazamOSC.UI
             // Reverse so newest-saved items appear at the top
             var reversed = rawJsonSongs.Reverse();
             Songs = new ObservableCollection<SavedSong>(
-                reversed.Select(json => new SavedSong(json))
+                reversed.Select(json => new SavedSong(json, _module.LogDebug))
             );
 
             // Command that both removes from the UI and calls back into your module

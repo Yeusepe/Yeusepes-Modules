@@ -219,7 +219,6 @@
                         <Button Grid.Column="2"
                                 Style="{StaticResource SpotifyButtonStyle}"
                                 Command="{Binding OpenSpotifyCommand}"
-                                Visibility="Hidden"
                                 ToolTip="Open in Spotify">
                             <Path Data="{StaticResource spotify_icon}"
                                   Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"

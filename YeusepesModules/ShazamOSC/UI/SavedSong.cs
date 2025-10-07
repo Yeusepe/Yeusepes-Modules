@@ -3,12 +3,13 @@ using System.Diagnostics;
 using System.Linq;
 using System.Text.Json.Nodes;
 using System.Windows.Input;
-using YeusepesLowLevelTools;
 
 namespace YeusepesModules.ShazamOSC.UI
 {
     public class SavedSong
     {
+        private readonly Action<string> _logDebug;
+        
         public string RawJson { get; }
         public string Title { get; }
         public string Artist { get; }
@@ -19,11 +20,12 @@ namespace YeusepesModules.ShazamOSC.UI
         public ICommand OpenSpotifyCommand { get; }
         public ICommand OpenShazamCommand { get; }
 
-        public SavedSong(string rawJson)
+        public SavedSong(string rawJson, Action<string> logDebug = null)
         {
             if (string.IsNullOrWhiteSpace(rawJson))
                 throw new ArgumentNullException(nameof(rawJson));
 
+            _logDebug = logDebug ?? (_ => { });
             RawJson = rawJson;
             JsonNode root = JsonNode.Parse(rawJson)!;
             JsonNode trackNode = root["track"] ?? root;
@@ -32,36 +34,80 @@ namespace YeusepesModules.ShazamOSC.UI
             Artist = trackNode["subtitle"]?.GetValue<string>() ?? "";
             CoverArtUrl = trackNode["images"]?["coverart"]?.GetValue<string>() ?? "";
 
-            // Safely get the JSON array of actions (may be null)
-            JsonArray actions = trackNode["hub"]?["actions"] as JsonArray
-                                ?? new JsonArray();
+            // Extract Spotify URI from hub.providers array
+            string? spotifyUri = null;
+            JsonArray providers = trackNode["hub"]?["providers"] as JsonArray ?? new JsonArray();
+            
+            // Find the Spotify provider
+            foreach (var provider in providers)
+            {
+                if (provider?["type"]?.GetValue<string>() == "SPOTIFY")
+                {
+                    JsonArray actions = provider["actions"] as JsonArray ?? new JsonArray();
+                    spotifyUri = actions
+                        .Select(a => a?["uri"]?.GetValue<string>())
+                        .FirstOrDefault(u => !string.IsNullOrEmpty(u));
+                    break;
+                }
+            }
 
-            // Look first for a search URI, then fallback to a track URI
-            string? searchUri = actions
-                .Select(a => a?["uri"]?.GetValue<string>())
-                .FirstOrDefault(u => u != null && u.StartsWith("spotify:search:", StringComparison.OrdinalIgnoreCase));
+            SpotifyUri = spotifyUri ?? "";
 
-            string? trackUri = actions
-                .Select(a => a?["uri"]?.GetValue<string>())
-                .FirstOrDefault(u => u != null && u.StartsWith("spotify:track:", StringComparison.OrdinalIgnoreCase));
-
-            SpotifyUri = searchUri
-                ?? trackUri
-                ?? "";
-
-            Console.WriteLine($"[SavedSong] Extracted SpotifyUri = '{SpotifyUri}'");
+            _logDebug($"[SavedSong] Extracted SpotifyUri = '{SpotifyUri}'");
 
             ShazamUri = trackNode["url"]?.GetValue<string>() ?? "";
-            Console.WriteLine($"[SavedSong] Extracted ShazamUri  = '{ShazamUri}'");
+            _logDebug($"[SavedSong] Extracted ShazamUri  = '{ShazamUri}'");
 
             OpenSpotifyCommand = new RelayCommand(_ =>
             {
-                UriLauncher.LaunchUri(SpotifyUri);
+                _logDebug($"[SavedSong] OpenSpotifyCommand clicked! SpotifyUri = '{SpotifyUri}'");
+                
+                if (string.IsNullOrEmpty(SpotifyUri))
+                {
+                    _logDebug("[SavedSong] SpotifyUri is null or empty - cannot launch");
+                    return;
+                }
+                
+                if (!SpotifyUri.StartsWith("spotify:", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logDebug($"[SavedSong] SpotifyUri doesn't start with 'spotify:' - URI: '{SpotifyUri}'");
+                    return;
+                }
+                
+                try
+                {
+                    _logDebug($"[SavedSong] Launching Spotify URI: {SpotifyUri}");
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = SpotifyUri,
+                        UseShellExecute = true
+                    });
+                    _logDebug($"[SavedSong] Successfully launched Spotify URI");
+                }
+                catch (Exception ex)
+                {
+                    _logDebug($"[SavedSong] Error launching Spotify URI: {ex.Message}");
+                    _logDebug($"[SavedSong] Stack trace: {ex.StackTrace}");
+                }
             });
 
             OpenShazamCommand = new RelayCommand(_ =>
             {
-                UriLauncher.LaunchUri(ShazamUri);
+                if (!string.IsNullOrEmpty(ShazamUri))
+                {
+                    try
+                    {
+                        System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                        {
+                            FileName = ShazamUri,
+                            UseShellExecute = true
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[SavedSong] Error launching Shazam URI: {ex.Message}");
+                    }
+                }
             });
         }
     }
