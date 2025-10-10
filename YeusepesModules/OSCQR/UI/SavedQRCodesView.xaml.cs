@@ -12,15 +12,51 @@ namespace YeusepesModules.OSCQR.UI
     {
         private const int MaxQRCodeCount = 20;
 
-        public ObservableCollection<string> QRCodeLinks { get; }
+        public ObservableCollection<DetectedCodeInfo> DetectedCodes { get; }
 
         public ICommand OpenLinkCommand { get; }
         public ICommand EraseCommand { get; }
 
-        public SavedQRCodesViewModel(IEnumerable<string> qrCodes)
+        public SavedQRCodesViewModel(IEnumerable<string> qrCodes, SpotifyTrackInfo spotifyInfo, long? spotifyCode)
         {
-            // Ensure we only take the latest 20 QR codes
-            QRCodeLinks = new ObservableCollection<string>(qrCodes.Take(MaxQRCodeCount));
+            DetectedCodes = new ObservableCollection<DetectedCodeInfo>();
+            
+            // Add QR codes
+            foreach (var code in qrCodes.Take(MaxQRCodeCount))
+            {
+                DetectedCodes.Add(new DetectedCodeInfo
+                {
+                    DisplayText = code,
+                    TypeInfo = "QR Code",
+                    Url = code,
+                    HasTypeInfo = true
+                });
+            }
+            
+            // Add Spotify code if available
+            if (spotifyInfo != null && spotifyCode.HasValue)
+            {
+                var spotifyCodeInfo = new DetectedCodeInfo
+                {
+                    DisplayText = spotifyInfo.Name,
+                    TypeInfo = $"Spotify {spotifyInfo.Type}",
+                    Url = spotifyInfo.Url,
+                    HasTypeInfo = true
+                };
+                
+                // Add additional info based on content type
+                if (spotifyInfo.Artists != null && spotifyInfo.Artists.Count > 0)
+                {
+                    spotifyCodeInfo.TypeInfo += $" by {string.Join(", ", spotifyInfo.Artists)}";
+                }
+                
+                if (!string.IsNullOrEmpty(spotifyInfo.Album))
+                {
+                    spotifyCodeInfo.TypeInfo += $" from {spotifyInfo.Album}";
+                }
+                
+                DetectedCodes.Add(spotifyCodeInfo);
+            }
 
             OpenLinkCommand = new RelayCommand<string>(OpenLink);
             EraseCommand = new RelayCommand(EraseAll);
@@ -43,7 +79,7 @@ namespace YeusepesModules.OSCQR.UI
 
         private void EraseAll()
         {
-            QRCodeLinks.Clear();
+            DetectedCodes.Clear();
         }
     }
 
@@ -103,7 +139,19 @@ namespace YeusepesModules.OSCQR.UI
         public SavedQRCodesView(OSCQR module, ModuleSetting setting)
         {
             InitializeComponent();
-            DataContext = new SavedQRCodesViewModel(module.GetSavedQRCodes());
+            // NOTE: This is a static snapshot view - it shows codes at the time settings are opened
+            // For live updates, use the Runtime View tab instead
+            
+            var qrCodes = module.GetSavedQRCodes();
+            var spotifyInfo = module.GetLastSpotifyTrackInfo();
+            var spotifyCode = module.GetLastDetectedSpotifyCode();
+            
+            Debug.WriteLine($"[SavedQRCodesView] Creating settings view:");
+            Debug.WriteLine($"  - QR Codes: {qrCodes.Count()}");
+            Debug.WriteLine($"  - Spotify Info: {(spotifyInfo != null ? spotifyInfo.Name : "null")}");
+            Debug.WriteLine($"  - Spotify Code: {(spotifyCode.HasValue ? spotifyCode.Value.ToString() : "null")}");
+            
+            DataContext = new SavedQRCodesViewModel(qrCodes, spotifyInfo, spotifyCode);
         }
     }
 }

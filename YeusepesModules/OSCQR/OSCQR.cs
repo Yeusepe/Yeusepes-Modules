@@ -7,6 +7,9 @@ using YeusepesModules.Common.ScreenUtilities;
 using ZBar;
 using HPPH;
 using YeusepesModules.OSCQR.UI;
+using YeusepesModules.SPOTIOSC.Credentials;
+using System.Text.Json;
+using System.IO;
 
 namespace YeusepesModules.OSCQR
 {
@@ -23,6 +26,10 @@ namespace YeusepesModules.OSCQR
         // Runtime storage for detected QR codes
         private List<string> savedQRCodes = new List<string>();
         private string lastDetectedQRCode = string.Empty;
+
+        // Spotify code detection
+        private SpotifyTrackInfo lastSpotifyTrackInfo = null;
+        private long? lastDetectedSpotifyCode = null;
 
         // Event to notify when QR codes list is updated
         public event Action QRCodesUpdated;
@@ -41,7 +48,8 @@ namespace YeusepesModules.OSCQR
             StartRecording,
             QRCodeFound,
             ReadQRCode,
-            Error
+            Error,
+        SpotifyCodeFound
         }
 
 
@@ -93,6 +101,14 @@ namespace YeusepesModules.OSCQR
                 ParameterMode.Write,
                 "Error",
                 "Indicates an error occurred during capture or processing."
+            );
+
+            RegisterParameter<bool>(
+                OSCQRParameter.SpotifyCodeFound,
+                "OSCQR/SpotifyCodeFound",
+                ParameterMode.Write,
+                "Spotify Code Found",
+                "Indicates when a Spotify barcode has been detected."
             );            
 
 
@@ -134,6 +150,17 @@ namespace YeusepesModules.OSCQR
             Log($"Selected Display: {screenUtilities.GetSelectedDisplay()}");
             // Clear any previous error.
             SendParameter(OSCQRParameter.Error, false);
+            
+            // Check if Spotify credentials are available
+            if (IsSpotifyCredentialsAvailable())
+            {
+                Log("Spotify credentials found - Spotify code scanning enabled");
+            }
+            else
+            {
+                Log("No Spotify credentials found - Spotify code scanning disabled");
+            }
+            
             return Task.FromResult(true);
         }
 
@@ -165,6 +192,52 @@ namespace YeusepesModules.OSCQR
                         SaveCurrentQRCode();
                     }
                     break;
+            }
+        }
+
+        #endregion
+
+        #region Spotify Integration
+
+        private bool IsSpotifyCredentialsAvailable()
+        {
+            try
+            {
+                // Check if we have a valid access token from the credential manager
+                var accessToken = CredentialManager.LoadAccessToken();
+                var apiAccessToken = CredentialManager.LoadApiAccessToken();
+                
+                return !string.IsNullOrEmpty(accessToken) || !string.IsNullOrEmpty(apiAccessToken);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private async Task<SpotifyTrackInfo> GetSpotifyTrackInfoAsync(long mediaRef)
+        {
+            try
+            {
+                // Try to get access token from credential manager
+                var accessToken = CredentialManager.LoadAccessToken();
+                if (string.IsNullOrEmpty(accessToken))
+                {
+                    accessToken = CredentialManager.LoadApiAccessToken();
+                }
+
+                if (string.IsNullOrEmpty(accessToken))
+                {
+                    Log("No Spotify access token available");
+                    return null;
+                }
+
+                return await SpotifyCodeDecoder.GetTrackInfoAsync(mediaRef, accessToken);
+            }
+            catch (Exception ex)
+            {
+                Log($"Error getting Spotify track info: {ex.Message}");
+                return null;
             }
         }
 
@@ -211,6 +284,54 @@ namespace YeusepesModules.OSCQR
                     else
                     {                        
                         SendParameter(OSCQRParameter.QRCodeFound, false);
+                    }
+
+                    // Check for Spotify codes if credentials are available
+                    bool hasCredentials = IsSpotifyCredentialsAvailable();
+                    Log($"Spotify credentials available: {hasCredentials}");
+                    
+                    if (hasCredentials)
+                    {
+                        Log("Attempting Spotify code detection...");
+                        var spotifyMediaRef = SpotifyCodeDecoder.DetectSpotifyCode(processedBitmap, Log);
+                        Log($"Spotify code detection result: {(spotifyMediaRef.HasValue ? $"Found media ref {spotifyMediaRef.Value}" : "No code detected")}");
+                        
+                        if (spotifyMediaRef.HasValue && spotifyMediaRef.Value != lastDetectedSpotifyCode)
+                        {
+                            lastDetectedSpotifyCode = spotifyMediaRef.Value;
+                            SendParameter(OSCQRParameter.SpotifyCodeFound, true);
+                            Log($"New Spotify code detected: {spotifyMediaRef.Value}");
+                            
+                            // Get track info asynchronously
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    var trackInfo = await GetSpotifyTrackInfoAsync(spotifyMediaRef.Value);
+                                    if (trackInfo != null)
+                                    {
+                                        lastSpotifyTrackInfo = trackInfo;
+                                        Log($"Spotify code detected - {trackInfo.Type}: {trackInfo.Name}");
+                                    }
+                                    else
+                                    {
+                                        Log("Failed to retrieve track info for Spotify code");
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Log($"Error processing Spotify code: {ex.Message}");
+                                }
+                            });
+                        }
+                        else if (!spotifyMediaRef.HasValue)
+                        {
+                            SendParameter(OSCQRParameter.SpotifyCodeFound, false);
+                        }
+                    }
+                    else
+                    {
+                        Log("Skipping Spotify code detection - no credentials available");
                     }
                 }
             }
@@ -293,29 +414,169 @@ namespace YeusepesModules.OSCQR
 
         private void SaveCurrentQRCode()
         {
-            if (string.IsNullOrEmpty(lastDetectedQRCode))
+            // Save QR code if available
+            if (!string.IsNullOrEmpty(lastDetectedQRCode))
             {
-                Log("No QR code detected to save.");
-                return;
+                if (!savedQRCodes.Contains(lastDetectedQRCode))
+                {
+                    savedQRCodes.Add(lastDetectedQRCode);
+                    Log($"QR Code saved: {lastDetectedQRCode}");
+                }
+                else
+                {
+                    Log($"QR Code already exists: {lastDetectedQRCode}");
+                }
             }
-
-            if (!savedQRCodes.Contains(lastDetectedQRCode))
+            
+            // Save Spotify code if available
+            if (lastSpotifyTrackInfo != null && lastDetectedSpotifyCode.HasValue)
             {
-                savedQRCodes.Add(lastDetectedQRCode);
-                Log($"QR Code saved: {lastDetectedQRCode}");
+                var spotifyCodeInfo = $"Spotify {lastSpotifyTrackInfo.Type}: {lastSpotifyTrackInfo.Name} - {lastSpotifyTrackInfo.Url}";
                 
-                // Notify runtime view that QR codes list has been updated
-                QRCodesUpdated?.Invoke();
+                if (!savedQRCodes.Contains(spotifyCodeInfo))
+                {
+                    savedQRCodes.Add(spotifyCodeInfo);
+                    Log($"Spotify Code saved: {spotifyCodeInfo}");
+                }
+                else
+                {
+                    Log($"Spotify Code already exists: {spotifyCodeInfo}");
+                }
             }
-            else
+            
+            // Notify runtime view that codes list has been updated
+            if (!string.IsNullOrEmpty(lastDetectedQRCode) || (lastSpotifyTrackInfo != null && lastDetectedSpotifyCode.HasValue))
             {
-                Log($"QR Code already exists: {lastDetectedQRCode}");
+                QRCodesUpdated?.Invoke();
             }
         }
 
         public List<string> GetSavedQRCodes()
         {
             return new List<string>(savedQRCodes); // Return a copy of the saved QR codes
+        }
+
+        public SpotifyTrackInfo GetLastSpotifyTrackInfo()
+        {
+            return lastSpotifyTrackInfo;
+        }
+
+        public long? GetLastDetectedSpotifyCode()
+        {
+            return lastDetectedSpotifyCode;
+        }
+
+        public async Task TestSpotifyCodeFunctionality()
+        {
+            Console.WriteLine("=== Spotify Code Detection Test ===");
+            
+            // Test 1: Check credentials
+            var hasCredentials = IsSpotifyCredentialsAvailable();
+            Console.WriteLine($"1. Spotify credentials available: {hasCredentials}");
+            
+            if (hasCredentials)
+            {
+                var accessToken = CredentialManager.LoadAccessToken() ?? CredentialManager.LoadApiAccessToken();
+                var clientId = CredentialManager.ClientId ?? "58bd3c95768941ea9eb4350aaa033eb3";
+                Console.WriteLine($"   Access Token: {(string.IsNullOrEmpty(accessToken) ? "None" : "Available")}");
+                Console.WriteLine($"   Client ID: {clientId}");
+            }
+            else
+            {
+                Console.WriteLine("   No credentials available - some tests will be skipped");
+            }
+            
+            // Test 2: Real Spotify code image detection
+            Console.WriteLine("\n2. Testing with real Spotify code image...");
+            try
+            {
+                var imagePath = "spcode-7ocNC8jszuZKlwz7vvgI7R.jpeg";
+                if (File.Exists(imagePath))
+                {
+                    Console.WriteLine($"   Loading image: {imagePath}");
+                    using (var bitmap = new Bitmap(imagePath))
+                    {
+                        Console.WriteLine($"   Image loaded: {bitmap.Width}x{bitmap.Height} pixels");
+                        
+                        var mediaRef = SpotifyCodeDecoder.DetectSpotifyCode(bitmap);
+                        if (mediaRef.HasValue)
+                        {
+                            Console.WriteLine($"   SUCCESS: Detected media reference: {mediaRef.Value}");
+                            
+                            if (hasCredentials)
+                            {
+                                Console.WriteLine("   Fetching track info from Spotify API...");
+                                var trackInfo = await GetSpotifyTrackInfoAsync(mediaRef.Value);
+                                if (trackInfo != null)
+                                {
+                                    Console.WriteLine($"   SUCCESS: Found {trackInfo.Type} - {trackInfo.Name}");
+                                    Console.WriteLine($"   URL: {trackInfo.Url}");
+                                    if (trackInfo.Artists != null && trackInfo.Artists.Count > 0)
+                                        Console.WriteLine($"   Artists: {string.Join(", ", trackInfo.Artists)}");
+                                    if (!string.IsNullOrEmpty(trackInfo.Album))
+                                        Console.WriteLine($"   Album: {trackInfo.Album}");
+                                    if (!string.IsNullOrEmpty(trackInfo.Description))
+                                        Console.WriteLine($"   Description: {trackInfo.Description}");
+                                }
+                                else
+                                {
+                                    Console.WriteLine("   FAILED: Could not retrieve track info from API");
+                                }
+                            }
+                            else
+                            {
+                                Console.WriteLine("   Skipping API test - no credentials available");
+                            }
+                        }
+                        else
+                        {
+                            Console.WriteLine("   FAILED: Could not detect media reference from image");
+                        }
+                    }
+                }
+                else
+                {
+                    Console.WriteLine($"   ERROR: Image file not found: {imagePath}");
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"   ERROR: {ex.Message}");
+                Console.WriteLine($"   Stack trace: {ex.StackTrace}");
+            }
+            
+            // Test 3: Basic barcode detection algorithm
+            Console.WriteLine("\n3. Testing basic barcode detection algorithm...");
+            try
+            {
+                var testBitmap = CreateTestBarcode();
+                var mediaRef = SpotifyCodeDecoder.DetectSpotifyCode(testBitmap);
+                Console.WriteLine($"   Algorithm test: {(mediaRef.HasValue ? $"Found media ref: {mediaRef.Value}" : "No barcode detected (expected)")}");
+                testBitmap.Dispose();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"   ERROR: {ex.Message}");
+            }
+            
+            Console.WriteLine("\n=== Test Complete ===");
+        }
+        
+        private Bitmap CreateTestBarcode()
+        {
+            // Create a simple test bitmap
+            var bitmap = new Bitmap(200, 100);
+            using (var g = Graphics.FromImage(bitmap))
+            {
+                g.Clear(Color.White);
+                var brush = new SolidBrush(Color.Black);
+                for (int i = 0; i < 20; i++)
+                {
+                    var height = 20 + (i % 4) * 15;
+                    g.FillRectangle(brush, i * 8, (100 - height) / 2, 6, height);
+                }
+            }
+            return bitmap;
         }
 
         #endregion

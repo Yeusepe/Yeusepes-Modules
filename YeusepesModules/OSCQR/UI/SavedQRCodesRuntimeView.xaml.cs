@@ -5,6 +5,8 @@ using System.Diagnostics;
 using System.Windows.Input;
 using System.ComponentModel;
 using System.Linq;
+using System.Windows.Data;
+using System.Windows;
 
 namespace YeusepesModules.OSCQR.UI
 {
@@ -27,33 +29,78 @@ namespace YeusepesModules.OSCQR.UI
         public class SavedQRCodesRuntimeViewModel : INotifyPropertyChanged
         {
             private readonly OSCQR _module;
-            public ObservableCollection<string> QRCodeLinks { get; }
+            
+            public ObservableCollection<DetectedCodeInfo> DetectedCodes { get; }
             public ICommand OpenLinkCommand { get; }
 
             public SavedQRCodesRuntimeViewModel(OSCQR module)
             {
                 _module = module;
-                QRCodeLinks = new ObservableCollection<string>(module.GetSavedQRCodes());
+                DetectedCodes = new ObservableCollection<DetectedCodeInfo>();
                 OpenLinkCommand = new RelayCommand<string>(OpenLink);
+                
+                // Initialize with existing codes
+                RefreshDetectedCodes();
             }
 
             public void RefreshQRCodes()
+            {
+                RefreshDetectedCodes();
+            }
+            
+            private void RefreshDetectedCodes()
             {
                 // Ensure UI updates happen on the UI thread
                 System.Windows.Application.Current?.Dispatcher.Invoke(() =>
                 {
                     var currentCodes = _module.GetSavedQRCodes();
+                    var currentSpotifyInfo = _module.GetLastSpotifyTrackInfo();
+                    var currentSpotifyCode = _module.GetLastDetectedSpotifyCode();
                     
-                    // Clear and repopulate the collection if the contents have changed
-                    if (QRCodeLinks.Count != currentCodes.Count || !QRCodeLinks.SequenceEqual(currentCodes))
+                    Debug.WriteLine($"[OSCQR Runtime View] Refreshing: {currentCodes.Count()} QR codes, Spotify: {(currentSpotifyInfo != null ? currentSpotifyInfo.Name : "none")}");
+                    
+                    // Clear existing codes
+                    DetectedCodes.Clear();
+                    
+                    // Add QR codes
+                    foreach (var code in currentCodes)
                     {
-                        QRCodeLinks.Clear();
-                        foreach (var code in currentCodes)
+                        DetectedCodes.Add(new DetectedCodeInfo
                         {
-                            QRCodeLinks.Add(code);
-                        }
-                        OnPropertyChanged(nameof(QRCodeLinks));
+                            DisplayText = code,
+                            TypeInfo = "QR Code",
+                            Url = code,
+                            HasTypeInfo = true
+                        });
                     }
+                    
+                    // Add Spotify code if available
+                    if (currentSpotifyInfo != null && currentSpotifyCode.HasValue)
+                    {
+                        var spotifyInfo = new DetectedCodeInfo
+                        {
+                            DisplayText = currentSpotifyInfo.Name,
+                            TypeInfo = $"Spotify {currentSpotifyInfo.Type}",
+                            Url = currentSpotifyInfo.Url,
+                            HasTypeInfo = true
+                        };
+                        
+                        // Add additional info based on content type
+                        if (currentSpotifyInfo.Artists != null && currentSpotifyInfo.Artists.Count > 0)
+                        {
+                            spotifyInfo.TypeInfo += $" by {string.Join(", ", currentSpotifyInfo.Artists)}";
+                        }
+                        
+                        if (!string.IsNullOrEmpty(currentSpotifyInfo.Album))
+                        {
+                            spotifyInfo.TypeInfo += $" from {currentSpotifyInfo.Album}";
+                        }
+                        
+                        DetectedCodes.Add(spotifyInfo);
+                        Debug.WriteLine($"[OSCQR Runtime View] Added Spotify code: {spotifyInfo.DisplayText}");
+                    }
+                    
+                    OnPropertyChanged(nameof(DetectedCodes));
                 });
             }
 
@@ -105,6 +152,27 @@ namespace YeusepesModules.OSCQR.UI
                 }
             }
         }
+    }
+
+    public class StringToVisibilityConverter : IValueConverter
+    {
+        public object Convert(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+        {
+            return string.IsNullOrEmpty(value as string) ? Visibility.Collapsed : Visibility.Visible;
+        }
+
+        public object ConvertBack(object value, Type targetType, object parameter, System.Globalization.CultureInfo culture)
+        {
+            throw new NotImplementedException();
+        }
+    }
+
+    public class DetectedCodeInfo
+    {
+        public string DisplayText { get; set; }
+        public string TypeInfo { get; set; }
+        public string Url { get; set; }
+        public bool HasTypeInfo { get; set; }
     }
 }
 
