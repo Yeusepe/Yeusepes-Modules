@@ -66,6 +66,8 @@ namespace YeusepesModules.SPOTIOSC
             Error,
             Touching,
             Play,
+            CurrentSong,
+            CurrentPlaylist,
             Pause,
             NextTrack,
             PreviousTrack,
@@ -158,6 +160,14 @@ namespace YeusepesModules.SPOTIOSC
         private string _lastRepeat = "off";
         private int _lastVolume = -1;
 
+        // Track playing state for OSC endpoint
+        private string _currentPlayingTrackUri = string.Empty;
+        private bool _wasPlayingLastUpdate = false;
+        
+        // Playlist/context playing state for OSC endpoint
+        private string _currentPlayingContextUri = string.Empty;
+        private bool _wasPlayingFromContextLastUpdate = false;
+
 
 
         protected override void OnPreLoad()
@@ -176,8 +186,8 @@ namespace YeusepesModules.SPOTIOSC
             {
                 Log = message => Log(message),
                 LogDebug = message => LogDebug(message),
-                FindParameter = async (parameterEnum) => await FindParameter(parameterEnum),
-                FindParameterByString = (parameter) => FindParameter(parameter),
+                FindParameter = async (parameterEnum) => (object?)await FindParameter(parameterEnum),
+                FindParameterByString = async (parameter) => (object?)await FindParameter(parameter),
                 ScreenUtilities = screenUtilities
             };
 
@@ -226,6 +236,21 @@ namespace YeusepesModules.SPOTIOSC
               "Set to true to resume playback, or append /<spotify:uri> to play that URI."
             );
 
+            RegisterParameter<bool>(
+              SpotiParameters.CurrentSong,
+              "SpotiOSC/CurrentSong/*",
+              ParameterMode.Write,
+              "Current Song [Track URI]",
+              "Outputs true when a song with the given track URI is playing, false when it stops."
+            );
+
+            RegisterParameter<bool>(
+              SpotiParameters.CurrentPlaylist,
+              "SpotiOSC/CurrentPlaylist/*",
+              ParameterMode.Write,
+              "Current Playlist [Context URI]",
+              "Outputs true when playing from a playlist/album/context with the given URI, false when it changes or stops."
+            );
 
             RegisterParameter<bool>(SpotiParameters.Pause, "SpotiOSC/Pause", ParameterMode.ReadWrite, "Pause", "Pauses playback.");
             RegisterParameter<bool>(SpotiParameters.NextTrack, "SpotiOSC/NextTrack", ParameterMode.ReadWrite, "Next Track", "Skips to the next track.");
@@ -825,6 +850,22 @@ namespace YeusepesModules.SPOTIOSC
                     _processedEventKeys.Clear();
                 }
 
+                // Send false to current playing track on module stop
+                if (!string.IsNullOrEmpty(_currentPlayingTrackUri) && _wasPlayingLastUpdate)
+                {
+                    SendCurrentSongParameter(_currentPlayingTrackUri, false);
+                    _currentPlayingTrackUri = string.Empty;
+                    _wasPlayingLastUpdate = false;
+                }
+
+                // Send false to current playing context on module stop
+                if (!string.IsNullOrEmpty(_currentPlayingContextUri) && _wasPlayingFromContextLastUpdate)
+                {
+                    SendCurrentPlaylistParameter(_currentPlayingContextUri, false);
+                    _currentPlayingContextUri = string.Empty;
+                    _wasPlayingFromContextLastUpdate = false;
+                }
+
                 // Reset Spotify utilities and request context
                 LogDebug("Resetting Spotify utilities and context...");
                 spotifyUtilities = null;
@@ -1153,6 +1194,7 @@ namespace YeusepesModules.SPOTIOSC
                 {
                     ExtractPlaybackState(state);
                     ExtractTrackDetails(state);
+                    UpdateCurrentSongParameter();
                 }
             }
         }
@@ -1752,6 +1794,138 @@ namespace YeusepesModules.SPOTIOSC
                     await Task.Delay(100); // Small delay to ensure the trigger is processed
                     SendParameter(SpotiParameters.Error, false);
                 });
+            }
+        }
+
+        // Helper method to send CurrentSong parameter with dynamic track URI
+        private void SendCurrentSongParameter(string trackUri, bool value)
+        {
+            try
+            {
+                SendParameter($"SpotiOSC/CurrentSong/{trackUri}", value);
+                LogDebug($"Sent CurrentSong/{trackUri} = {value}");
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Failed to send CurrentSong parameter: {ex.Message}");
+            }
+        }
+
+        // Helper method to send CurrentPlaylist parameter with dynamic context URI
+        private void SendCurrentPlaylistParameter(string contextUri, bool value)
+        {
+            try
+            {
+                SendParameter($"SpotiOSC/CurrentPlaylist/{contextUri}", value);
+                LogDebug($"Sent CurrentPlaylist/{contextUri} = {value}");
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Failed to send CurrentPlaylist parameter: {ex.Message}");
+            }
+        }
+
+        // Updates the CurrentSong parameter based on current track URI and playing state
+        private void UpdateCurrentSongParameter()
+        {
+            string currentTrackUri = spotifyRequestContext.TrackUri ?? string.Empty;
+            bool currentlyPlaying = spotifyRequestContext.IsPlaying;
+
+            // Case 1: Track changed while playing
+            if (currentlyPlaying && !string.IsNullOrEmpty(currentTrackUri) && currentTrackUri != _currentPlayingTrackUri)
+            {
+                // Send false to old track
+                if (!string.IsNullOrEmpty(_currentPlayingTrackUri))
+                {
+                    SendCurrentSongParameter(_currentPlayingTrackUri, false);
+                }
+                
+                // Send true to new track
+                SendCurrentSongParameter(currentTrackUri, true);
+                _currentPlayingTrackUri = currentTrackUri;
+                _wasPlayingLastUpdate = true;
+            }
+            // Case 2: Same track, but play state changed from paused to playing
+            else if (currentlyPlaying && !string.IsNullOrEmpty(currentTrackUri) && currentTrackUri == _currentPlayingTrackUri && !_wasPlayingLastUpdate)
+            {
+                SendCurrentSongParameter(currentTrackUri, true);
+                _wasPlayingLastUpdate = true;
+            }
+            // Case 3: Playback paused or stopped
+            else if (!currentlyPlaying && _wasPlayingLastUpdate && !string.IsNullOrEmpty(_currentPlayingTrackUri))
+            {
+                SendCurrentSongParameter(_currentPlayingTrackUri, false);
+                _wasPlayingLastUpdate = false;
+            }
+            // Case 4: Track changed while paused (edge case)
+            else if (!currentlyPlaying && !string.IsNullOrEmpty(currentTrackUri) && currentTrackUri != _currentPlayingTrackUri && !string.IsNullOrEmpty(_currentPlayingTrackUri))
+            {
+                // Send false to old track if we were tracking it
+                if (_wasPlayingLastUpdate)
+                {
+                    SendCurrentSongParameter(_currentPlayingTrackUri, false);
+                    _wasPlayingLastUpdate = false;
+                }
+                _currentPlayingTrackUri = currentTrackUri;
+            }
+            
+            // Update playlist/context parameter
+            UpdateCurrentPlaylistParameter();
+        }
+        
+        // Updates the CurrentPlaylist parameter based on current context URI and playing state
+        private void UpdateCurrentPlaylistParameter()
+        {
+            string currentContextUri = spotifyRequestContext.ContextUri ?? string.Empty;
+            bool currentlyPlaying = spotifyRequestContext.IsPlaying;
+
+            // Case 1: Context changed while playing
+            if (currentlyPlaying && !string.IsNullOrEmpty(currentContextUri) && currentContextUri != _currentPlayingContextUri)
+            {
+                // Send false to old context
+                if (!string.IsNullOrEmpty(_currentPlayingContextUri))
+                {
+                    SendCurrentPlaylistParameter(_currentPlayingContextUri, false);
+                }
+                
+                // Send true to new context
+                SendCurrentPlaylistParameter(currentContextUri, true);
+                _currentPlayingContextUri = currentContextUri;
+                _wasPlayingFromContextLastUpdate = true;
+            }
+            // Case 2: Same context, but play state changed from paused to playing
+            else if (currentlyPlaying && !string.IsNullOrEmpty(currentContextUri) && currentContextUri == _currentPlayingContextUri && !_wasPlayingFromContextLastUpdate)
+            {
+                SendCurrentPlaylistParameter(currentContextUri, true);
+                _wasPlayingFromContextLastUpdate = true;
+            }
+            // Case 3: Playback paused or stopped
+            else if (!currentlyPlaying && _wasPlayingFromContextLastUpdate && !string.IsNullOrEmpty(_currentPlayingContextUri))
+            {
+                SendCurrentPlaylistParameter(_currentPlayingContextUri, false);
+                _wasPlayingFromContextLastUpdate = false;
+            }
+            // Case 4: Context changed while paused (edge case)
+            else if (!currentlyPlaying && !string.IsNullOrEmpty(currentContextUri) && currentContextUri != _currentPlayingContextUri && !string.IsNullOrEmpty(_currentPlayingContextUri))
+            {
+                // Send false to old context if we were tracking it
+                if (_wasPlayingFromContextLastUpdate)
+                {
+                    SendCurrentPlaylistParameter(_currentPlayingContextUri, false);
+                    _wasPlayingFromContextLastUpdate = false;
+                }
+                _currentPlayingContextUri = currentContextUri;
+            }
+            // Case 5: Context was removed (playing single track/queue with no context)
+            else if (string.IsNullOrEmpty(currentContextUri) && !string.IsNullOrEmpty(_currentPlayingContextUri))
+            {
+                // Send false to old context
+                if (_wasPlayingFromContextLastUpdate)
+                {
+                    SendCurrentPlaylistParameter(_currentPlayingContextUri, false);
+                    _wasPlayingFromContextLastUpdate = false;
+                }
+                _currentPlayingContextUri = string.Empty;
             }
         }
 
