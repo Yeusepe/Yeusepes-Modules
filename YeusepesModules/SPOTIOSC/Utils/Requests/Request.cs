@@ -590,6 +590,28 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
             }
         }
 
+        private string _jamShortCode;
+        public string JamShortCode
+        {
+            get => _jamShortCode;
+            set
+            {
+                _jamShortCode = value;
+                OnPropertyChanged();
+            }
+        }
+
+        private bool _isJamOwner;
+        public bool IsJamOwner
+        {
+            get => _isJamOwner;
+            set
+            {
+                _isJamOwner = value;
+                OnPropertyChanged();
+            }
+        }
+
         public bool IsLocal { get; internal set; }        
 
         public void UpdateSingleColor()

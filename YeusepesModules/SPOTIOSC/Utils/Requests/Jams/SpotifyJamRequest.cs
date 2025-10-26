@@ -69,12 +69,20 @@ namespace YeusepesModules.SPOTIOSC.Utils
                 {
                     _shareableUrl = shareableUrlElement.GetString();
                     utilities.LogDebug($"Join through this URL: {_shareableUrl}");
+                    
+                    // Extract short code from URL (e.g., "M8CppzmmNRb" from "https://spotify.link/M8CppzmmNRb")
+                    if (!string.IsNullOrEmpty(_shareableUrl) && _shareableUrl.Contains("/"))
+                    {
+                        context.JamShortCode = _shareableUrl.Split('/').Last();
+                        utilities.LogDebug($"Extracted short code: {context.JamShortCode}");
+                    }
                 }
 
                 if (sessionData.TryGetProperty("active", out JsonElement activeElement))
                 {
                     _isInJam = activeElement.GetBoolean();
                     context.IsInJam = _isInJam;
+                    context.IsJamOwner = true;
                     utilities.SendParameter(SpotiOSC.SpotiParameters.InAJam, true);
                     utilities.SendParameter(SpotiOSC.SpotiParameters.IsJamOwner, true);
                     utilities.LogDebug($"Is in Jam: {_isInJam}");
@@ -102,6 +110,7 @@ namespace YeusepesModules.SPOTIOSC.Utils
             utilities.LogDebug("Joining the current jam...");
             _isInJam = true;
             context.IsInJam = _isInJam;
+            context.IsJamOwner = false;
             utilities.SendParameter(SpotiOSC.SpotiParameters.InAJam, true);
             utilities.SendParameter(SpotiOSC.SpotiParameters.IsJamOwner, false);
             utilities.LogDebug("Successfully joined the jam.");
@@ -112,8 +121,12 @@ namespace YeusepesModules.SPOTIOSC.Utils
             utilities.LogDebug("Leaving the current jam...");
             _currentSessionId = null;
             _joinSessionToken = null;
+            _shareableUrl = null;
             _isInJam = false;
             context.IsInJam = _isInJam;
+            context.IsJamOwner = false;
+            context.JamShortCode = null;
+            context.JamOwnerName = null;
             utilities.SendParameter(SpotiOSC.SpotiParameters.InAJam, false);
             utilities.SendParameter(SpotiOSC.SpotiParameters.IsJamOwner, false);
             utilities.SendParameter(SpotiOSC.SpotiParameters.WantJam, false);
@@ -173,8 +186,12 @@ namespace YeusepesModules.SPOTIOSC.Utils
                 utilities.LogDebug("Successfully left the Spotify Jam session.");
                 utilities.SendParameter(SpotiOSC.SpotiParameters.InAJam, false);
                 _currentSessionId = null;
+                _shareableUrl = null;
                 _isInJam = false;
                 context.IsInJam = _isInJam;
+                context.IsJamOwner = false;
+                context.JamShortCode = null;
+                context.JamOwnerName = null;
 
                 return true;
             }

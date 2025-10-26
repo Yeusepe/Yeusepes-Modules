@@ -1,4 +1,5 @@
 ﻿using System.Security;
+using System.Security.Cryptography;
 using System.Net;
 using VRCOSC.App.SDK.Modules;
 using YeusepesModules.SPOTIOSC.Credentials;
@@ -72,9 +73,9 @@ namespace YeusepesModules.SPOTIOSC
             NextTrack,
             PreviousTrack,
 
+
             // Playback state (from root level)
-            ShuffleEnabled,         // from "shuffle_state"
-            SmartShuffle,           // from "smart_shuffle"
+            ShuffleMode,            // mapped from shuffle_state + smart_shuffle: off=0, shuffle=1, smart_shuffle=2
             RepeatMode,             // mapped from "repeat_state": off=0, track=1, context=2
             Timestamp,              // from "timestamp" (modulo conversion to int)
             PlaybackPosition,       // from "progress_ms"
@@ -265,8 +266,7 @@ namespace YeusepesModules.SPOTIOSC
             );
 
             // Playback state (root)
-            RegisterParameter<bool>(SpotiParameters.ShuffleEnabled, "SpotiOSC/ShuffleEnabled", ParameterMode.ReadWrite, "Shuffle", "Shuffle state.");
-            RegisterParameter<bool>(SpotiParameters.SmartShuffle, "SpotiOSC/SmartShuffle", ParameterMode.ReadWrite, "Smart Shuffle", "Smart shuffle state.");
+            RegisterParameter<int>(SpotiParameters.ShuffleMode, "SpotiOSC/ShuffleMode", ParameterMode.ReadWrite, "Shuffle Mode (Mapped)", "Mapped shuffle state: off=0, shuffle=1, smart_shuffle=2.");
             RegisterParameter<int>(SpotiParameters.RepeatMode, "SpotiOSC/RepeatMode", ParameterMode.ReadWrite, "Repeat Mode (Mapped)", "Mapped repeat state: off=0, track=1, context=2.");
             RegisterParameter<int>(SpotiParameters.Timestamp, "SpotiOSC/Timestamp", ParameterMode.ReadWrite, "Timestamp", "Playback timestamp.");
             RegisterParameter<int>(SpotiParameters.PlaybackPosition, "SpotiOSC/PlaybackPosition", ParameterMode.ReadWrite, "Playback Progress (ms)", "Playback progress in ms.");
@@ -395,6 +395,13 @@ namespace YeusepesModules.SPOTIOSC
 
             // --- Jam-related variable ---
             var inAJamVar = CreateVariable<bool>("InAJam", "In a Jam");
+            var jamShortCodeVar = CreateVariable<string>("JamShortCode", "Jam Short Code");
+            var jamOwnerNameVar = CreateVariable<string>("JamOwnerName", "Jam Owner Name");
+            var jamParticipantCountVar = CreateVariable<int>("JamParticipantCount", "Jam Participant Count");
+            var jamMaxMemberCountVar = CreateVariable<int>("JamMaxMemberCount", "Jam Max Member Count");
+            var sessionIsOwnerVar = CreateVariable<bool>("SessionIsOwner", "Session Is Owner");
+            var sessionIsListeningVar = CreateVariable<bool>("SessionIsListening", "Session Is Listening");
+            var sessionIsControllingVar = CreateVariable<bool>("SessionIsControlling", "Session Is Controlling");
 
             // --- Audio Features variables ---
             var danceabilityVar = CreateVariable<float>("Danceability", "Danceability");
@@ -538,7 +545,6 @@ namespace YeusepesModules.SPOTIOSC
 
         protected override void OnRegisteredParameterReceived(RegisteredParameter parameter)
         {
-
             try
             {
                 if (parameter.Lookup is EncodingParameter encodingParameter)
@@ -766,14 +772,36 @@ namespace YeusepesModules.SPOTIOSC
                 case SpotiParameters.RepeatMode
                   when parameter.GetValue<int>() is var mode:
                     {
-                        // map your int → Spotify state
-                        var state = mode switch
+                        LogDebug($"Setting repeat mode to: {mode}");
+                        _ = Task.Run(async () =>
                         {
-                            1 => PlayerSetRepeatRequest.State.Track,
-                            2 => PlayerSetRepeatRequest.State.Context,
-                            _ => PlayerSetRepeatRequest.State.Off
-                        };
-                        Do(svc => svc.SetRepeatAsync(state, spotifyRequestContext.DeviceId));
+                            try
+                            {
+                                await SetRepeatModeAsync(mode);
+                            }
+                            catch (Exception ex)
+                            {
+                                LogDebug($"Error setting repeat mode: {ex.Message}");
+                            }
+                        });
+                    }
+                    break;
+
+                case SpotiParameters.ShuffleMode
+                  when parameter.GetValue<int>() is var shuffleMode:
+                    {
+                        LogDebug($"Setting shuffle mode to: {shuffleMode}");
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await SetShuffleModeAsync(shuffleMode);
+                            }
+                            catch (Exception ex)
+                            {
+                                LogDebug($"Error setting shuffle mode: {ex.Message}");
+                            }
+                        });
                     }
                     break;
 
@@ -1030,6 +1058,7 @@ namespace YeusepesModules.SPOTIOSC
                 }
 
                 SendParameter(SpotiParameters.IsJamOwner, isCurrentUserOwner);
+                spotifyRequestContext.IsJamOwner = isCurrentUserOwner;
 
                 LogDebug($"Updated Jam Owner Status: {isCurrentUserOwner}");
             }
@@ -1058,7 +1087,10 @@ namespace YeusepesModules.SPOTIOSC
                 {
                     string joinSessionUri = joinSessionUriElement.GetString();
                     LogDebug($"Extracted join session URI: {joinSessionUri}");
-                    SpotifyJamRequests._shareableUrl = SpotifyJamRequests.GenerateShareableUrlAsync(joinSessionUri, spotifyRequestContext, spotifyUtilities).Result;
+                    string shortCode = SpotifyJamRequests.GenerateShareableUrlAsync(joinSessionUri, spotifyRequestContext, spotifyUtilities).Result;
+                    SpotifyJamRequests._shareableUrl = $"https://spotify.link/{shortCode}";
+                    spotifyRequestContext.JamShortCode = shortCode;
+                    LogDebug($"Generated short code: {shortCode}");
                 }
                 if (session.TryGetProperty("is_listening", out JsonElement isListening))
                 {
@@ -1224,19 +1256,30 @@ namespace YeusepesModules.SPOTIOSC
             }
 
             // --- Shuffle and Smart Shuffle ---
+            bool shuffleEnabled = false;
+            bool smartShuffle = false;
+            
             if (state.TryGetProperty("shuffle_state", out JsonElement shuffle))
             {
                 spotifyRequestContext.ShuffleState = shuffle.GetBoolean();
-                SetParameterSafe(SpotiParameters.ShuffleEnabled, state.GetProperty("shuffle_state").GetBoolean());
+                shuffleEnabled = shuffle.GetBoolean();
                 LogDebug($"Shuffle state: {spotifyRequestContext.ShuffleState}");
-
             }
-            if (state.TryGetProperty("smart_shuffle", out JsonElement smartShuffle))
+            if (state.TryGetProperty("smart_shuffle", out JsonElement smartShuffleElem))
             {
-                spotifyRequestContext.SmartShuffle = smartShuffle.GetBoolean();
-                SetParameterSafe(SpotiParameters.SmartShuffle, state.GetProperty("smart_shuffle").GetBoolean());
+                spotifyRequestContext.SmartShuffle = smartShuffleElem.GetBoolean();
+                smartShuffle = smartShuffleElem.GetBoolean();
                 LogDebug($"Smart Shuffle state: {spotifyRequestContext.SmartShuffle}");                
             }
+            else
+            {
+                LogDebug("Smart Shuffle property not found in event state, defaulting to false");
+            }
+            
+            // Map shuffle states to integer mode: 0 = off, 1 = shuffle, 2 = smart shuffle
+            int shuffleMode = !shuffleEnabled ? 0 : (smartShuffle ? 2 : 1);
+            LogDebug($"Mapped shuffle mode: {shuffleMode} (shuffle={shuffleEnabled}, smart={smartShuffle})");
+            SetParameterSafe(SpotiParameters.ShuffleMode, shuffleMode);
 
             // --- Repeat state ---
             if (state.TryGetProperty("repeat_state", out JsonElement repeat))
@@ -2052,6 +2095,15 @@ namespace YeusepesModules.SPOTIOSC
             // Jam flag as variable
             SetVariableValue("InAJam", spotifyRequestContext.IsInJam);
 
+            // Jam-specific variables
+            SetVariableValue("JamShortCode", spotifyRequestContext.JamShortCode ?? string.Empty);
+            SetVariableValue("JamOwnerName", spotifyRequestContext.JamOwnerName ?? string.Empty);
+            SetVariableValue("JamParticipantCount", SpotifyJamRequests._participantCount);
+            SetVariableValue("JamMaxMemberCount", SpotifyJamRequests._maxMemberCount);
+            SetVariableValue("SessionIsOwner", spotifyRequestContext.IsJamOwner);
+            SetVariableValue("SessionIsListening", SpotifyJamRequests._isListening);
+            SetVariableValue("SessionIsControlling", SpotifyJamRequests._isControlling);
+
             // Audio Features
             SetVariableValue("Danceability", spotifyRequestContext.Danceability);
             SetVariableValue("Energy", spotifyRequestContext.Energy);
@@ -2089,6 +2141,179 @@ namespace YeusepesModules.SPOTIOSC
                     await Task.Delay(100); // Small delay to ensure the trigger is processed
                     SendParameter(SpotiParameters.Error, false);
                 });
+            }
+        }
+
+        private async Task SetShuffleModeAsync(int mode)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(spotifyRequestContext?.DeviceId))
+                {
+                    LogDebug("Cannot set shuffle mode: No active device");
+                    return;
+                }
+
+                string accessToken = CredentialManager.LoadAccessToken();
+                string clientToken = CredentialManager.LoadClientToken();
+                
+                if (string.IsNullOrEmpty(accessToken) || string.IsNullOrEmpty(clientToken))
+                {
+                    LogDebug("Cannot set shuffle mode: Missing tokens");
+                    return;
+                }
+
+                // Build the command URL using device IDs
+                // Device IDs are 40 characters long, so we need to generate one
+                string fromDeviceId;
+                using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+                {
+                    var bytes = new byte[20];
+                    rng.GetBytes(bytes);
+                    fromDeviceId = BitConverter.ToString(bytes).Replace("-", "").ToLowerInvariant();
+                }
+                string url = $"https://gue1-spclient.spotify.com/connect-state/v1/player/command/from/{fromDeviceId}/to/{spotifyRequestContext.DeviceId}";
+                
+                // Determine shuffle settings based on mode
+                bool shufflingContext = mode > 0;
+                string contextEnhancement = mode == 2 ? "RECOMMENDATION" : "NONE";
+
+                // Create the command payload
+                var commandPayload = new
+                {
+                    command = new
+                    {
+                        shuffling_context = shufflingContext,
+                        modes = new
+                        {
+                            context_enhancement = contextEnhancement
+                        },
+                        logging_params = new
+                        {
+                            page_instance_ids = new[] { Guid.NewGuid().ToString() },
+                            interaction_ids = new[] { Guid.NewGuid().ToString() },
+                            command_id = Guid.NewGuid().ToString("N")
+                        },
+                        endpoint = "set_options"
+                    }
+                };
+
+                var jsonPayload = System.Text.Json.JsonSerializer.Serialize(commandPayload);
+
+                using var handler = new System.Net.Http.HttpClientHandler();
+                using var client = new System.Net.Http.HttpClient(handler);
+                
+                client.DefaultRequestHeaders.Add("accept", "*/*");
+                client.DefaultRequestHeaders.Add("accept-language", "en-US,en;q=0.9");
+                client.DefaultRequestHeaders.Add("authorization", $"Bearer {accessToken}");
+                client.DefaultRequestHeaders.Add("client-token", clientToken);
+                client.DefaultRequestHeaders.Add("sec-ch-ua", "\"Google Chrome\";v=\"141\", \"Not?A_Brand\";v=\"8\", \"Chromium\";v=\"141\"");
+                client.DefaultRequestHeaders.Add("sec-ch-ua-mobile", "?0");
+                client.DefaultRequestHeaders.Add("sec-ch-ua-platform", "\"Windows\"");
+                client.DefaultRequestHeaders.Add("sec-fetch-dest", "empty");
+                client.DefaultRequestHeaders.Add("sec-fetch-mode", "cors");
+                client.DefaultRequestHeaders.Add("sec-fetch-site", "same-site");
+
+                var content = new System.Net.Http.StringContent(jsonPayload, System.Text.Encoding.UTF8, "application/json");
+                var response = await client.PostAsync(url, content);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    LogDebug($"Successfully set shuffle mode to {mode}");
+                }
+                else
+                {
+                    LogDebug($"Failed to set shuffle mode: {response.StatusCode}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Error setting shuffle mode: {ex.Message}");
+            }
+        }
+
+        private async Task SetRepeatModeAsync(int mode)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(spotifyRequestContext?.DeviceId))
+                {
+                    LogDebug("Cannot set repeat mode: No active device");
+                    return;
+                }
+
+                string accessToken = CredentialManager.LoadAccessToken();
+                string clientToken = CredentialManager.LoadClientToken();
+                
+                if (string.IsNullOrEmpty(accessToken) || string.IsNullOrEmpty(clientToken))
+                {
+                    LogDebug("Cannot set repeat mode: Missing tokens");
+                    return;
+                }
+
+                // Build the command URL using device IDs
+                string fromDeviceId;
+                using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+                {
+                    var bytes = new byte[20];
+                    rng.GetBytes(bytes);
+                    fromDeviceId = BitConverter.ToString(bytes).Replace("-", "").ToLowerInvariant();
+                }
+                string url = $"https://gue1-spclient.spotify.com/connect-state/v1/player/command/from/{fromDeviceId}/to/{spotifyRequestContext.DeviceId}";
+                
+                // Determine repeat settings based on mode
+                // Mode 0 (off): repeating_context=false, repeating_track=false
+                // Mode 1 (track): repeating_context=true, repeating_track=true
+                // Mode 2 (context): repeating_context=true, repeating_track=false
+                bool repeatingContext = mode > 0;
+                bool repeatingTrack = mode == 1;
+
+                // Create the command payload
+                var commandPayload = new
+                {
+                    command = new
+                    {
+                        repeating_context = repeatingContext,
+                        repeating_track = repeatingTrack,
+                        endpoint = "set_options",
+                        logging_params = new
+                        {
+                            command_id = Guid.NewGuid().ToString("N")
+                        }
+                    }
+                };
+
+                var jsonPayload = System.Text.Json.JsonSerializer.Serialize(commandPayload);
+
+                using var handler = new System.Net.Http.HttpClientHandler();
+                using var client = new System.Net.Http.HttpClient(handler);
+                
+                client.DefaultRequestHeaders.Add("accept", "*/*");
+                client.DefaultRequestHeaders.Add("accept-language", "en-US,en;q=0.9");
+                client.DefaultRequestHeaders.Add("authorization", $"Bearer {accessToken}");
+                client.DefaultRequestHeaders.Add("client-token", clientToken);
+                client.DefaultRequestHeaders.Add("sec-ch-ua", "\"Google Chrome\";v=\"141\", \"Not?A_Brand\";v=\"8\", \"Chromium\";v=\"141\"");
+                client.DefaultRequestHeaders.Add("sec-ch-ua-mobile", "?0");
+                client.DefaultRequestHeaders.Add("sec-ch-ua-platform", "\"Windows\"");
+                client.DefaultRequestHeaders.Add("sec-fetch-dest", "empty");
+                client.DefaultRequestHeaders.Add("sec-fetch-mode", "cors");
+                client.DefaultRequestHeaders.Add("sec-fetch-site", "same-site");
+
+                var content = new System.Net.Http.StringContent(jsonPayload, System.Text.Encoding.UTF8, "application/json");
+                var response = await client.PostAsync(url, content);
+
+                if (response.IsSuccessStatusCode)
+                {
+                    LogDebug($"Successfully set repeat mode to {mode}");
+                }
+                else
+                {
+                    LogDebug($"Failed to set repeat mode: {response.StatusCode}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Error setting repeat mode: {ex.Message}");
             }
         }
 

@@ -1,4 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -11,6 +14,7 @@ namespace YeusepesModules.SPOTIOSC.UI
         private string _accessToken;
         private string _clientToken;
         private string _apiAccessToken;
+        private string _spTToken;
 
         public AdvancedCredentials()
         {            
@@ -29,9 +33,13 @@ namespace YeusepesModules.SPOTIOSC.UI
                 _accessToken = CredentialManager.LoadAccessToken() ?? string.Empty;
                 _clientToken = CredentialManager.LoadClientToken() ?? string.Empty;
                 _apiAccessToken = CredentialManager.LoadApiAccessToken() ?? string.Empty;
+                _spTToken = CredentialManager.LoadSpTToken() ?? string.Empty;
+                
                 AccessTokenText.Text = new string('•', _accessToken.Length);
                 ClientTokenText.Text = new string('•', _clientToken.Length);
                 ApiAccessTokenText.Text = new string('•', _apiAccessToken.Length);
+                SpTTokenText.Text = new string('•', _spTToken.Length);
+                
                 Panel.Visibility = Visibility.Visible;
                 ArrowIcon.Text = "▲";
             }
@@ -46,11 +54,15 @@ namespace YeusepesModules.SPOTIOSC.UI
         private void ApiAccessTokenBorder_MouseEnter(object s, MouseEventArgs _) => 
             ApiAccessTokenText.Text = _apiAccessToken;
 
+        private void SpTTokenBorder_MouseEnter(object s, MouseEventArgs _) =>
+            SpTTokenText.Text = _spTToken;
+
         private void TokenBorder_MouseLeave(object s, MouseEventArgs _)
         {
             AccessTokenText.Text = new string('•', _accessToken.Length);
             ClientTokenText.Text = new string('•', _clientToken.Length);
             ApiAccessTokenText.Text = new string('•', _apiAccessToken.Length);
+            SpTTokenText.Text = new string('•', _spTToken.Length);
         }
 
         private void CopyAccessToken_Click(object s, RoutedEventArgs _)
@@ -64,6 +76,9 @@ namespace YeusepesModules.SPOTIOSC.UI
         }
 
         private void CopyApiAccessToken_Click(object s, RoutedEventArgs _) => CopyToClipboard(_apiAccessToken);
+
+        private void CopySpTToken_Click(object s, RoutedEventArgs _) => CopyToClipboard(_spTToken);
+
 
         private void CopyToClipboard(string text)
         {
@@ -85,5 +100,6 @@ namespace YeusepesModules.SPOTIOSC.UI
                 }
             });
         }
+
     }
 }
