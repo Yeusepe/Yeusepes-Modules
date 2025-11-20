@@ -51,6 +51,13 @@ namespace YeusepesModules.SPOTIOSC
 
         private CancellationTokenSource _cts = new CancellationTokenSource();
         private bool _getTrackFeaturesEnabled = false;
+        
+        // Continuous playback position tracking
+        private System.Timers.Timer _positionUpdateTimer;
+        private DateTime _lastPositionUpdateTime;
+        private int _lastKnownPositionMs;
+        private bool _isPlaying = false;
+        private int _trackDurationMs = 0;
 
         public enum SpotiSettings
         {
@@ -540,6 +547,10 @@ namespace YeusepesModules.SPOTIOSC
             SendParameter(SpotiParameters.GetTrackFeatures, false); // Initialize as disabled
 
             await decoder.OnModuleStart();
+            
+            // Initialize continuous position update timer
+            InitializePositionUpdateTimer();
+            
             return true;
         }
 
@@ -601,10 +612,17 @@ namespace YeusepesModules.SPOTIOSC
                 return;
             }
 
-            async void Do(Action<SpotifyApiService> work)
+            async void Do(Func<SpotifyApiService, Task> work)
             {
-                try { await Task.Yield(); work(_apiService); }
-                catch (Exception ex) { LogDebug($"Spotify API error: {ex.Message}"); }
+                try 
+                { 
+                    await Task.Yield(); 
+                    await work(_apiService); 
+                }
+                catch (Exception ex) 
+                { 
+                    LogDebug($"Spotify API error: {ex.Message}"); 
+                }
             }
 
             if (parameter.Lookup is SpotiParameters p && p == SpotiParameters.Play && parameter.GetValue<bool>())
@@ -759,15 +777,15 @@ namespace YeusepesModules.SPOTIOSC
                     break;
 
                 case SpotiParameters.Pause when parameter.GetValue<bool>():
-                    Do(svc => svc.PauseAsync(spotifyRequestContext.DeviceId));
+                    Do(async svc => await svc.PauseAsync(spotifyRequestContext.DeviceId));
                     break;
 
                 case SpotiParameters.NextTrack when parameter.GetValue<bool>():
-                    Do(svc => svc.NextTrackAsync());
+                    Do(async svc => await svc.NextTrackAsync());
                     break;
 
                 case SpotiParameters.PreviousTrack when parameter.GetValue<bool>():
-                    Do(svc => svc.PreviousTrackAsync());
+                    Do(async svc => await svc.PreviousTrackAsync());
                     break;
                 case SpotiParameters.RepeatMode
                   when parameter.GetValue<int>() is var mode:
@@ -865,6 +883,10 @@ namespace YeusepesModules.SPOTIOSC
                     _playerEventSubscriber = null;
                 }
 
+                // Stop continuous position update timer
+                LogDebug("Stopping position update timer...");
+                StopPositionUpdateTimer();
+
                 // Stop any active encoding/decoding processes
                 LogDebug("Stopping decoding process...");
                 StopDecodingProcess();
@@ -922,26 +944,26 @@ namespace YeusepesModules.SPOTIOSC
 
         private async Task<bool> ValidateAndFetchProfileAsync()
         {
-            LogDebug("Validating tokens and fetching profile data...");
-
-            string accessToken = CredentialManager.LoadAccessToken();
-            string clientToken = CredentialManager.LoadClientToken();
-
-            if (string.IsNullOrEmpty(accessToken) || string.IsNullOrEmpty(clientToken))
-            {
-                LogDebug("Tokens are missing. Attempting to fetch new tokens...");
-                if (!await RefreshTokensAsync())
-                {
-                    Log("Failed to fetch new tokens. Exiting.");
-                    return false;
-                }
-
-                accessToken = CredentialManager.LoadAccessToken();
-                clientToken = CredentialManager.LoadClientToken();
-            }
-
             try
             {
+                LogDebug("Validating tokens and fetching profile data...");
+
+                string accessToken = CredentialManager.LoadAccessToken();
+                string clientToken = CredentialManager.LoadClientToken();
+
+                if (string.IsNullOrEmpty(accessToken) || string.IsNullOrEmpty(clientToken))
+                {
+                    LogDebug("Tokens are missing. Attempting to fetch new tokens...");
+                    if (!await RefreshTokensAsync())
+                    {
+                        Log("Failed to fetch new tokens. Exiting.");
+                        return false;
+                    }
+
+                    accessToken = CredentialManager.LoadAccessToken();
+                    clientToken = CredentialManager.LoadClientToken();
+                }
+
                 bool isAuthorized = await ProfileAttributesRequest.FetchProfileAttributesAsync(
                     _httpClient, accessToken, clientToken, Log, LogDebug);
 
@@ -966,9 +988,20 @@ namespace YeusepesModules.SPOTIOSC
 
                 return isAuthorized;
             }
+            catch (OperationCanceledException)
+            {
+                LogDebug("Token validation was cancelled");
+                return false;
+            }
+            catch (TimeoutException ex)
+            {
+                LogDebug($"Token validation timed out: {ex.Message}");
+                return false;
+            }
             catch (Exception ex)
             {
                 LogDebug($"Error during token validation and profile fetch: {ex.Message}");
+                LogDebug($"Stack trace: {ex.StackTrace}");
                 return false;
             }
         }
@@ -979,7 +1012,22 @@ namespace YeusepesModules.SPOTIOSC
             try
             {
                 LogDebug("Attempting to refresh tokens...");
-                await CredentialManager.LoginAndCaptureCookiesAsync();
+                
+                // Add timeout to prevent hanging
+                using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+                
+                var loginTask = CredentialManager.LoginAndCaptureCookiesAsync();
+                var timeoutTask = Task.Delay(TimeSpan.FromMinutes(10), cts.Token);
+                
+                var completedTask = await Task.WhenAny(loginTask, timeoutTask);
+                
+                if (completedTask == timeoutTask)
+                {
+                    LogDebug("Token refresh timed out after 10 minutes");
+                    return false;
+                }
+                
+                await loginTask; // Ensure we await the actual task to catch any exceptions
 
                 var newAccessToken = CredentialManager.LoadAccessToken();                
                 var newClientToken = CredentialManager.LoadClientToken();
@@ -993,9 +1041,20 @@ namespace YeusepesModules.SPOTIOSC
                 LogDebug("Tokens refreshed successfully.");
                 return true;
             }
+            catch (OperationCanceledException)
+            {
+                LogDebug("Token refresh was cancelled");
+                return false;
+            }
+            catch (TimeoutException ex)
+            {
+                LogDebug($"Token refresh timed out: {ex.Message}");
+                return false;
+            }
             catch (Exception ex)
             {
                 LogDebug($"Error refreshing tokens: {ex.Message}");
+                LogDebug($"Stack trace: {ex.StackTrace}");
                 return false;
             }
         }
@@ -1297,9 +1356,24 @@ namespace YeusepesModules.SPOTIOSC
                 spotifyRequestContext.Timestamp = timestamp.GetInt64();
                 int ts = (int)(state.GetProperty("timestamp").GetInt64() % int.MaxValue);
                 SetParameterSafe(SpotiParameters.Timestamp, ts);
-                SetParameterSafe(SpotiParameters.PlaybackPosition, state.GetProperty("progress_ms").GetInt32());
-                SetParameterSafe(SpotiParameters.IsPlaying, state.GetProperty("is_playing").GetBoolean());
-                LogDebug($"Timestamp: {spotifyRequestContext.Timestamp}");                
+                
+                // Get playback state
+                bool isPlaying = state.GetProperty("is_playing").GetBoolean();
+                int progressMs = state.GetProperty("progress_ms").GetInt32();
+                SetParameterSafe(SpotiParameters.IsPlaying, isPlaying);
+                
+                // Get track duration for continuous updates
+                int trackDurationMs = 0;
+                if (state.TryGetProperty("item", out JsonElement item) && 
+                    item.TryGetProperty("duration_ms", out JsonElement duration))
+                {
+                    trackDurationMs = duration.GetInt32();
+                }
+                
+                // Update position tracking for continuous updates
+                UpdatePositionTracking(progressMs, isPlaying, trackDurationMs);
+                
+                LogDebug($"Timestamp: {spotifyRequestContext.Timestamp}, Progress: {progressMs}ms, Playing: {isPlaying}");                
             }
             if (state.TryGetProperty("progress_ms", out JsonElement progress))
             {
@@ -2316,6 +2390,100 @@ namespace YeusepesModules.SPOTIOSC
                 LogDebug($"Error setting repeat mode: {ex.Message}");
             }
         }
+
+        #region Continuous Position Updates
+
+        /// <summary>
+        /// Initializes the timer for continuous playback position updates
+        /// </summary>
+        private void InitializePositionUpdateTimer()
+        {
+            _positionUpdateTimer = new System.Timers.Timer(1); // 1 millisecond interval
+            _positionUpdateTimer.Elapsed += OnPositionUpdateTimerElapsed;
+            _positionUpdateTimer.AutoReset = true;
+            _positionUpdateTimer.Start();
+            
+            LogDebug("Continuous position update timer initialized");
+        }
+
+        /// <summary>
+        /// Stops and disposes the position update timer
+        /// </summary>
+        private void StopPositionUpdateTimer()
+        {
+            if (_positionUpdateTimer != null)
+            {
+                _positionUpdateTimer.Stop();
+                _positionUpdateTimer.Elapsed -= OnPositionUpdateTimerElapsed;
+                _positionUpdateTimer.Dispose();
+                _positionUpdateTimer = null;
+                
+                LogDebug("Position update timer stopped");
+            }
+        }
+
+        /// <summary>
+        /// Timer elapsed event handler for continuous position updates
+        /// </summary>
+        private void OnPositionUpdateTimerElapsed(object sender, System.Timers.ElapsedEventArgs e)
+        {
+            try
+            {
+                // Only update if we're playing and have a valid track duration
+                if (_isPlaying && _trackDurationMs > 0 && _lastKnownPositionMs >= 0)
+                {
+                    var now = DateTime.UtcNow;
+                    var timeSinceLastUpdate = now - _lastPositionUpdateTime;
+                    
+                    // Only update if enough time has passed (avoid excessive updates)
+                    if (timeSinceLastUpdate.TotalMilliseconds >= 1)
+                    {
+                        // Calculate new position based on elapsed time
+                        var elapsedMs = (int)timeSinceLastUpdate.TotalMilliseconds;
+                        var newPosition = _lastKnownPositionMs + elapsedMs;
+                        
+                        // Don't exceed track duration
+                        if (newPosition > _trackDurationMs)
+                        {
+                            newPosition = _trackDurationMs;
+                        }
+                        
+                        // Only update if position actually changed
+                        if (newPosition != _lastKnownPositionMs)
+                        {
+                            // Update the position parameter
+                            SetParameterSafe(SpotiParameters.PlaybackPosition, newPosition);
+                            
+                            // Update tracking variables
+                            _lastKnownPositionMs = newPosition;
+                            _lastPositionUpdateTime = now;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Error in position update timer: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Updates the position tracking variables when receiving new playback state
+        /// </summary>
+        private void UpdatePositionTracking(int progressMs, bool isPlaying, int durationMs)
+        {
+            _lastKnownPositionMs = progressMs;
+            _lastPositionUpdateTime = DateTime.UtcNow;
+            _isPlaying = isPlaying;
+            _trackDurationMs = durationMs;
+            
+            // Send the current position immediately
+            SetParameterSafe(SpotiParameters.PlaybackPosition, progressMs);
+            
+            LogDebug($"Position tracking updated - Progress: {progressMs}ms, Playing: {isPlaying}, Duration: {durationMs}ms");
+        }
+
+        #endregion
 
     }
 }

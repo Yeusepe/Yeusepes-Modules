@@ -1,5 +1,4 @@
-﻿using VRCOSC.App.SDK.Parameters;
-using YeusepesModules.Common.ScreenUtilities;
+﻿using YeusepesModules.Common.ScreenUtilities;
 
 namespace YeusepesModules.IDC.Encoder
 {
@@ -10,10 +9,10 @@ namespace YeusepesModules.IDC.Encoder
         public Action<string> LogDebug { get; set; }
 
         // Add a Func to accept the FindParameter method
-        public Func<Enum, Task<ReceivedParameter?>> FindParameter { get; set; }
+        public Func<Enum, Task<object?>> FindParameter { get; set; }
 
         // Add a Func to accept the FindParameter by string
-        public Func<string, Task<ReceivedParameter?>> FindParameterByString { get; set; }
+        public Func<string, Task<object?>> FindParameterByString { get; set; }
 
         public Func<Enum, string> GetSettingValue;
         public Action<Enum, string> SetSettingValue;

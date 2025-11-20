@@ -170,11 +170,47 @@ public class SpotifyApiService
 
     /// <summary> Skip to next track. </summary>
     public async Task NextTrackAsync()
-        => await _client.Player.SkipNext();
+    {
+        try
+        {
+            await _client.Player.SkipNext();
+        }
+        catch (APIUnauthorizedException)
+        {
+            await RefreshAndReinitializeAsync();
+            await _client.Player.SkipNext();
+        }
+        catch (APIException ex) when (ex.Message.Contains("Restriction violated"))
+        {
+            throw new Exception("Next track command failed: Spotify API restriction violated. This may be due to account limitations, device restrictions, or rate limiting.");
+        }
+        catch (APIException ex)
+        {
+            throw new Exception($"Spotify API error during next track: {ex.Message}");
+        }
+    }
 
     /// <summary> Skip to previous track. </summary>
     public async Task PreviousTrackAsync()
-        => await _client.Player.SkipPrevious();
+    {
+        try
+        {
+            await _client.Player.SkipPrevious();
+        }
+        catch (APIUnauthorizedException)
+        {
+            await RefreshAndReinitializeAsync();
+            await _client.Player.SkipPrevious();
+        }
+        catch (APIException ex) when (ex.Message.Contains("Restriction violated"))
+        {
+            throw new Exception("Previous track command failed: Spotify API restriction violated. This may be due to account limitations, device restrictions, or rate limiting.");
+        }
+        catch (APIException ex)
+        {
+            throw new Exception($"Spotify API error during previous track: {ex.Message}");
+        }
+    }
 
     /// <summary> Seek to a position (ms) in the currently playing track. </summary>
     public async Task SeekAsync(int positionMs, string deviceId = null)
