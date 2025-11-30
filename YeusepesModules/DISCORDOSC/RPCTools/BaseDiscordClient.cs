@@ -20,6 +20,7 @@ namespace DISCORDOSC.RPCTools
         // Connect to the IPC
         public void Connect(string pipeName)
         {
+            _pipeName = pipeName;
             _pipeClient = new NamedPipeClientStream(
                 serverName: ".",
                 pipeName: pipeName,
@@ -82,7 +83,10 @@ namespace DISCORDOSC.RPCTools
                     int responseLength = BitConverter.ToInt32(responseHeader, 4);
 
                     byte[] responseBytes = new byte[responseLength];
-                    _pipeClient.Read(responseBytes, 0, responseLength);
+                    int read = 0;
+                    while (read < responseLength)
+                        read += _pipeClient.Read(responseBytes, read, responseLength - read);
+                    responseJson = Encoding.UTF8.GetString(responseBytes);
                     Console.WriteLine("Response received: " + responseJson);
                     return responseJson;
                 }
@@ -109,21 +113,36 @@ namespace DISCORDOSC.RPCTools
                 throw new InvalidOperationException(
                     "Must call Connect(...) before sending commands.");
 
-            // 1) Serialize payload
-            string json = JsonSerializer.Serialize(payload);
-            byte[] body = Encoding.UTF8.GetBytes(json);
-
-            // 2) Build 8-byte header: [ op (4 bytes) | length (4 bytes) ]
-            byte[] header = BitConverter.GetBytes(op)
-                              .Concat(BitConverter.GetBytes(body.Length))
-                              .ToArray();
-
-            // 3) Atomically write header + body
-            lock (_writeLock)
+            try
             {
-                _pipeClient.Write(header, 0, header.Length);
-                _pipeClient.Write(body, 0, body.Length);
-                _pipeClient.Flush();
+                // 1) Serialize payload
+                string json = JsonSerializer.Serialize(payload);
+                byte[] body = Encoding.UTF8.GetBytes(json);
+
+                // 2) Build 8-byte header: [ op (4 bytes) | length (4 bytes) ]
+                byte[] header = BitConverter.GetBytes(op)
+                                  .Concat(BitConverter.GetBytes(body.Length))
+                                  .ToArray();
+
+                // 3) Atomically write header + body
+                lock (_writeLock)
+                {
+                    _pipeClient.Write(header, 0, header.Length);
+                    _pipeClient.Write(body, 0, body.Length);
+                    _pipeClient.Flush();
+                }
+            }
+            catch (IOException e)
+            {
+                if (e.Message.Contains("broken"))
+                {
+                    Console.WriteLine("Pipe broken in SendCommand, attempting to reconnect...");
+                    Reconnect();
+                }
+                else
+                {
+                    throw;
+                }
             }
         }
 
@@ -160,16 +179,45 @@ namespace DISCORDOSC.RPCTools
                         {
                             int read = 0;
                             while (read < length)
-                                read += _pipeClient.Read(body, read, length - read);
+                            {
+                                int bytesRead = _pipeClient.Read(body, read, length - read);
+                                if (bytesRead == 0) break;
+                                read += bytesRead;
+                            }
+                            if (read < length)
+                            {
+                                Console.WriteLine($"Incomplete read: got {read} of {length} bytes");
+                                break;
+                            }
                         }
 
                         // 3) Deserialize + dispatch
                         string json = Encoding.UTF8.GetString(body);
-                        var evt = JsonSerializer.Deserialize<JsonElement>(json);
-                        onEvent?.Invoke(evt);
+                        if (string.IsNullOrWhiteSpace(json))
+                        {
+                            Console.WriteLine("Received empty JSON payload");
+                            continue;
+                        }
+                        
+                        try
+                        {
+                            var evt = JsonSerializer.Deserialize<JsonElement>(json);
+                            onEvent?.Invoke(evt);
+                        }
+                        catch (JsonException ex)
+                        {
+                            Console.WriteLine($"Failed to parse JSON: {ex.Message}. Data: {json.Substring(0, Math.Min(100, json.Length))}");
+                        }
                     }
                 }
-                catch (IOException) { /* pipe broken, swallow or log */ }
+                catch (IOException ex)
+                {
+                    Console.WriteLine($"Pipe broken in StartListening: {ex.Message}");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Unexpected error in StartListening: {ex.Message}");
+                }
             }, _cts.Token);
         }
 
