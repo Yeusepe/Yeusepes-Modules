@@ -4,8 +4,6 @@ using System.Reflection;
 using System.Windows;
 using VRCOSC.App.SDK.Modules;
 using VRCOSC.App.UI.Core;
-using YeusepesModules.Common.ScreenUtilities;
-using YeusepesModules.IDC; // For IManagedWindow
 
 namespace YeusepesModules.SPOTIOSC.UI
 {
@@ -33,11 +31,6 @@ namespace YeusepesModules.SPOTIOSC.UI
             var customSetting = _module.GetSetting(SpotiOSC.SpotiSettings.SignInButton);
             var signInControl = new SignIn(_module, customSetting);
             MainGrid.Children.Insert(0, signInControl);
-            _module.screenUtilities.AttachSelector(ScreenSelector);
-            // In SignInWindow.SourceInitialized or similar:
-            var decoderControl = new DecoderToleranceControl();
-            decoderControl.AttachDependencies(_module.encodingUtilities);
-            MainGrid.Children.Add(decoderControl);
 
             // inside SignInWindow_SourceInitialized(...)
             var advancedCreds = new AdvancedCredentials();
@@ -53,10 +46,5 @@ namespace YeusepesModules.SPOTIOSC.UI
 
         // IManagedWindow implementation.
         public object GetComparer() => _comparer;
-
-        private void ScreenSelector_Loaded(object sender, RoutedEventArgs e)
-        {
-
-        }
     }
 }

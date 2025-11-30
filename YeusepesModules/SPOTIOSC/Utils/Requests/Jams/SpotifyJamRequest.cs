@@ -7,9 +7,7 @@ using System.Security;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using YeusepesModules.IDC.Encoder;
 using YeusepesModules.SPOTIOSC.Credentials;
 using YeusepesModules.SPOTIOSC.Utils.Requests;
 using static YeusepesModules.SPOTIOSC.SpotiOSC;
@@ -86,6 +84,11 @@ namespace YeusepesModules.SPOTIOSC.Utils
                     utilities.SendParameter(SpotiOSC.SpotiParameters.InAJam, true);
                     utilities.SendParameter(SpotiOSC.SpotiParameters.IsJamOwner, true);
                     utilities.LogDebug($"Is in Jam: {_isInJam}");
+                }
+
+                if (!string.IsNullOrEmpty(_joinSessionToken))
+                {
+                    utilities.LogDebug($"Jam created with join session token: {_joinSessionToken}. Caller should register with syncopation server.");
                 }
 
                 return true;
@@ -214,30 +217,27 @@ namespace YeusepesModules.SPOTIOSC.Utils
         {
             try
             {
-                // Update current playback state to get active device ID
                 await SpotifyRequest.ExtractCurrentlyPlayingState(context, utilities);
                 string deviceId = context.DeviceId;
+                
                 if (string.IsNullOrEmpty(deviceId))
                 {
                     utilities.LogDebug("Failed to find an active device. Cannot join Spotify Jam.");
                     return false;
                 }
 
-                // Construct URL with query parameters
                 string joinJamUrl = $"https://gue1-spclient.spotify.com/social-connect/v2/sessions/join/{sessionId}" +
                                       $"?playback_control=listen_and_control" +
                                       $"&join_type=deeplinking" +
                                       $"&local_device_id={deviceId}";
-                utilities.LogDebug("Constructed Join URL: " + joinJamUrl);
 
-                // Create the request using POST with an empty JSON body
                 var genericRequest = new GenericSpotifyRequest(context.HttpClient, context.AccessToken, context.ClientToken);
+                
                 using (var request = genericRequest.CreateRequest(
                            HttpMethod.Post,
                            joinJamUrl,
                            new StringContent("{}", Encoding.UTF8, "application/json")))
                 {
-                    // Set headers to mimic the browser request from the cURL sample
                     request.Headers.Remove("User-Agent");
                     request.Headers.Add("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.109 Spotify/1.2.57.463 Safari/537.36");
                     request.Headers.Add("accept", "application/json");
@@ -253,14 +253,8 @@ namespace YeusepesModules.SPOTIOSC.Utils
                     request.Headers.Add("sec-fetch-site", "same-site");
                     request.Headers.Add("spotify-app-version", "1.2.57.463");
 
-                    utilities.LogDebug("Sending request to join Spotify Jam session...");
+                    await genericRequest.SendRequestAsync(request);
 
-                    // Use the generic request's SendRequestAsync to handle sending and token refresh logic.
-                    string responseBody = await genericRequest.SendRequestAsync(request);
-                    utilities.LogDebug("Response Content: " + responseBody);
-
-                    // Update the session state if the request was successful.
-                    utilities.LogDebug("Successfully joined the Spotify Jam session.");
                     _currentSessionId = sessionId;
                     _isInJam = true;
                     context.IsInJam = _isInJam;
@@ -312,131 +306,6 @@ namespace YeusepesModules.SPOTIOSC.Utils
             }
         }
 
-
-        public async static Task<string> GetJoinSessionIdAsync(string shareableCode, SpotifyUtilities utilities)
-        {
-            // Log raw details of the shareableCode
-            utilities.LogDebug("Raw shareableCode: " + shareableCode);
-            utilities.LogDebug("Raw shareableCode length: " + shareableCode.Length);
-            byte[] rawBytes = Encoding.UTF8.GetBytes(shareableCode);
-            utilities.LogDebug("Raw shareableCode bytes: " + BitConverter.ToString(rawBytes));
-
-            // Trim any potential whitespace or newline characters
-            shareableCode = shareableCode.Trim();
-            utilities.LogDebug("Trimmed shareableCode: " + shareableCode);
-            utilities.LogDebug("Trimmed shareableCode length: " + shareableCode.Length);
-            byte[] trimmedBytes = Encoding.UTF8.GetBytes(shareableCode);
-            utilities.LogDebug("Trimmed shareableCode bytes: " + BitConverter.ToString(trimmedBytes));
-
-            // Construct the initial URL
-            string url = $"https://spotify.link/{shareableCode}";
-            utilities.LogDebug("Constructed URL: " + url);
-
-            try
-            {
-                // Create an HttpClientHandler that disables automatic redirection
-                var handler = new HttpClientHandler
-                {
-                    AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
-                    AllowAutoRedirect = false
-                };
-
-                using (var httpClient = new HttpClient(handler))
-                {
-                    // Force HTTP/1.1 and disable Expect: 100-continue
-                    httpClient.DefaultRequestVersion = HttpVersion.Version11;
-                    httpClient.DefaultRequestHeaders.ExpectContinue = false;
-
-                    // Set headers to mimic Python's request
-                    httpClient.DefaultRequestHeaders.UserAgent.ParseAdd(
-                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) " +
-                        "AppleWebKit/537.36 (KHTML, like Gecko) " +
-                        "Chrome/134.0.0.0 Safari/537.36");
-                    httpClient.DefaultRequestHeaders.Accept.Clear();
-                    httpClient.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("*/*"));
-
-                    // Log the request headers
-                    utilities.LogDebug("Request Headers:");
-                    foreach (var header in httpClient.DefaultRequestHeaders)
-                    {
-                        utilities.LogDebug(header.Key + ": " + string.Join(", ", header.Value));
-                    }
-
-                    // Manually follow redirects
-                    string currentUrl = url;
-                    int redirectCount = 0;
-                    const int maxRedirects = 10;
-                    HttpResponseMessage response = null;
-
-                    while (redirectCount < maxRedirects)
-                    {
-                        utilities.LogDebug("Requesting URL: " + currentUrl);
-                        response = await httpClient.GetAsync(currentUrl);
-                        utilities.LogDebug("Response Status Code: " + response.StatusCode);
-
-                        // If the response is a redirect, update the URL and continue the loop
-                        if ((int)response.StatusCode >= 300 && (int)response.StatusCode < 400)
-                        {
-                            if (response.Headers.Location != null)
-                            {
-                                // Build an absolute URL if necessary
-                                currentUrl = response.Headers.Location.IsAbsoluteUri
-                                    ? response.Headers.Location.ToString()
-                                    : new Uri(new Uri(currentUrl), response.Headers.Location).ToString();
-                                utilities.LogDebug("Redirecting to: " + currentUrl);
-                                redirectCount++;
-                                continue;
-                            }
-                            else
-                            {
-                                utilities.LogDebug("Redirect received but no Location header found.");
-                                break;
-                            }
-                        }
-                        else
-                        {
-                            // Non-redirect response received; exit the loop.
-                            break;
-                        }
-                    }
-
-                    if (response == null || !response.IsSuccessStatusCode)
-                    {
-                        utilities.LogDebug("Failed to load the short link page.");
-                        return null;
-                    }
-
-                    // Read the final response content
-                    string responseContent = await response.Content.ReadAsStringAsync();
-                    utilities.LogDebug("Final Response Content:");
-                    utilities.LogDebug(responseContent);
-
-                    // Log a preview (first 1000 characters) of the HTML
-                    int previewLength = Math.Min(1000, responseContent.Length);
-                    utilities.LogDebug("HTML Response (first 1000 chars):");
-                    utilities.LogDebug(responseContent.Substring(0, previewLength));
-
-                    // Extract the share token using a regex
-                    Regex regex = new Regex(@"https:\/\/shareables\.scdn\.co\/publish\/socialsession\/([a-zA-Z0-9]+)");
-                    Match match = regex.Match(responseContent);
-
-                    if (!match.Success)
-                    {
-                        utilities.LogDebug("No share token found in the HTML.");
-                        return null;
-                    }
-                    string shareToken = match.Groups[1].Value;
-                    utilities.LogDebug("Extracted Share Token: " + shareToken);
-
-                    return shareToken;
-                }
-            }
-            catch (Exception ex)
-            {
-                utilities.LogDebug("An error occurred in GetJoinSessionIdAsync: " + ex.Message);
-                return null;
-            }
-        }
 
 
 

@@ -6,14 +6,12 @@ using YeusepesModules.SPOTIOSC.Credentials;
 using System.Net.Http;
 using VRCOSC.App.SDK.Parameters;
 using YeusepesModules.SPOTIOSC.Utils;
-using YeusepesModules.IDC.Encoder;
 using YeusepesModules.SPOTIOSC.UI;
 using YeusepesModules.SPOTIOSC.Utils.Requests.Profiles;
 using YeusepesModules.SPOTIOSC.Utils.Requests;
 using YeusepesModules.Common;
 using YeusepesModules.SPOTIOSC.Utils.Events;
 using System.Text.Json;
-using YeusepesModules.Common.ScreenUtilities;
 using VRCOSC.App.Settings;
 using SpotifyAPI.Web;
 
@@ -33,21 +31,32 @@ namespace YeusepesModules.SPOTIOSC
         private static HttpClient _httpClient = new HttpClient();
         public SpotifyRequestContext spotifyRequestContext;
         public SpotifyUtilities spotifyUtilities;
-        public EncodingUtilities encodingUtilities;
         private PlayerEventSubscriber _playerEventSubscriber;
         private SpotifyApiService _apiService;
 
 
-        private StringEncoder encoder;
-        private StringDecoder decoder;
         private bool isTouching = false;
+        
+        // Syncopation Server Communication
+        private string _syncopationInstanceId;
+        private string _melodyServerUrl = "https://melody.yucp.club/syncopation";
+        // private string _melodyServerUrl = "http://localhost:8000/syncopation";
+        private HttpClient _syncopationHttpClient;
+        private string _currentEphemeralWord1;
+        private string _currentEphemeralWord2;
+        private Dictionary<SpotiParameters, bool> _ephemeralWordValues = new Dictionary<SpotiParameters, bool>();
+        private bool _isProcessingEphemeralJoin = false;
+        private readonly object _ephemeralJoinLock = new object();
+        private DateTime _lastEphemeralCheckTime = DateTime.MinValue;
+        private readonly TimeSpan _ephemeralCheckThrottle = TimeSpan.FromSeconds(30);
+        private System.Net.WebSockets.ClientWebSocket _notificationWebSocket;
+        private System.Threading.CancellationTokenSource _notificationCancellationTokenSource;
+        private System.Threading.Tasks.Task _notificationTask;
 
         private HashSet<Enum> _activeParameterUpdates = new HashSet<Enum>();
 
         private readonly HashSet<string> _processedEventKeys = new();
         private readonly object _deduplicationLock = new();
-
-        public ScreenUtilities screenUtilities;
 
         private CancellationTokenSource _cts = new CancellationTokenSource();
         private bool _getTrackFeaturesEnabled = false;
@@ -62,7 +71,8 @@ namespace YeusepesModules.SPOTIOSC
         public enum SpotiSettings
         {
             SignInButton,
-            PopUpJam
+            PopUpJam,
+            MelodyServerUrl
         }
         public enum SpotiParameters
         {
@@ -129,6 +139,15 @@ namespace YeusepesModules.SPOTIOSC
             // URI Playback
             PlayUri,
 
+            // Syncopation Ephemeral Word Parameters
+            Allegro,
+            Cadence,
+            Groove,
+            Ritmo,
+            Metronome,
+            Encore,
+            Chorus,
+
             // Audio Features
             GetTrackFeatures,
             Danceability,
@@ -182,47 +201,24 @@ namespace YeusepesModules.SPOTIOSC
         {
             YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("libusb-1.0.dll", message => Log(message));
             YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("cvextern.dll", message => Log(message));
-            screenUtilities = ScreenUtilities.EnsureInitialized(
-                LogDebug,         // Logging delegate
-                GetSettingValue<String>,  // Function to retrieve settings
-                SetSettingValue,  // Function to save settings
-                CreateTextBox
-            );
-
-            /// ThreadPool.SetMinThreads(100, 100); // Set a higher minimum thread pool size
-            encodingUtilities = new EncodingUtilities
-            {
-                Log = message => Log(message),
-                LogDebug = message => LogDebug(message),
-                FindParameter = async (parameterEnum) => (object?)await FindParameter(parameterEnum),
-                FindParameterByString = async (parameter) => (object?)await FindParameter(parameter),
-                ScreenUtilities = screenUtilities
-            };
 
 
-            encoder = new StringEncoder(
-                    encodingUtilities,
-                    // Delegate signature: (Enum lookup, string name, string description, int defaultValue, int min, int max)
-                    (lookup, name, description, defaultValue) =>
-                    {
-                        // In this case, we already created the setting.
-                        // Optionally, if you need to update or recreate it, call:
-                        CreateTextBox(lookup, name, description, defaultValue);
-                    },
-                    SetSettingValue,
-                    GetSettingValue<String>
-                );
-
-            decoder = new StringDecoder(
-                encodingUtilities
-            );
+            _syncopationHttpClient = new HttpClient();
+            
+            // Initialize ephemeral word values dictionary
+            _ephemeralWordValues[SpotiParameters.Allegro] = false;
+            _ephemeralWordValues[SpotiParameters.Cadence] = false;
+            _ephemeralWordValues[SpotiParameters.Groove] = false;
+            _ephemeralWordValues[SpotiParameters.Ritmo] = false;
+            _ephemeralWordValues[SpotiParameters.Metronome] = false;
+            _ephemeralWordValues[SpotiParameters.Encore] = false;
+            _ephemeralWordValues[SpotiParameters.Chorus] = false;
 
             spotifyUtilities = new SpotifyUtilities
             {
                 Log = message => Log(message),
                 LogDebug = message => LogDebug(message),
                 SendParameter = (param, value) => SetParameterSafe(param, value),
-                Encoder = encoder
             };
 
             CredentialManager.SpotifyUtils = spotifyUtilities;
@@ -330,6 +326,14 @@ namespace YeusepesModules.SPOTIOSC
             RegisterParameter<float>(SpotiParameters.Tempo, "SpotiOSC/Tempo", ParameterMode.Write, "Tempo", "Overall estimated tempo in BPM.");
             RegisterParameter<int>(SpotiParameters.TimeSignature, "SpotiOSC/TimeSignature", ParameterMode.Write, "Time Signature", "Estimated time signature (3-7).");
 
+            RegisterParameter<bool>(SpotiParameters.Allegro, "SpotiOSC/allegro", ParameterMode.ReadWrite, "Allegro", "Ephemeral jam code word.");
+            RegisterParameter<bool>(SpotiParameters.Cadence, "SpotiOSC/cadence", ParameterMode.ReadWrite, "Cadence", "Ephemeral jam code word.");
+            RegisterParameter<bool>(SpotiParameters.Groove, "SpotiOSC/groove", ParameterMode.ReadWrite, "Groove", "Ephemeral jam code word.");
+            RegisterParameter<bool>(SpotiParameters.Ritmo, "SpotiOSC/ritmo", ParameterMode.ReadWrite, "Ritmo", "Ephemeral jam code word.");
+            RegisterParameter<bool>(SpotiParameters.Metronome, "SpotiOSC/metronome", ParameterMode.ReadWrite, "Metronome", "Ephemeral jam code word.");
+            RegisterParameter<bool>(SpotiParameters.Encore, "SpotiOSC/encore", ParameterMode.ReadWrite, "Encore", "Ephemeral jam code word.");
+            RegisterParameter<bool>(SpotiParameters.Chorus, "SpotiOSC/chorus", ParameterMode.ReadWrite, "Chorus", "Ephemeral jam code word.");
+
             #endregion
 
             #region Settings
@@ -344,19 +348,8 @@ namespace YeusepesModules.SPOTIOSC
                     true
                 )
             );
+            
             #endregion
-
-
-            LogDebug("Registering parameters...");
-            encoder.RegisterParameters((parameter, name, mode, title, description) =>
-            {
-                RegisterParameter<int>(parameter, name, mode, title, description);
-            }, (parameter, name, mode, title, description) =>
-            {
-                RegisterParameter<bool>(parameter, name, mode, title, description);
-            });
-
-            LogDebug("Initializing StringDecoder...");
 
             SetRuntimeView(typeof(NowPlayingRuntimeView));
             base.OnPreLoad();
@@ -495,12 +488,9 @@ namespace YeusepesModules.SPOTIOSC
             {
                 Log = message => Log(message),
                 LogDebug = message => LogDebug(message),
-                SendParameter = (param, value) => SetParameterSafe(param, value),
-                Encoder = encoder
+                SendParameter = (param, value) => SetParameterSafe(param, value)
             };
             CredentialManager.SpotifyUtils = spotifyUtilities;
-
-            encodingUtilities.IsDebug = SettingsManager.GetInstance().GetValue<bool>(VRCOSCSetting.EnableAppDebug);
 
             LogDebug("Starting Spotify Cookie Manager...");
 
@@ -516,6 +506,7 @@ namespace YeusepesModules.SPOTIOSC
 
             AccessToken = CredentialManager.AccessToken;
             ClientToken = CredentialManager.ClientToken;
+
 
             // Initialize SpotifyRequestContext
             await UseTokensSecurely(async (accessToken, clientToken) =>
@@ -546,7 +537,10 @@ namespace YeusepesModules.SPOTIOSC
             SendParameter(SpotiParameters.Error, false);
             SendParameter(SpotiParameters.GetTrackFeatures, false); // Initialize as disabled
 
-            await decoder.OnModuleStart();
+            await RegisterWithSyncopationServerAsync();
+            
+            // Start WebSocket notification listener
+            StartNotificationListener();
             
             // Initialize continuous position update timer
             InitializePositionUpdateTimer();
@@ -556,52 +550,17 @@ namespace YeusepesModules.SPOTIOSC
 
         protected override void OnRegisteredParameterReceived(RegisteredParameter parameter)
         {
-            try
-            {
-                if (parameter.Lookup is EncodingParameter encodingParameter)
-                {
-                    if (parameter.GetValue<bool>())
-                    {
-                        switch (encodingParameter)
-                        {
-                            case EncodingParameter.CharIn:
-                                // HandleCharIn(parameter.GetValue<int>());
-                                break;
-                            case EncodingParameter.Touching:
-                                if (parameter.GetValue<bool>())
-                                {
-                                    if (SpotifyJamRequests._isInJam && !string.IsNullOrEmpty(SpotifyJamRequests._joinSessionToken))
-                                    {
-                                        EncodeAndSendSessionId(SpotifyJamRequests._shareableUrl);
-                                    }
-                                }
-                                else
-                                {
-                                    LogDebug("Devices separated. Stopping decoding process.");
-                                    StopDecodingProcess();
-                                }
-                                break;
-                            case EncodingParameter.Ready:
-                                LogDebug("Decoder is ready to receive data.");
-                                SpotifyJamRequests._shareableUrl = decoder.StartDecode();
-                                LogDebug($"Decoding process started. Session ID: {SpotifyJamRequests._shareableUrl}");
-                                // Start the asynchronous join process.
-                                HandleJoinJam();
-                                break;
-
-                        }
-
-                    }
-                }
-            }
-
-            catch (System.Exception ex)
-            {
-            }
             // Ensure we are processing only relevant parameters
             if (parameter.Lookup is not SpotiParameters param)
             {
                 return;
+            }            
+            
+            if (IsEphemeralWordParameter(param))
+            {
+                bool value = parameter.GetValue<bool>();
+                _ephemeralWordValues[param] = value;
+                HandleEphemeralWordParameter(param, value);
             }
 
             // Prevent handling changes that originated from within the code
@@ -852,18 +811,498 @@ namespace YeusepesModules.SPOTIOSC
             }
         }
 
-        private void StopDecodingProcess()
+        private async Task RegisterWithSyncopationServerAsync()
         {
-            encoder.CancelEncoding();
-            LogDebug("Decoding process halted.");
+            try
+            {
+                if (string.IsNullOrEmpty(_melodyServerUrl) || _melodyServerUrl.Contains("your-melody-server"))
+                {
+                    LogDebug("Melody Server URL not configured. Syncopation features will be disabled.");
+                    return;
+                }
+
+                var request = new HttpRequestMessage(HttpMethod.Post, $"{_melodyServerUrl}/register");
+                var response = await _syncopationHttpClient.SendAsync(request);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    var result = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(content);
+                    if (result.TryGetProperty("instance_id", out var instanceIdElement))
+                    {
+                        _syncopationInstanceId = instanceIdElement.GetString();
+                        LogDebug($"Registered with syncopation server. Instance ID: {_syncopationInstanceId}");
+                    }
+                }
+                else
+                {
+                    LogDebug($"Failed to register with syncopation server: {response.StatusCode}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Error registering with syncopation server: {ex.Message}");
+            }
         }
 
-        private async void EncodeAndSendSessionId(string sessionId)
+        private async Task DeregisterFromSyncopationServerAsync()
         {
-            // Use the encoder to send the session ID
-            encoder.SendString(sessionId, true, (parameter, value) =>
+            try
             {
-                SendParameter(parameter, value);
+                if (string.IsNullOrEmpty(_syncopationInstanceId) || string.IsNullOrEmpty(_melodyServerUrl) || _melodyServerUrl.Contains("your-melody-server"))
+                {
+                    return;
+                }
+
+                var request = new HttpRequestMessage(HttpMethod.Delete, $"{_melodyServerUrl}/register/{_syncopationInstanceId}");
+                var response = await _syncopationHttpClient.SendAsync(request);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    LogDebug($"Deregistered from syncopation server. Instance ID: {_syncopationInstanceId}");
+                }
+                else
+                {
+                    LogDebug($"Failed to deregister from syncopation server: {response.StatusCode}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Error deregistering from syncopation server: {ex.Message}");
+            }
+        }
+
+        private async Task<(string word1, string word2)?> CreateSyncopationJamAsync(string sessionId)
+        {
+            try
+            {
+                if (string.IsNullOrEmpty(_syncopationInstanceId))
+                {
+                    LogDebug("Not registered with syncopation server. Cannot create jam code.");
+                    return null;
+                }
+
+                var payload = new
+                {
+                    instance_id = _syncopationInstanceId,
+                    session_id = sessionId
+                };
+
+                var json = System.Text.Json.JsonSerializer.Serialize(payload);
+                var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+                var request = new HttpRequestMessage(HttpMethod.Post, $"{_melodyServerUrl}/jam/create")
+                {
+                    Content = content
+                };
+
+                var response = await _syncopationHttpClient.SendAsync(request);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var responseContent = await response.Content.ReadAsStringAsync();
+                    var result = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(responseContent);
+                    
+                    if (result.TryGetProperty("word1", out var word1Element) && 
+                        result.TryGetProperty("word2", out var word2Element))
+                    {
+                        string word1 = word1Element.GetString();
+                        string word2 = word2Element.GetString();
+                        LogDebug($"Created ephemeral code: {word1} {word2}");
+                        return (word1, word2);
+                    }
+                }
+                else
+                {
+                    LogDebug($"Failed to create syncopation jam: {response.StatusCode}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Error creating syncopation jam: {ex.Message}");
+            }
+            return null;
+        }
+
+        private async Task<string> JoinSyncopationJamAsync(string key)
+        {
+            try
+            {
+                if (_syncopationHttpClient == null)
+                {
+                    return null;
+                }
+
+                var url = $"{_melodyServerUrl}/jam/join?key={Uri.EscapeDataString(key)}";
+                var request = new HttpRequestMessage(HttpMethod.Get, url);
+                var response = await _syncopationHttpClient.SendAsync(request);
+                
+                if (response.IsSuccessStatusCode)
+                {
+                    var content = await response.Content.ReadAsStringAsync();
+                    var result = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(content);
+                    
+                    if (result.TryGetProperty("session_id", out var sessionIdElement))
+                    {
+                        return sessionIdElement.GetString();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Error joining syncopation jam: {ex.Message}");
+            }
+            return null;
+        }
+
+        private void StartNotificationListener()
+        {
+            if (string.IsNullOrEmpty(_syncopationInstanceId) || string.IsNullOrEmpty(_melodyServerUrl) || _melodyServerUrl.Contains("your-melody-server"))
+            {
+                return;
+            }
+
+            _notificationCancellationTokenSource = new System.Threading.CancellationTokenSource();
+            _notificationTask = System.Threading.Tasks.Task.Run(async () =>
+            {
+                await ListenForNotifications(_notificationCancellationTokenSource.Token);
+            });
+        }
+
+        private void StopNotificationListener()
+        {
+            if (_notificationCancellationTokenSource != null)
+            {
+                _notificationCancellationTokenSource.Cancel();
+                _notificationCancellationTokenSource.Dispose();
+                _notificationCancellationTokenSource = null;
+            }
+
+            if (_notificationWebSocket != null)
+            {
+                try
+                {
+                    if (_notificationWebSocket.State == System.Net.WebSockets.WebSocketState.Open)
+                    {
+                        _notificationWebSocket.CloseAsync(
+                            System.Net.WebSockets.WebSocketCloseStatus.NormalClosure,
+                            "Module stopping",
+                            System.Threading.CancellationToken.None).Wait(TimeSpan.FromSeconds(2));
+                    }
+                }
+                catch { }
+                _notificationWebSocket?.Dispose();
+                _notificationWebSocket = null;
+            }
+            
+            if (_notificationTask != null)
+            {
+                try
+                {
+                    _notificationTask.Wait(TimeSpan.FromSeconds(2));
+                }
+                catch
+                {
+                    // Task may have already completed or been cancelled
+                }
+                _notificationTask = null;
+            }
+        }
+
+        private async System.Threading.Tasks.Task ListenForNotifications(System.Threading.CancellationToken cancellationToken)
+        {
+            int reconnectAttempts = 0;
+            while (!cancellationToken.IsCancellationRequested)
+            {
+                try
+                {
+                    if (string.IsNullOrEmpty(_syncopationInstanceId))
+                    {
+                        await System.Threading.Tasks.Task.Delay(5000, cancellationToken);
+                        continue;
+                    }
+
+                    var wsUrl = _melodyServerUrl.Replace("https://", "wss://").Replace("http://", "ws://");
+                    var uri = new System.Uri($"{wsUrl}/notify/{_syncopationInstanceId}");
+
+                    _notificationWebSocket = new System.Net.WebSockets.ClientWebSocket();
+                    await _notificationWebSocket.ConnectAsync(uri, cancellationToken);
+
+                    LogDebug("Connected to syncopation notification WebSocket");
+                    reconnectAttempts = 0; // Reset on successful connection
+
+                    var buffer = new byte[1024 * 4];
+                    while (_notificationWebSocket.State == System.Net.WebSockets.WebSocketState.Open && !cancellationToken.IsCancellationRequested)
+                    {
+                        try
+                        {
+                            // Use cancellation token with timeout to prevent hanging
+                            using (var timeoutCts = System.Threading.CancellationTokenSource.CreateLinkedTokenSource(cancellationToken))
+                            {
+                                timeoutCts.CancelAfter(TimeSpan.FromMinutes(2)); // 2 minute timeout
+                                
+                                var result = await _notificationWebSocket.ReceiveAsync(
+                                    new System.ArraySegment<byte>(buffer),
+                                    timeoutCts.Token);
+
+                                if (result.MessageType == System.Net.WebSockets.WebSocketMessageType.Text)
+                                {
+                                    var message = System.Text.Encoding.UTF8.GetString(buffer, 0, result.Count);
+                                    var jsonDoc = System.Text.Json.JsonDocument.Parse(message);
+                                    
+                                    if (jsonDoc.RootElement.TryGetProperty("type", out var typeElement))
+                                    {
+                                        string type = typeElement.GetString();
+                                        
+                                        if (type == "jam_joined")
+                                        {
+                                            LogDebug("Received notification: Someone joined the jam. Stopping parameter broadcast.");
+                                            
+                                            // Stop sending word parameters
+                                            if (!string.IsNullOrEmpty(_currentEphemeralWord1) && !string.IsNullOrEmpty(_currentEphemeralWord2))
+                                            {
+                                                _activeParameterUpdates.Add(GetParameterFromWordName(_currentEphemeralWord1));
+                                                _activeParameterUpdates.Add(GetParameterFromWordName(_currentEphemeralWord2));
+                                                
+                                                SetParameterSafe(GetParameterFromWordName(_currentEphemeralWord1), false);
+                                                SetParameterSafe(GetParameterFromWordName(_currentEphemeralWord2), false);
+                                                
+                                                _currentEphemeralWord1 = null;
+                                                _currentEphemeralWord2 = null;
+                                            }
+                                        }
+                                        else if (type == "ping")
+                                        {
+                                            // Server ping, respond with pong
+                                            var pongMessage = System.Text.Encoding.UTF8.GetBytes("{\"type\":\"pong\"}");
+                                            await _notificationWebSocket.SendAsync(
+                                                new System.ArraySegment<byte>(pongMessage),
+                                                System.Net.WebSockets.WebSocketMessageType.Text,
+                                                true,
+                                                cancellationToken);
+                                        }
+                                        else if (type == "pong")
+                                        {
+                                            // Keep-alive response
+                                        }
+                                    }
+                                }
+                                else if (result.MessageType == System.Net.WebSockets.WebSocketMessageType.Close)
+                                {
+                                    break;
+                                }
+                            }
+                        }
+                        catch (System.OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                        {
+                            // Timeout occurred, but connection is still alive - continue waiting
+                            continue;
+                        }
+                    }
+                }
+                catch (System.OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    LogDebug($"WebSocket error: {ex.Message}");
+                    
+                    // Clean up the broken connection
+                    if (_notificationWebSocket != null)
+                    {
+                        try
+                        {
+                            if (_notificationWebSocket.State == System.Net.WebSockets.WebSocketState.Open)
+                            {
+                                await _notificationWebSocket.CloseAsync(
+                                    System.Net.WebSockets.WebSocketCloseStatus.NormalClosure,
+                                    "Reconnecting",
+                                    System.Threading.CancellationToken.None);
+                            }
+                            _notificationWebSocket.Dispose();
+                        }
+                        catch { }
+                        _notificationWebSocket = null;
+                    }
+                    
+                    // Exponential backoff for reconnection (max 30 seconds)
+                    reconnectAttempts++;
+                    int delaySeconds = Math.Min(30, (int)Math.Pow(2, Math.Min(reconnectAttempts - 1, 4))); // 1s, 2s, 4s, 8s, 16s, then 30s max
+                    if (delaySeconds < 1) delaySeconds = 1;
+                    LogDebug($"WebSocket reconnecting in {delaySeconds} seconds (attempt {reconnectAttempts})");
+                    await System.Threading.Tasks.Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken);
+                }
+            }
+        }
+
+        private bool IsEphemeralWordParameter(SpotiParameters param)
+        {
+            return param == SpotiParameters.Allegro || param == SpotiParameters.Cadence ||
+                   param == SpotiParameters.Groove || param == SpotiParameters.Ritmo ||
+                   param == SpotiParameters.Metronome || param == SpotiParameters.Encore ||
+                   param == SpotiParameters.Chorus;
+        }
+
+        private string GetWordNameFromParameter(SpotiParameters param)
+        {
+            return param switch
+            {
+                SpotiParameters.Allegro => "allegro",
+                SpotiParameters.Cadence => "cadence",
+                SpotiParameters.Groove => "groove",
+                SpotiParameters.Ritmo => "ritmo",
+                SpotiParameters.Metronome => "metronome",
+                SpotiParameters.Encore => "encore",
+                SpotiParameters.Chorus => "chorus",
+                _ => null
+            };
+        }
+
+        private SpotiParameters GetParameterFromWordName(string wordName)
+        {
+            return wordName.ToLower() switch
+            {
+                "allegro" => SpotiParameters.Allegro,
+                "cadence" => SpotiParameters.Cadence,
+                "groove" => SpotiParameters.Groove,
+                "ritmo" => SpotiParameters.Ritmo,
+                "metronome" => SpotiParameters.Metronome,
+                "encore" => SpotiParameters.Encore,
+                "chorus" => SpotiParameters.Chorus,
+                _ => throw new ArgumentException($"Unknown word name: {wordName}")
+            };
+        }
+
+        private async void HandleEphemeralWordParameter(SpotiParameters param, bool value)
+        {
+            if (spotifyRequestContext?.IsInJam == true)
+            {
+                return;
+            }
+
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    // Throttle checks to once every 30 seconds
+                    lock (_ephemeralJoinLock)
+                    {
+                        if (DateTime.Now - _lastEphemeralCheckTime < _ephemeralCheckThrottle)
+                        {
+                            return;
+                        }
+                        if (_isProcessingEphemeralJoin)
+                        {
+                            return;
+                        }
+                        _lastEphemeralCheckTime = DateTime.Now;
+                    }
+                    
+                    await Task.Delay(50);
+                    
+                    lock (_ephemeralJoinLock)
+                    {
+                        if (_isProcessingEphemeralJoin)
+                        {
+                            return;
+                        }
+                    }
+                    
+                    var wordParams = new[]
+                    {
+                        (SpotiParameters.Allegro, "allegro"),
+                        (SpotiParameters.Cadence, "cadence"),
+                        (SpotiParameters.Groove, "groove"),
+                        (SpotiParameters.Ritmo, "ritmo"),
+                        (SpotiParameters.Metronome, "metronome"),
+                        (SpotiParameters.Encore, "encore"),
+                        (SpotiParameters.Chorus, "chorus")
+                    };
+
+                    var activeWords = new List<string>();
+                    foreach (var (paramEnum, wordName) in wordParams)
+                    {
+                        try
+                        {
+                            bool isActive = _ephemeralWordValues.TryGetValue(paramEnum, out bool value) && value;
+                            if (isActive)
+                            {
+                                activeWords.Add(wordName);
+                            }
+                        }
+                        catch
+                        {
+                        }
+                    }
+
+                    if (activeWords.Count == 2 && spotifyRequestContext?.IsInJam != true)
+                    {
+                        lock (_ephemeralJoinLock)
+                        {
+                            if (_isProcessingEphemeralJoin)
+                            {
+                                return;
+                            }
+                            _isProcessingEphemeralJoin = true;
+                        }
+                        
+                        try
+                        {
+                            var sortedWords = activeWords.OrderBy(w => w).ToList();
+                            string key = $"{sortedWords[0]}_{sortedWords[1]}";
+                            
+                            string sessionId = await JoinSyncopationJamAsync(key);
+                        if (!string.IsNullOrEmpty(sessionId))
+                        {
+                            // Reset all word parameters
+                            _activeParameterUpdates.Add(SpotiParameters.Allegro);
+                            _activeParameterUpdates.Add(SpotiParameters.Cadence);
+                            _activeParameterUpdates.Add(SpotiParameters.Groove);
+                            _activeParameterUpdates.Add(SpotiParameters.Ritmo);
+                            _activeParameterUpdates.Add(SpotiParameters.Metronome);
+                            _activeParameterUpdates.Add(SpotiParameters.Encore);
+                            _activeParameterUpdates.Add(SpotiParameters.Chorus);
+                            
+                            SetParameterSafe(SpotiParameters.Allegro, false);
+                            SetParameterSafe(SpotiParameters.Cadence, false);
+                            SetParameterSafe(SpotiParameters.Groove, false);
+                            SetParameterSafe(SpotiParameters.Ritmo, false);
+                            SetParameterSafe(SpotiParameters.Metronome, false);
+                            SetParameterSafe(SpotiParameters.Encore, false);
+                            SetParameterSafe(SpotiParameters.Chorus, false);
+                            
+                            bool joinResult = await SpotifyJamRequests.JoinSpotifyJam(sessionId, spotifyRequestContext, spotifyUtilities);
+                            if (!joinResult)
+                            {
+                                SendParameter(SpotiParameters.Error, true);
+                                await Task.Delay(100);
+                                SendParameter(SpotiParameters.Error, false);
+                            }
+                        }
+                        else
+                        {
+                            SendParameter(SpotiParameters.Error, true);
+                            await Task.Delay(100);
+                            SendParameter(SpotiParameters.Error, false);
+                        }
+                        }
+                        finally
+                        {
+                            lock (_ephemeralJoinLock)
+                            {
+                                _isProcessingEphemeralJoin = false;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogDebug($"Error handling ephemeral word parameter: {ex.Message}");
+                    lock (_ephemeralJoinLock)
+                    {
+                        _isProcessingEphemeralJoin = false;
+                    }
+                }
             });
         }
 
@@ -887,9 +1326,15 @@ namespace YeusepesModules.SPOTIOSC
                 LogDebug("Stopping position update timer...");
                 StopPositionUpdateTimer();
 
-                // Stop any active encoding/decoding processes
-                LogDebug("Stopping decoding process...");
-                StopDecodingProcess();
+                StopNotificationListener();
+                
+                await DeregisterFromSyncopationServerAsync();
+
+                if (_syncopationHttpClient != null)
+                {
+                    _syncopationHttpClient.Dispose();
+                    _syncopationHttpClient = null;
+                }
 
                 // Clear active parameter updates
                 _activeParameterUpdates.Clear();
@@ -1245,14 +1690,22 @@ namespace YeusepesModules.SPOTIOSC
             }
         }
 
-        private async void HandleJoinJam()
+        private async void HandleJoinJam(string sessionId)
         {
             await ExecuteWithErrorHandlingAsync(async () =>
             {
-                string joinSessionId = await SpotifyJamRequests.GetJoinSessionIdAsync(SpotifyJamRequests._shareableUrl, spotifyUtilities);
-                spotifyUtilities.LogDebug($"Join session ID retrieved: {joinSessionId}");
+                if (string.IsNullOrEmpty(sessionId))
+                {
+                    spotifyUtilities.LogDebug("No session ID provided for joining jam.");
+                    SendParameter(SpotiParameters.Error, true);
+                    await Task.Delay(100);
+                    SendParameter(SpotiParameters.Error, false);
+                    return;
+                }
 
-                bool joinResult = await SpotifyJamRequests.JoinSpotifyJam(joinSessionId, spotifyRequestContext, spotifyUtilities);
+                spotifyUtilities.LogDebug($"Joining jam with session ID: {sessionId}");
+
+                bool joinResult = await SpotifyJamRequests.JoinSpotifyJam(sessionId, spotifyRequestContext, spotifyUtilities);
                 if (joinResult)
                 {
                     spotifyUtilities.LogDebug("Successfully joined the jam session.");
@@ -1743,22 +2196,47 @@ namespace YeusepesModules.SPOTIOSC
             }
         }
 
-        private void HandleTouching(bool touching)
+        private async void HandleTouching(bool touching)
         {
-            if (touching && !isTouching)
+            isTouching = touching;
+            
+            if (touching && spotifyRequestContext?.IsInJam == true && !string.IsNullOrEmpty(SpotifyJamRequests._joinSessionToken))
             {
-                isTouching = true;
-                LogDebug("Touching detected. Starting encoding...");
-                if (!string.IsNullOrEmpty(SpotifyJamRequests._joinSessionToken))
+                if (string.IsNullOrEmpty(_currentEphemeralWord1) || string.IsNullOrEmpty(_currentEphemeralWord2))
                 {
-                    EncodeAndSendSessionId(SpotifyJamRequests._joinSessionToken);
+                    var ephemeralCode = await CreateSyncopationJamAsync(SpotifyJamRequests._joinSessionToken);
+                    if (ephemeralCode.HasValue)
+                    {
+                        _currentEphemeralWord1 = ephemeralCode.Value.word1;
+                        _currentEphemeralWord2 = ephemeralCode.Value.word2;
+                        
+                        _activeParameterUpdates.Add(GetParameterFromWordName(ephemeralCode.Value.word1));
+                        _activeParameterUpdates.Add(GetParameterFromWordName(ephemeralCode.Value.word2));
+                        
+                        SetParameterSafe(GetParameterFromWordName(ephemeralCode.Value.word1), true);
+                        SetParameterSafe(GetParameterFromWordName(ephemeralCode.Value.word2), true);
+                        
+                        LogDebug($"Ephemeral code created: {ephemeralCode.Value.word1} {ephemeralCode.Value.word2}");
+                    }
+                    else
+                    {
+                        LogDebug("Failed to create ephemeral code on syncopation server.");
+                    }
                 }
             }
-            else if (!touching && isTouching)
+            else if (!touching)
             {
-                isTouching = false;
-                LogDebug("Devices separated. Stopping decoding process.");
-                StopDecodingProcess();
+                if (!string.IsNullOrEmpty(_currentEphemeralWord1) && !string.IsNullOrEmpty(_currentEphemeralWord2))
+                {
+                    _activeParameterUpdates.Add(GetParameterFromWordName(_currentEphemeralWord1));
+                    _activeParameterUpdates.Add(GetParameterFromWordName(_currentEphemeralWord2));
+                    
+                    SetParameterSafe(GetParameterFromWordName(_currentEphemeralWord1), false);
+                    SetParameterSafe(GetParameterFromWordName(_currentEphemeralWord2), false);
+                    
+                    _currentEphemeralWord1 = null;
+                    _currentEphemeralWord2 = null;
+                }
             }
         }
 
@@ -1793,6 +2271,19 @@ namespace YeusepesModules.SPOTIOSC
                 LogDebug("Ending jam request...");
                 string sessionId = SpotifyJamRequests._currentSessionId;
                 await SpotifyJamRequests.LeaveSpotifyJam(sessionId, spotifyRequestContext, spotifyUtilities);
+                
+                // Stop sending ephemeral code parameters when leaving jam
+                if (!string.IsNullOrEmpty(_currentEphemeralWord1) && !string.IsNullOrEmpty(_currentEphemeralWord2))
+                {
+                    _activeParameterUpdates.Add(GetParameterFromWordName(_currentEphemeralWord1));
+                    _activeParameterUpdates.Add(GetParameterFromWordName(_currentEphemeralWord2));
+                    
+                    SetParameterSafe(GetParameterFromWordName(_currentEphemeralWord1), false);
+                    SetParameterSafe(GetParameterFromWordName(_currentEphemeralWord2), false);
+                    
+                    _currentEphemeralWord1 = null;
+                    _currentEphemeralWord2 = null;
+                }
             }
 
             spotifyRequestContext.IsInJam = _isInJam;
