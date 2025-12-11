@@ -18,6 +18,7 @@ using System.Windows.Media;
 using System.Collections.ObjectModel;
 using System.Windows;
 using System.Net.Http.Headers;
+using static YeusepesModules.SPOTIOSC.SpotiOSC;
 
 namespace YeusepesModules.SPOTIOSC.Utils.Requests
 {
@@ -248,6 +249,8 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
                                 {
                                     var imageUrl = images.EnumerateArray().FirstOrDefault().GetProperty("url").GetString();
                                     context.AlbumArtworkUrl = imageUrl;
+                                    // Update color with utilities to send RGB parameters
+                                    context.UpdateSingleColor(utilities);
                                 }
                                 if (album.TryGetProperty("album_type", out JsonElement albumType))
                                 {
@@ -322,6 +325,9 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
         public string ClientToken { get; set; }
 
         public string ApiToken { get; set; }
+        
+        // Store utilities for sending parameters
+        public SpotifyUtilities Utilities { get; set; }
 
         // Device Information
         public string DeviceId { get; set; }
@@ -415,7 +421,9 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
                 _albumArtworkUrl = value;
 
                 Console.WriteLine("URL: " + _albumArtworkUrl);
-                OnPropertyChanged(); UpdateSingleColor();
+                OnPropertyChanged(); 
+                // Update color with stored utilities if available
+                UpdateSingleColor(Utilities);
             }
         }
 
@@ -614,16 +622,34 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
 
         public bool IsLocal { get; internal set; }        
 
-        public void UpdateSingleColor()
+        public void UpdateSingleColor(SpotifyUtilities utilities = null)
         {
             if (!string.IsNullOrEmpty(AlbumArtworkUrl))
             {
                 var drawingColor = ImageColorHelper.GetSingleColor(AlbumArtworkUrl, HttpClient);
-                DominantColor = System.Windows.Media.Color.FromArgb(drawingColor.A, drawingColor.R, drawingColor.G, drawingColor.B);
+                var color = System.Windows.Media.Color.FromArgb(drawingColor.A, drawingColor.R, drawingColor.G, drawingColor.B);
+                DominantColor = color;
+                
+                // Send RGB parameters if utilities are available
+                // Cast byte to int since OSC parameters expect int type
+                if (utilities?.SendParameter != null)
+                {
+                    utilities.SendParameter(SpotiOSC.SpotiParameters.AlbumColorR, (int)color.R);
+                    utilities.SendParameter(SpotiOSC.SpotiParameters.AlbumColorG, (int)color.G);
+                    utilities.SendParameter(SpotiOSC.SpotiParameters.AlbumColorB, (int)color.B);
+                }
             }
             else
             {
                 DominantColor = System.Windows.Media.Colors.Transparent;
+                
+                // Send zero RGB parameters if utilities are available
+                if (utilities?.SendParameter != null)
+                {
+                    utilities.SendParameter(SpotiOSC.SpotiParameters.AlbumColorR, 0);
+                    utilities.SendParameter(SpotiOSC.SpotiParameters.AlbumColorG, 0);
+                    utilities.SendParameter(SpotiOSC.SpotiParameters.AlbumColorB, 0);
+                }
             }
         }
 

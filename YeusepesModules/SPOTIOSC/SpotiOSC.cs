@@ -45,8 +45,7 @@ namespace YeusepesModules.SPOTIOSC
         
         // Syncopation Server Communication
         private string _syncopationInstanceId;
-        
-        private string _melodyServerUrl = "http://localhost:8000/syncopation";
+        private string _melodyServerUrl = "";        
         private HttpClient _syncopationHttpClient;
         private string _currentEphemeralWord1;
         private string _currentEphemeralWord2;
@@ -167,7 +166,12 @@ namespace YeusepesModules.SPOTIOSC
             Liveness,
             Valence,
             Tempo,
-            TimeSignature
+            TimeSignature,
+
+            // Album Color (RGB)
+            AlbumColorR,
+            AlbumColorG,
+            AlbumColorB
 
         }
         private enum UiState
@@ -226,6 +230,12 @@ namespace YeusepesModules.SPOTIOSC
                 LogDebug = message => LogDebug(message),
                 SendParameter = (param, value) => SetParameterSafe(param, value),
             };
+            
+            // Store utilities in context so it can send parameters
+            if (spotifyRequestContext != null)
+            {
+                spotifyRequestContext.Utilities = spotifyUtilities;
+            }
 
             CredentialManager.SpotifyUtils = spotifyUtilities;
 
@@ -339,6 +349,11 @@ namespace YeusepesModules.SPOTIOSC
             RegisterParameter<bool>(SpotiParameters.Metronome, "SpotiOSC/metronome", ParameterMode.ReadWrite, "Metronome", "Ephemeral jam code word.");
             RegisterParameter<bool>(SpotiParameters.Encore, "SpotiOSC/encore", ParameterMode.ReadWrite, "Encore", "Ephemeral jam code word.");
             RegisterParameter<bool>(SpotiParameters.Chorus, "SpotiOSC/chorus", ParameterMode.ReadWrite, "Chorus", "Ephemeral jam code word.");
+
+            // Album Color (RGB)
+            RegisterParameter<int>(SpotiParameters.AlbumColorR, "SpotiOSC/AlbumColorR", ParameterMode.Write, "Album Color R", "Red component of the dominant album color (0-255).");
+            RegisterParameter<int>(SpotiParameters.AlbumColorG, "SpotiOSC/AlbumColorG", ParameterMode.Write, "Album Color G", "Green component of the dominant album color (0-255).");
+            RegisterParameter<int>(SpotiParameters.AlbumColorB, "SpotiOSC/AlbumColorB", ParameterMode.Write, "Album Color B", "Blue component of the dominant album color (0-255).");
 
             #endregion
 
@@ -520,7 +535,8 @@ namespace YeusepesModules.SPOTIOSC
                 {
                     HttpClient = _httpClient,
                     AccessToken = accessToken,
-                    ClientToken = clientToken
+                    ClientToken = clientToken,
+                    Utilities = spotifyUtilities
                 };
 
                 return true;
@@ -575,8 +591,7 @@ namespace YeusepesModules.SPOTIOSC
             {
                 return;
             }
-
-            Log($"[Syncopation] OnRegisteredParameterReceived: {param}");
+            
             
             if (IsEphemeralWordParameter(param))
             {
@@ -2053,7 +2068,9 @@ namespace YeusepesModules.SPOTIOSC
                 {
                     var imageUrl = images.EnumerateArray().FirstOrDefault().GetProperty("url").GetString();
                     spotifyRequestContext.AlbumArtworkUrl = imageUrl;
-                    LogDebug($"Album artwork URL: {imageUrl}");                    
+                    LogDebug($"Album artwork URL: {imageUrl}");
+                    // Update color with utilities to send RGB parameters
+                    spotifyRequestContext.UpdateSingleColor(spotifyUtilities);
                 }
                 if (album.TryGetProperty("album_type", out JsonElement albumType))
                 {
