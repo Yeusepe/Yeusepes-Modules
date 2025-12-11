@@ -11,6 +11,23 @@ namespace YeusepesModules.SteamInput;
 [ModuleType(ModuleType.SteamVR)]
 public class SteamInputModule : Module
 {
+    private float _leftPrevAngleRad = 0f;
+    private float _rightPrevAngleRad = 0f;
+    private bool _leftInitialized = false;
+    private bool _rightInitialized = false;
+    private float _leftPrevX = 0f;
+    private float _leftPrevY = 0f;
+    private float _rightPrevX = 0f;
+    private float _rightPrevY = 0f;
+    private float _leftPrevMagnitude = 0f;
+    private float _rightPrevMagnitude = 0f;
+    private int _leftFlickFrameCount = 0;
+    private int _rightFlickFrameCount = 0;
+    private bool _leftFlickWasSent = false;
+    private bool _rightFlickWasSent = false;
+    private float _leftAccumulatedRotationDelta = 0f;
+    private float _rightAccumulatedRotationDelta = 0f;
+
     protected override void OnPreLoad()
     {
         // Left Controller - Stick
@@ -47,6 +64,10 @@ public class SteamInputModule : Module
         RegisterParameter<float>(SteamInputParameter.LeftFingerRing, "SteamInput/LHand/Finger/Ring", ParameterMode.Write, "Left Ring Finger", "Left ring finger curl value (0 to 1)");
         RegisterParameter<float>(SteamInputParameter.LeftFingerPinky, "SteamInput/LHand/Finger/Pinky", ParameterMode.Write, "Left Pinky Finger", "Left pinky finger curl value (0 to 1)");
 
+        // Left Controller - Rotation Detection
+        RegisterParameter<float>(SteamInputParameter.LeftStickRotationDirection, "SteamInput/LHand/Stick/RotationDirection", ParameterMode.Write, "Left Stick Rotation Direction", "Rotation direction: 0 (no rotation), 1 (clockwise), -1 (counter-clockwise)");
+        RegisterParameter<bool>(SteamInputParameter.LeftStickFlick, "SteamInput/LHand/Stick/Flick", ParameterMode.Write, "Left Stick Flick", "Triggered when a flick is detected");
+
         // Right Controller - Stick
         RegisterParameter<float>(SteamInputParameter.RightStickX, "SteamInput/RHand/Stick/X", ParameterMode.Write, "Right Stick X", "Right stick X position (-1 to 1)");
         RegisterParameter<float>(SteamInputParameter.RightStickY, "SteamInput/RHand/Stick/Y", ParameterMode.Write, "Right Stick Y", "Right stick Y position (-1 to 1)");
@@ -80,6 +101,10 @@ public class SteamInputModule : Module
         RegisterParameter<float>(SteamInputParameter.RightFingerMiddle, "SteamInput/RHand/Finger/Middle", ParameterMode.Write, "Right Middle Finger", "Right middle finger curl value (0 to 1)");
         RegisterParameter<float>(SteamInputParameter.RightFingerRing, "SteamInput/RHand/Finger/Ring", ParameterMode.Write, "Right Ring Finger", "Right ring finger curl value (0 to 1)");
         RegisterParameter<float>(SteamInputParameter.RightFingerPinky, "SteamInput/RHand/Finger/Pinky", ParameterMode.Write, "Right Pinky Finger", "Right pinky finger curl value (0 to 1)");
+
+        // Right Controller - Rotation Detection
+        RegisterParameter<float>(SteamInputParameter.RightStickRotationDirection, "SteamInput/RHand/Stick/RotationDirection", ParameterMode.Write, "Right Stick Rotation Direction", "Rotation direction: 0 (no rotation), 1 (clockwise), -1 (counter-clockwise)");
+        RegisterParameter<bool>(SteamInputParameter.RightStickFlick, "SteamInput/RHand/Stick/Flick", ParameterMode.Write, "Right Stick Flick", "Triggered when a flick is detected");
     }
 
     [ModuleUpdate(ModuleUpdateMode.Custom, true, 1000f / 60f)]
@@ -97,13 +122,36 @@ public class SteamInputModule : Module
             var leftInput = leftController.Input;
 
             // Left Stick
-            SendParameter(SteamInputParameter.LeftStickX, leftInput.Stick.Position.X);
-            SendParameter(SteamInputParameter.LeftStickY, leftInput.Stick.Position.Y);
-            var leftAngle = (float)(System.Math.Atan2(leftInput.Stick.Position.Y, leftInput.Stick.Position.X) * 180.0 / System.Math.PI);
+            float leftX = leftInput.Stick.Position.X;
+            float leftY = leftInput.Stick.Position.Y;
+            SendParameter(SteamInputParameter.LeftStickX, leftX);
+            SendParameter(SteamInputParameter.LeftStickY, leftY);
+            var leftAngle = (float)(System.Math.Atan2(leftY, leftX) * 180.0 / System.Math.PI);
             if (leftAngle < 0) leftAngle += 360f;
             SendParameter(SteamInputParameter.LeftStickAngle, leftAngle);
             SendParameter(SteamInputParameter.LeftStickTouch, leftInput.Stick.Touch);
             SendParameter(SteamInputParameter.LeftStickClick, leftInput.Stick.Click);
+
+            // Left Stick - Rotation Detection
+            float leftRotationDirection = CalculateRotationDirection(leftX, leftY, ref _leftPrevAngleRad, ref _leftInitialized, ref _leftAccumulatedRotationDelta);
+            SendParameter(SteamInputParameter.LeftStickRotationDirection, leftRotationDirection);
+
+            // Left Stick - Flick Detection
+            float leftMagnitude = (float)System.Math.Sqrt(leftX * leftX + leftY * leftY);
+            if (_leftFlickWasSent)
+            {
+                SendParameter(SteamInputParameter.LeftStickFlick, false);
+                _leftFlickWasSent = false;
+            }
+            bool leftFlick = DetectFlick(leftX, leftY, _leftPrevX, _leftPrevY, _leftPrevMagnitude, ref _leftFlickFrameCount);
+            if (leftFlick)
+            {
+                SendParameter(SteamInputParameter.LeftStickFlick, true);
+                _leftFlickWasSent = true;
+            }
+            _leftPrevX = leftX;
+            _leftPrevY = leftY;
+            _leftPrevMagnitude = leftMagnitude;
 
             // Left Pad
             SendParameter(SteamInputParameter.LeftPadX, leftInput.Pad.Position.X);
@@ -138,13 +186,36 @@ public class SteamInputModule : Module
             var rightInput = rightController.Input;
 
             // Right Stick
-            SendParameter(SteamInputParameter.RightStickX, rightInput.Stick.Position.X);
-            SendParameter(SteamInputParameter.RightStickY, rightInput.Stick.Position.Y);
-            var rightAngle = (float)(System.Math.Atan2(rightInput.Stick.Position.Y, rightInput.Stick.Position.X) * 180.0 / System.Math.PI);
+            float rightX = rightInput.Stick.Position.X;
+            float rightY = rightInput.Stick.Position.Y;
+            SendParameter(SteamInputParameter.RightStickX, rightX);
+            SendParameter(SteamInputParameter.RightStickY, rightY);
+            var rightAngle = (float)(System.Math.Atan2(rightY, rightX) * 180.0 / System.Math.PI);
             if (rightAngle < 0) rightAngle += 360f;
             SendParameter(SteamInputParameter.RightStickAngle, rightAngle);
             SendParameter(SteamInputParameter.RightStickTouch, rightInput.Stick.Touch);
             SendParameter(SteamInputParameter.RightStickClick, rightInput.Stick.Click);
+
+            // Right Stick - Rotation Detection
+            float rightRotationDirection = CalculateRotationDirection(rightX, rightY, ref _rightPrevAngleRad, ref _rightInitialized, ref _rightAccumulatedRotationDelta);
+            SendParameter(SteamInputParameter.RightStickRotationDirection, rightRotationDirection);
+
+            // Right Stick - Flick Detection
+            float rightMagnitude = (float)System.Math.Sqrt(rightX * rightX + rightY * rightY);
+            if (_rightFlickWasSent)
+            {
+                SendParameter(SteamInputParameter.RightStickFlick, false);
+                _rightFlickWasSent = false;
+            }
+            bool rightFlick = DetectFlick(rightX, rightY, _rightPrevX, _rightPrevY, _rightPrevMagnitude, ref _rightFlickFrameCount);
+            if (rightFlick)
+            {
+                SendParameter(SteamInputParameter.RightStickFlick, true);
+                _rightFlickWasSent = true;
+            }
+            _rightPrevX = rightX;
+            _rightPrevY = rightY;
+            _rightPrevMagnitude = rightMagnitude;
 
             // Right Pad
             SendParameter(SteamInputParameter.RightPadX, rightInput.Pad.Position.X);
@@ -200,6 +271,8 @@ public class SteamInputModule : Module
         LeftFingerMiddle,
         LeftFingerRing,
         LeftFingerPinky,
+        LeftStickRotationDirection,
+        LeftStickFlick,
 
         // Right Controller
         RightStickX,
@@ -223,7 +296,89 @@ public class SteamInputModule : Module
         RightFingerIndex,
         RightFingerMiddle,
         RightFingerRing,
-        RightFingerPinky
+        RightFingerPinky,
+        RightStickRotationDirection,
+        RightStickFlick
+    }
+
+    private float CalculateRotationDirection(float currentX, float currentY, ref float prevAngleRad, ref bool initialized, ref float accumulatedDelta, float deadzone = 0.2f, float minDeltaRad = 0.001f, float pulseThresholdRad = 0.02f)
+    {
+        float r = (float)System.Math.Sqrt(currentX * currentX + currentY * currentY);
+        
+        if (r < deadzone)
+        {
+            initialized = false;
+            accumulatedDelta = 0f;
+            return 0f;
+        }
+        
+        float angle = (float)System.Math.Atan2(currentY, currentX);
+        
+        if (!initialized)
+        {
+            prevAngleRad = angle;
+            initialized = true;
+            accumulatedDelta = 0f;
+            return 0f;
+        }
+        
+        float delta = angle - prevAngleRad;
+        
+        if (delta > System.Math.PI)
+        {
+            delta -= (float)(2.0 * System.Math.PI);
+        }
+        else if (delta < -System.Math.PI)
+        {
+            delta += (float)(2.0 * System.Math.PI);
+        }
+        
+        prevAngleRad = angle;
+        
+        // Ignore extremely small deltas (noise filtering)
+        if (System.Math.Abs(delta) < minDeltaRad)
+        {
+            return 0f;
+        }
+        
+        // Accumulate delta
+        accumulatedDelta += delta;
+        
+        // Send pulse when accumulated delta exceeds threshold
+        if (System.Math.Abs(accumulatedDelta) >= pulseThresholdRad)
+        {
+            float result = accumulatedDelta > 0 ? -1f : 1f;
+            accumulatedDelta = 0f; // Reset accumulator
+            return result;
+        }
+        
+        return 0f;
+    }
+
+    private bool DetectFlick(float currentX, float currentY, float prevX, float prevY, float prevMagnitude, ref int flickFrameCount, float velocityThreshold = 0.5f, float minRadius = 0.7f, float releaseRadius = 0.3f, int maxFrames = 6)
+    {
+        float r = (float)System.Math.Sqrt(currentX * currentX + currentY * currentY);
+        float dx = currentX - prevX;
+        float dy = currentY - prevY;
+        float velocity = (float)System.Math.Sqrt(dx * dx + dy * dy);
+        
+        if (velocity > velocityThreshold && prevMagnitude > minRadius)
+        {
+            flickFrameCount = 1;
+            return false;
+        }
+        
+        if (flickFrameCount > 0)
+        {
+            flickFrameCount++;
+            if (r < releaseRadius || flickFrameCount >= maxFrames)
+            {
+                flickFrameCount = 0;
+                return true;
+            }
+        }
+        
+        return false;
     }
 }
 

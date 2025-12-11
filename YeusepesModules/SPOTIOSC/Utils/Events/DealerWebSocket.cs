@@ -4,29 +4,36 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using YeusepesModules.SPOTIOSC.Utils.Requests;
 using System.Net.Http;
+using YeusepesModules.SPOTIOSC.Utils.Requests;
 
 namespace YeusepesModules.SPOTIOSC.Utils.Events
 {
-    [Obsolete("PlayerEventSubscriber has been superseded by DealerWebSocket and is no longer used.")]
-    public class PlayerEventSubscriber
+    /// <summary>
+    /// Low-level WebSocket client for talking to Spotify's dealer service.
+    /// This mirrors librespot's Dealer connection:
+    ///   wss://dealer.spotify.com/?access_token={token}
+    /// and forwards raw JSON dealer messages to higher-level handlers.
+    /// </summary>
+    public class DealerWebSocket
     {
         private readonly string _accessToken;
         private readonly string _webSocketUrl;
         private ClientWebSocket _webSocket;
         private CancellationTokenSource _cancellationTokenSource;
-        protected HttpClient httpClient { get; }
+        private readonly HttpClient _httpClient;
 
-        public event Action<JsonElement> OnPlayerEventReceived;
+        /// <summary>
+        /// Fired for every incoming dealer message with type == \"message\".
+        /// The JsonElement is the full dealer envelope (headers, payloads, uri, etc.).
+        /// </summary>
+        public event Action<JsonElement> OnMessageReceived;
 
-        public PlayerEventSubscriber(SpotifyUtilities spotifyUtilities, SpotifyRequestContext spotifyRequestContext)
+        public DealerWebSocket(SpotifyRequestContext spotifyRequestContext)
         {
             _accessToken = spotifyRequestContext.AccessToken;
-            httpClient = spotifyRequestContext.HttpClient;
+            _httpClient = spotifyRequestContext.HttpClient;
             _webSocketUrl = $"wss://dealer.spotify.com/?access_token={_accessToken}";
-            // Log response
-
         }
 
         public async Task StartAsync()
@@ -35,8 +42,8 @@ namespace YeusepesModules.SPOTIOSC.Utils.Events
             _cancellationTokenSource = new CancellationTokenSource();
 
             try
-            {                
-                await _webSocket.ConnectAsync(new Uri(_webSocketUrl), _cancellationTokenSource.Token);                
+            {
+                await _webSocket.ConnectAsync(new Uri(_webSocketUrl), _cancellationTokenSource.Token);
 
                 // Start receiving messages
                 _ = Task.Run(() => ReceiveMessagesAsync(_cancellationTokenSource.Token));
@@ -46,38 +53,45 @@ namespace YeusepesModules.SPOTIOSC.Utils.Events
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Error connecting to WebSocket: {ex.Message}");
+                Console.WriteLine($"Error connecting to Dealer WebSocket: {ex.Message}");
             }
         }
 
         public async Task StopAsync()
         {
-            if (_webSocket != null)
+            if (_webSocket == null)
             {
-                // Cancel background tasks
-                _cancellationTokenSource.Cancel();
+                return;
+            }
+
+            try
+            {
+                _cancellationTokenSource?.Cancel();
 
                 // Optionally wait a brief moment for tasks to finish
                 await Task.Delay(500);
 
-                // Check if the WebSocket is in a state that allows graceful closure
                 if (_webSocket.State == WebSocketState.Open ||
                     _webSocket.State == WebSocketState.CloseReceived ||
                     _webSocket.State == WebSocketState.CloseSent)
                 {
                     try
                     {
-                        await _webSocket.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);                        
+                        await _webSocket.CloseAsync(
+                            WebSocketCloseStatus.NormalClosure,
+                            "Closing",
+                            CancellationToken.None);
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Exception while closing WebSocket: {ex.Message}");
+                        Console.WriteLine($"Exception while closing Dealer WebSocket: {ex.Message}");
                     }
                 }
-                else
-                {
-                    Console.WriteLine($"WebSocket is in an invalid state for graceful closure: {_webSocket.State}");
-                }
+            }
+            finally
+            {
+                _webSocket.Dispose();
+                _webSocket = null;
             }
         }
 
@@ -92,15 +106,25 @@ namespace YeusepesModules.SPOTIOSC.Utils.Events
                     var result = await _webSocket.ReceiveAsync(buffer, cancellationToken);
 
                     if (result.MessageType == WebSocketMessageType.Close)
-                    {                        
+                    {
                         break;
                     }
 
                     if (result.MessageType == WebSocketMessageType.Text)
                     {
-                        var message = Encoding.UTF8.GetString(buffer, 0, result.Count);                        
+                        var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
 
-                        var jsonMessage = JsonSerializer.Deserialize<JsonElement>(message);
+                        JsonElement jsonMessage;
+                        try
+                        {
+                            jsonMessage = JsonSerializer.Deserialize<JsonElement>(message);
+                        }
+                        catch (JsonException)
+                        {
+                            // Ignore malformed messages
+                            continue;
+                        }
+
                         ProcessWebSocketMessage(jsonMessage);
                     }
                 }
@@ -110,7 +134,8 @@ namespace YeusepesModules.SPOTIOSC.Utils.Events
                 // Expected when cancellationToken is cancelled, so silently exit.
             }
             catch (Exception ex)
-            {                
+            {
+                Console.WriteLine($"Dealer WebSocket receive error: {ex.Message}");
             }
         }
 
@@ -126,7 +151,7 @@ namespace YeusepesModules.SPOTIOSC.Utils.Events
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"Error sending ping: {ex.Message}");
+                        Console.WriteLine($"Error sending Dealer ping: {ex.Message}");
                     }
 
                     await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
@@ -140,14 +165,23 @@ namespace YeusepesModules.SPOTIOSC.Utils.Events
 
         private void ProcessWebSocketMessage(JsonElement message)
         {
-            if (message.TryGetProperty("type", out var typeElement) && typeElement.GetString() == "message")
+            if (message.TryGetProperty("type", out var typeElement) &&
+                typeElement.ValueKind == JsonValueKind.String &&
+                typeElement.GetString() == "message")
             {
-                OnPlayerEventReceived?.Invoke(message);
+                OnMessageReceived?.Invoke(message);
 
+                // For dealer notifications that use the REST notification endpoint, we still
+                // need to enable notifications using the Spotify-Connection-Id header.
                 if (message.TryGetProperty("headers", out var headers) &&
-                    headers.TryGetProperty("Spotify-Connection-Id", out var connectionId))
-                {                    
-                    _ = Task.Run(() => EnablePlayerNotificationsAsync(connectionId.GetString()));
+                    headers.TryGetProperty("Spotify-Connection-Id", out var connectionIdElement) &&
+                    connectionIdElement.ValueKind == JsonValueKind.String)
+                {
+                    var connectionId = connectionIdElement.GetString();
+                    if (!string.IsNullOrEmpty(connectionId))
+                    {
+                        _ = Task.Run(() => EnablePlayerNotificationsAsync(connectionId));
+                    }
                 }
             }
         }
@@ -156,17 +190,14 @@ namespace YeusepesModules.SPOTIOSC.Utils.Events
         {
             try
             {
-                httpClient.DefaultRequestHeaders.Authorization =
+                _httpClient.DefaultRequestHeaders.Authorization =
                     new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", _accessToken);
 
-                var requestUri = $"https://api.spotify.com/v1/me/notifications/player?connection_id={connectionId}";
-                var response = await httpClient.PutAsync(requestUri, null);
+                var requestUri =
+                    $"https://api.spotify.com/v1/me/notifications/player?connection_id={connectionId}";
+                var response = await _httpClient.PutAsync(requestUri, null);
 
-                if (response.IsSuccessStatusCode)
-                {
-                    Console.WriteLine("Enabled player notifications for this connection.");
-                }
-                else
+                if (!response.IsSuccessStatusCode)
                 {
                     var error = await response.Content.ReadAsStringAsync();
                     Console.WriteLine($"Failed to enable player notifications: {error}");
@@ -183,8 +214,14 @@ namespace YeusepesModules.SPOTIOSC.Utils.Events
             if (_webSocket?.State == WebSocketState.Open)
             {
                 var messageBytes = Encoding.UTF8.GetBytes(message);
-                await _webSocket.SendAsync(messageBytes, WebSocketMessageType.Text, true, CancellationToken.None);                
+                await _webSocket.SendAsync(
+                    messageBytes,
+                    WebSocketMessageType.Text,
+                    endOfMessage: true,
+                    cancellationToken: CancellationToken.None);
             }
         }
     }
 }
+
+

@@ -11,17 +11,43 @@
 		<WindowsSdkPackageVersion>10.0.26100.1</WindowsSdkPackageVersion>
 		<CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
 		<UserSecretsId>95a0142d-ef1a-437e-961e-1322c4a8427d</UserSecretsId>		
+		<Configurations>Debug;Release;Beta;Release-NoVRChat;Release-NoVIRA</Configurations>
 		<Platforms>x64</Platforms>
 		<PlatformTarget>x64</PlatformTarget>
+		<AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 	</PropertyGroup>
 
 	<PropertyGroup>
 		<UseRidGraph>true</UseRidGraph>
 	</PropertyGroup>
 
+	<!-- Conditional compilation symbols for build configurations -->
+	<!-- Debug includes all modules -->
+	<PropertyGroup Condition="'$(Configuration)' == 'Debug'">
+		<DefineConstants>$(DefineConstants);INCLUDE_ALL_MODULES</DefineConstants>
+	</PropertyGroup>
+	
+	<!-- Release excludes VRChat, VIRA, and SteamInput by default -->
+	<PropertyGroup Condition="'$(Configuration)' == 'Release'">
+		<DefineConstants>$(DefineConstants);NO_VRCHAT;NO_VIRA;NO_STEAMINPUT</DefineConstants>
+	</PropertyGroup>
+
+	<!-- Beta configuration: targets newer VRCOSC SDK (2025.1015.0), excludes VRChat and VIRA like Release -->
+	<PropertyGroup Condition="'$(Configuration)' == 'Beta'">
+		<DefineConstants>$(DefineConstants);NO_VRCHAT;NO_VIRA;NO_TWITCH</DefineConstants>
+	</PropertyGroup>
+	
+	<!-- Keep the specific exclusion configurations for flexibility -->
+	<PropertyGroup Condition="'$(Configuration)' == 'Release-NoVRChat'">
+		<DefineConstants>$(DefineConstants);NO_VRCHAT</DefineConstants>
+	</PropertyGroup>
+	
+	<PropertyGroup Condition="'$(Configuration)' == 'Release-NoVIRA'">
+		<DefineConstants>$(DefineConstants);NO_VIRA</DefineConstants>
+	</PropertyGroup>
+
 	<Target Name="PostBuild" AfterTargets="Build">
 		<!-- Ensure the destination directories exist -->
-		<MakeDir Directories="$(APPDATA)\vrcosc-v2-Dev\packages\local" />
 		<MakeDir Directories="$(APPDATA)\VRCOSC\packages\local" />
 
 		<ItemGroup>			
@@ -68,15 +94,17 @@
 			<IncludedFiles Include="$(TargetDir)Microsoft.Extensions.Configuration.FileExtensions.dll" />		
 			<IncludedFiles Include="$(TargetDir)SpotifyAPI.Web.dll" />		
 			<IncludedFiles Include="$(TargetDir)MathNet.Numerics.dll" />		
+			<IncludedFiles Include="$(TargetDir)VRChat.API.dll" Condition="('$(DefineConstants)' == '' Or !$(DefineConstants.Contains('NO_VRCHAT')))" />		
 			
-			<IncludedFiles Include="$(TargetDir)libzbar-cil.dll" />
+			<IncludedFiles Include="$(TargetDir)protobuf-net.dll" Condition="Exists('$(TargetDir)protobuf-net.dll')" />
+			<IncludedFiles Include="$(TargetDir)protobuf-net.Core.dll" Condition="Exists('$(TargetDir)protobuf-net.Core.dll')" />
 
 		</ItemGroup>
 
 
-		<!-- Copy the explicitly included files to both destinations -->
-		<Copy SourceFiles="@(IncludedFiles)" DestinationFolder="$(APPDATA)\VRCOSC-Dev\packages\local" />
+		<!-- Copy the explicitly included files to VRCOSC -->
 		<Copy SourceFiles="@(IncludedFiles)" DestinationFolder="$(APPDATA)\VRCOSC\packages\local" />
+		<Copy SourceFiles="@(IncludedFiles)" DestinationFolder="$(APPDATA)\VRCOSC-Dev\packages\local" />
 	</Target>	
 
 	<ItemGroup>
@@ -99,15 +127,63 @@
 		<PackageReference Include="System.Drawing.Common" Version="9.0.3" />
 		<PackageReference Include="System.Memory" Version="4.6.2" />
 		<PackageReference Include="System.Private.ServiceModel" Version="4.10.3" />
-		<PackageReference Include="VolcanicArts.VRCOSC.SDK" Version="2025.327.0" />		
+		
+		<!-- Use different SDK versions based on configuration -->
+		<PackageReference Include="VolcanicArts.VRCOSC.SDK" Version="2025.327.0" Condition="'$(Configuration)' == 'Release' Or '$(Configuration)' == 'Release-NoVRChat' Or '$(Configuration)' == 'Release-NoVIRA' Or '$(Configuration)' == 'Debug'" />
+		<PackageReference Include="VolcanicArts.VRCOSC.SDK" Version="2025.1015.0" Condition="'$(Configuration)' == 'Beta'" />
+		
 		<PackageReference Include="Microsoft.Extensions.FileProviders.Physical" Version="9.0.3" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="9.0.3" />
 		<PackageReference Include="Microsoft.Extensions.Configuration.FileExtensions" Version="9.0.3" />
+		<PackageReference Include="VRChat.API" Version="1.20.3" Condition="('$(DefineConstants)' == '' Or !$(DefineConstants.Contains('NO_VRCHAT')))" />
+		<PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.20.1" />
+		<PackageReference Include="Google.Protobuf" Version="3.33.2" />
 	</ItemGroup>
 
 	<ItemGroup>
 		<ProjectReference Include="..\YeusepesLowLevelTools\YeusepesLowLevelTools.csproj" />
+		<ProjectReference Include="C:\Users\svalp\OneDrive\Documents\GitHub\VRCOSC\VRCOSC.App\VRCOSC.App.csproj" Condition="'$(Configuration)' == 'Debug'" />
+	</ItemGroup>
+
+			
+	<!-- Embed ActionCatalog.json as a resource (only if VIRA is not excluded) -->
+	<ItemGroup Condition="('$(DefineConstants)' == '' Or !$(DefineConstants.Contains('NO_VIRA'))) And ('$(DefineConstants)' == '' Or !$(DefineConstants.Contains('NO_VRCHAT')))">
+		<EmbeddedResource Include="VIRA\ActionCatalog.json" />
+	</ItemGroup>
+
+	<!-- Exclude VRChat files when NO_VRCHAT is defined -->
+	<ItemGroup Condition="('$(DefineConstants)' != '' And $(DefineConstants.Contains('NO_VRCHAT')))">
+		<Compile Remove="VRChatAPI\**\*" />
+		<EmbeddedResource Remove="VRChatAPI\**\*" />
+		<Page Remove="VRChatAPI\**\*" />
+	</ItemGroup>
+
+	<!-- Exclude VRChat files when NO_VRCHAT is defined -->
+	<ItemGroup Condition="('$(DefineConstants)' != '' And $(DefineConstants.Contains('NO_TWITCH')))">
+		<Compile Remove="TwitchOSC\**\*" />
+		<EmbeddedResource Remove="TwitchOSC\**\*" />
+		<Page Remove="TwitchOSC\**\*" />
+	</ItemGroup>
+
+	<!-- Exclude VIRA files when NO_VIRA is defined OR when NO_VRCHAT is defined (since VIRA depends on VRChat) -->
+	<ItemGroup Condition="('$(DefineConstants)' != '' And $(DefineConstants.Contains('NO_VIRA'))) Or ('$(DefineConstants)' != '' And $(DefineConstants.Contains('NO_VRCHAT')))">
+		<Compile Remove="VIRA\**\*" />
+		<EmbeddedResource Remove="VIRA\**\*" />
+		<Page Remove="VIRA\**\*" />
+	</ItemGroup>
+
+	<!-- Exclude SteamInput files when NO_STEAMINPUT is defined -->
+	<ItemGroup Condition="('$(DefineConstants)' != '' And $(DefineConstants.Contains('NO_STEAMINPUT')))">
+		<Compile Remove="SteamInput\**\*" />
+		<EmbeddedResource Remove="SteamInput\**\*" />
+		<Page Remove="SteamInput\**\*" />
+	</ItemGroup>
+
+	<!-- Embed protobuf definition files for SPOTIOSC -->
+	<ItemGroup>
+		<EmbeddedResource Include="SPOTIOSC\Proto\*.proto" />
 	</ItemGroup>
 
 </Project>
+
 

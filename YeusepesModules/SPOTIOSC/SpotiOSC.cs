@@ -12,8 +12,11 @@ using YeusepesModules.SPOTIOSC.Utils.Requests;
 using YeusepesModules.Common;
 using YeusepesModules.SPOTIOSC.Utils.Events;
 using System.Text.Json;
+using System.Text;
 using VRCOSC.App.Settings;
 using SpotifyAPI.Web;
+using Google.Protobuf;
+using YeusepesModules.SPOTIOSC.Utils.Protobuf;
 
 
 
@@ -31,16 +34,19 @@ namespace YeusepesModules.SPOTIOSC
         private static HttpClient _httpClient = new HttpClient();
         public SpotifyRequestContext spotifyRequestContext;
         public SpotifyUtilities spotifyUtilities;
-        private PlayerEventSubscriber _playerEventSubscriber;
+        private DealerWebSocket _dealerWebSocket;
         private SpotifyApiService _apiService;
+        private ContentSettingsParser _contentSettingsParser;
+        private VolumeUpdateParser _volumeUpdateParser;
+
 
 
         private bool isTouching = false;
         
         // Syncopation Server Communication
         private string _syncopationInstanceId;
-        private string _melodyServerUrl = "https://melody.yucp.club/syncopation";
-        // private string _melodyServerUrl = "http://localhost:8000/syncopation";
+        
+        private string _melodyServerUrl = "http://localhost:8000/syncopation";
         private HttpClient _syncopationHttpClient;
         private string _currentEphemeralWord1;
         private string _currentEphemeralWord2;
@@ -53,7 +59,7 @@ namespace YeusepesModules.SPOTIOSC
         private System.Threading.CancellationTokenSource _notificationCancellationTokenSource;
         private System.Threading.Tasks.Task _notificationTask;
 
-        private HashSet<Enum> _activeParameterUpdates = new HashSet<Enum>();
+        private HashSet<System.Enum> _activeParameterUpdates = new HashSet<System.Enum>();
 
         private readonly HashSet<string> _processedEventKeys = new();
         private readonly object _deduplicationLock = new();
@@ -507,7 +513,6 @@ namespace YeusepesModules.SPOTIOSC
             AccessToken = CredentialManager.AccessToken;
             ClientToken = CredentialManager.ClientToken;
 
-
             // Initialize SpotifyRequestContext
             await UseTokensSecurely(async (accessToken, clientToken) =>
             {
@@ -521,11 +526,26 @@ namespace YeusepesModules.SPOTIOSC
                 return true;
             });
 
-            _playerEventSubscriber = new PlayerEventSubscriber(spotifyUtilities, spotifyRequestContext);
-            _playerEventSubscriber.OnPlayerEventReceived += HandlePlayerEvent;
+            // Initialize protobuf parsers
+            _contentSettingsParser = new ContentSettingsParser(
+                spotifyRequestContext,
+                LogDebug,
+                shuffleMode => SetParameterSafe(SpotiParameters.ShuffleMode, shuffleMode),
+                shuffleState => { /* ShuffleState is updated in context, no separate parameter */ }
+            );
+            
+            _volumeUpdateParser = new VolumeUpdateParser(
+                spotifyRequestContext,
+                LogDebug,
+                volumePercent => SetParameterSafe(SpotiParameters.DeviceVolumePercent, volumePercent),
+                TriggerEvent
+            );
+
+            _dealerWebSocket = new DealerWebSocket(spotifyRequestContext);
+            _dealerWebSocket.OnMessageReceived += HandlePlayerEvent;
 
             LogDebug("Starting player event subscription...");
-            await _playerEventSubscriber.StartAsync();
+            await _dealerWebSocket.StartAsync();
             SendParameter(SpotiParameters.Enabled, true);            
 
             _apiService = new SpotifyApiService();
@@ -554,7 +574,9 @@ namespace YeusepesModules.SPOTIOSC
             if (parameter.Lookup is not SpotiParameters param)
             {
                 return;
-            }            
+            }
+
+            Log($"[Syncopation] OnRegisteredParameterReceived: {param}");
             
             if (IsEphemeralWordParameter(param))
             {
@@ -1313,13 +1335,13 @@ namespace YeusepesModules.SPOTIOSC
 
             try
             {
-                // Stop player event subscription if active
-                if (_playerEventSubscriber != null)
+                // Stop dealer WebSocket subscription if active
+                if (_dealerWebSocket != null)
                 {
-                    LogDebug("Unsubscribing from player event subscription...");
-                    await _playerEventSubscriber.StopAsync();
-                    _playerEventSubscriber.OnPlayerEventReceived -= HandlePlayerEvent;
-                    _playerEventSubscriber = null;
+                    LogDebug("Stopping Dealer WebSocket subscription...");
+                    await _dealerWebSocket.StopAsync();
+                    _dealerWebSocket.OnMessageReceived -= HandlePlayerEvent;
+                    _dealerWebSocket = null;
                 }
 
                 // Stop continuous position update timer
@@ -1511,6 +1533,40 @@ namespace YeusepesModules.SPOTIOSC
             {
                 LogDebug($"Processing player event: {playerEvent}");
 
+                // Check the URI to determine message type
+                if (playerEvent.TryGetProperty("uri", out var uriElement))
+                {
+                    string uri = uriElement.GetString();
+                    LogDebug($"Processing message with URI: {uri}");
+
+                    // Handle playback-settings/content-settings-update separately (contains smart shuffle info)
+                    if (uri == "playback-settings/content-settings-update")
+                    {
+                        LogDebug("Received playback-settings/content-settings-update message");
+                        _contentSettingsParser.HandleContentSettingsUpdate(playerEvent);
+                        return;
+                    }
+
+                    // Handle connect-state volume updates (ProtoBuf SetVolumeCommand -> JSON -> volume%)
+                    if (uri.StartsWith("hm://connect-state/v1/connect/volume", StringComparison.OrdinalIgnoreCase))
+                    {
+                        LogDebug("Received connect-state volume update message");
+                        _volumeUpdateParser.HandleConnectVolumeUpdate(playerEvent);
+                        return;
+                    }
+
+                    // Cluster updates (hm://connect-state/v1/cluster) are parsed separately if needed.
+                    // Currently we rely primarily on wss://event for main playback JSON state, but
+                    // we still log cluster updates for future use.
+                    if (uri.StartsWith("hm://connect-state/v1/cluster", StringComparison.OrdinalIgnoreCase))
+                    {
+                        LogDebug("Received connect-state cluster update message");
+                        // A full migration to connect-state would parse ClusterUpdate here using
+                        // Google.Protobuf and map it into spotifyRequestContext.
+                        // For now we only log the presence of these messages.
+                    }
+                }
+
                 if (playerEvent.TryGetProperty("payloads", out var payloads))
                 {
                     foreach (var payload in payloads.EnumerateArray())
@@ -1536,6 +1592,7 @@ namespace YeusepesModules.SPOTIOSC
                 spotifyUtilities.LogDebug($"Error processing player event: {ex.Message}");
             }
         }
+
 
         private void HandleSession(JsonElement payload)
         {
@@ -1769,7 +1826,8 @@ namespace YeusepesModules.SPOTIOSC
 
             // --- Shuffle and Smart Shuffle ---
             bool shuffleEnabled = false;
-            bool smartShuffle = false;
+            // Use existing SmartShuffle value if not present in this message (it comes from content-settings-update or REST API)
+            bool smartShuffle = spotifyRequestContext.SmartShuffle;
             
             if (state.TryGetProperty("shuffle_state", out JsonElement shuffle))
             {
@@ -1781,11 +1839,7 @@ namespace YeusepesModules.SPOTIOSC
             {
                 spotifyRequestContext.SmartShuffle = smartShuffleElem.GetBoolean();
                 smartShuffle = smartShuffleElem.GetBoolean();
-                LogDebug($"Smart Shuffle state: {spotifyRequestContext.SmartShuffle}");                
-            }
-            else
-            {
-                LogDebug("Smart Shuffle property not found in event state, defaulting to false");
+                LogDebug($"Smart Shuffle state from event: {spotifyRequestContext.SmartShuffle}");                
             }
             
             // Map shuffle states to integer mode: 0 = off, 1 = shuffle, 2 = smart shuffle
@@ -2329,7 +2383,7 @@ namespace YeusepesModules.SPOTIOSC
             throw new System.Exception($"API call failed with status code {response.StatusCode}: {errorContent}");
         }
 
-        private void SetParameterSafe(Enum parameter, object value)
+        private void SetParameterSafe(System.Enum parameter, object value)
         {
             try
             {
