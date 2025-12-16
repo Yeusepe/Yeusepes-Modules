@@ -21,12 +21,31 @@ public class SteamInputModule : Module
     private float _rightPrevY = 0f;
     private float _leftPrevMagnitude = 0f;
     private float _rightPrevMagnitude = 0f;
-    private int _leftFlickFrameCount = 0;
-    private int _rightFlickFrameCount = 0;
     private bool _leftFlickWasSent = false;
     private bool _rightFlickWasSent = false;
+    private int _leftFlickHoldFrames = 0;
+    private int _rightFlickHoldFrames = 0;
+    private int _leftFlickReturnFrames = 0;
+    private int _rightFlickReturnFrames = 0;
     private float _leftAccumulatedRotationDelta = 0f;
     private float _rightAccumulatedRotationDelta = 0f;
+
+    // Rotation tick + direction hold (prevents short pulses being missed downstream)
+    private int _leftRotationHoldFrames = 0;
+    private int _rightRotationHoldFrames = 0;
+    private float _leftRotationHoldDirection = 0f;
+    private float _rightRotationHoldDirection = 0f;
+    private const int RotationHoldFrames = 3;
+
+    // Flick tracking state (per-hand). Simple angle-based detection.
+    private float _leftFlickLastAngle = 0f;
+    private float _rightFlickLastAngle = 0f;
+    private float _leftFlickLastX = 0f;
+    private float _leftFlickLastY = 0f;
+    private float _rightFlickLastX = 0f;
+    private float _rightFlickLastY = 0f;
+    private bool _leftFlickHadDirection = false;
+    private bool _rightFlickHadDirection = false;
 
     protected override void OnPreLoad()
     {
@@ -66,6 +85,7 @@ public class SteamInputModule : Module
 
         // Left Controller - Rotation Detection
         RegisterParameter<float>(SteamInputParameter.LeftStickRotationDirection, "SteamInput/LHand/Stick/RotationDirection", ParameterMode.Write, "Left Stick Rotation Direction", "Rotation direction: 0 (no rotation), 1 (clockwise), -1 (counter-clockwise)");
+        RegisterParameter<bool>(SteamInputParameter.LeftStickRotationTick, "SteamInput/LHand/Stick/RotationTick", ParameterMode.Write, "Left Stick Rotation Tick", "Triggered when a rotation step is detected");
         RegisterParameter<bool>(SteamInputParameter.LeftStickFlick, "SteamInput/LHand/Stick/Flick", ParameterMode.Write, "Left Stick Flick", "Triggered when a flick is detected");
 
         // Right Controller - Stick
@@ -104,10 +124,13 @@ public class SteamInputModule : Module
 
         // Right Controller - Rotation Detection
         RegisterParameter<float>(SteamInputParameter.RightStickRotationDirection, "SteamInput/RHand/Stick/RotationDirection", ParameterMode.Write, "Right Stick Rotation Direction", "Rotation direction: 0 (no rotation), 1 (clockwise), -1 (counter-clockwise)");
+        RegisterParameter<bool>(SteamInputParameter.RightStickRotationTick, "SteamInput/RHand/Stick/RotationTick", ParameterMode.Write, "Right Stick Rotation Tick", "Triggered when a rotation step is detected");
         RegisterParameter<bool>(SteamInputParameter.RightStickFlick, "SteamInput/RHand/Stick/Flick", ParameterMode.Write, "Right Stick Flick", "Triggered when a flick is detected");
     }
 
-    [ModuleUpdate(ModuleUpdateMode.Custom, true, 1000f / 60f)]
+    // Higher update rate improves responsiveness for angle-delta based features (rotation direction / flick).
+    // VRCOSC custom update intervals are in milliseconds.
+    [ModuleUpdate(ModuleUpdateMode.Custom, true, 1000f / 260f)]
     private void updateParameters()
     {
         var manager = GetOpenVRManager();
@@ -132,22 +155,64 @@ public class SteamInputModule : Module
             SendParameter(SteamInputParameter.LeftStickTouch, leftInput.Stick.Touch);
             SendParameter(SteamInputParameter.LeftStickClick, leftInput.Stick.Click);
 
-            // Left Stick - Rotation Detection
-            float leftRotationDirection = CalculateRotationDirection(leftX, leftY, ref _leftPrevAngleRad, ref _leftInitialized, ref _leftAccumulatedRotationDelta);
-            SendParameter(SteamInputParameter.LeftStickRotationDirection, leftRotationDirection);
+            // Left Stick - Rotation Detection (pulse + tick)
+            float leftPulseDirection = CalculateRotationDirection(leftX, leftY, ref _leftPrevAngleRad, ref _leftInitialized, ref _leftAccumulatedRotationDelta);
+            if (leftPulseDirection != 0f)
+            {
+                _leftRotationHoldFrames = RotationHoldFrames;
+                _leftRotationHoldDirection = leftPulseDirection;
+            }
+
+            if (_leftRotationHoldFrames > 0)
+            {
+                SendParameter(SteamInputParameter.LeftStickRotationDirection, _leftRotationHoldDirection);
+                SendParameter(SteamInputParameter.LeftStickRotationTick, true);
+                _leftRotationHoldFrames--;
+                if (_leftRotationHoldFrames == 0)
+                {
+                    SendParameter(SteamInputParameter.LeftStickRotationDirection, 0f);
+                    SendParameter(SteamInputParameter.LeftStickRotationTick, false);
+                }
+            }
+            else
+            {
+                SendParameter(SteamInputParameter.LeftStickRotationDirection, 0f);
+                SendParameter(SteamInputParameter.LeftStickRotationTick, false);
+            }
 
             // Left Stick - Flick Detection
             float leftMagnitude = (float)System.Math.Sqrt(leftX * leftX + leftY * leftY);
-            if (_leftFlickWasSent)
-            {
-                SendParameter(SteamInputParameter.LeftStickFlick, false);
-                _leftFlickWasSent = false;
-            }
-            bool leftFlick = DetectFlick(leftX, leftY, _leftPrevX, _leftPrevY, _leftPrevMagnitude, ref _leftFlickFrameCount);
+            bool leftFlick = DetectFlick(
+                leftX, leftY,
+                _leftPrevX, _leftPrevY,
+                _leftPrevMagnitude,
+                ref _leftFlickLastAngle,
+                ref _leftFlickLastX,
+                ref _leftFlickLastY,
+                ref _leftFlickHadDirection,
+                ref _leftFlickReturnFrames,
+                "Left"
+            );
+            
+            // Handle flick parameter with hold frames
             if (leftFlick)
             {
-                SendParameter(SteamInputParameter.LeftStickFlick, true);
+                LogDebug($"[Left] FLICK DETECTED: Starting hold period");
+                _leftFlickHoldFrames = 3; // Hold for 3 frames
                 _leftFlickWasSent = true;
+            }
+            
+            if (_leftFlickHoldFrames > 0)
+            {
+                LogDebug($"[Left] SENDING FLICK PARAMETER: true (hold frames remaining: {_leftFlickHoldFrames})");
+                SendParameter(SteamInputParameter.LeftStickFlick, true);
+                _leftFlickHoldFrames--;
+                if (_leftFlickHoldFrames == 0)
+                {
+                    LogDebug($"[Left] SENDING FLICK PARAMETER: false (hold period ended)");
+                    SendParameter(SteamInputParameter.LeftStickFlick, false);
+                    _leftFlickWasSent = false;
+                }
             }
             _leftPrevX = leftX;
             _leftPrevY = leftY;
@@ -196,22 +261,64 @@ public class SteamInputModule : Module
             SendParameter(SteamInputParameter.RightStickTouch, rightInput.Stick.Touch);
             SendParameter(SteamInputParameter.RightStickClick, rightInput.Stick.Click);
 
-            // Right Stick - Rotation Detection
-            float rightRotationDirection = CalculateRotationDirection(rightX, rightY, ref _rightPrevAngleRad, ref _rightInitialized, ref _rightAccumulatedRotationDelta);
-            SendParameter(SteamInputParameter.RightStickRotationDirection, rightRotationDirection);
+            // Right Stick - Rotation Detection (pulse + tick)
+            float rightPulseDirection = CalculateRotationDirection(rightX, rightY, ref _rightPrevAngleRad, ref _rightInitialized, ref _rightAccumulatedRotationDelta);
+            if (rightPulseDirection != 0f)
+            {
+                _rightRotationHoldFrames = RotationHoldFrames;
+                _rightRotationHoldDirection = rightPulseDirection;
+            }
+
+            if (_rightRotationHoldFrames > 0)
+            {
+                SendParameter(SteamInputParameter.RightStickRotationDirection, _rightRotationHoldDirection);
+                SendParameter(SteamInputParameter.RightStickRotationTick, true);
+                _rightRotationHoldFrames--;
+                if (_rightRotationHoldFrames == 0)
+                {
+                    SendParameter(SteamInputParameter.RightStickRotationDirection, 0f);
+                    SendParameter(SteamInputParameter.RightStickRotationTick, false);
+                }
+            }
+            else
+            {
+                SendParameter(SteamInputParameter.RightStickRotationDirection, 0f);
+                SendParameter(SteamInputParameter.RightStickRotationTick, false);
+            }
 
             // Right Stick - Flick Detection
             float rightMagnitude = (float)System.Math.Sqrt(rightX * rightX + rightY * rightY);
-            if (_rightFlickWasSent)
-            {
-                SendParameter(SteamInputParameter.RightStickFlick, false);
-                _rightFlickWasSent = false;
-            }
-            bool rightFlick = DetectFlick(rightX, rightY, _rightPrevX, _rightPrevY, _rightPrevMagnitude, ref _rightFlickFrameCount);
+            bool rightFlick = DetectFlick(
+                rightX, rightY,
+                _rightPrevX, _rightPrevY,
+                _rightPrevMagnitude,
+                ref _rightFlickLastAngle,
+                ref _rightFlickLastX,
+                ref _rightFlickLastY,
+                ref _rightFlickHadDirection,
+                ref _rightFlickReturnFrames,
+                "Right"
+            );
+            
+            // Handle flick parameter with hold frames
             if (rightFlick)
             {
-                SendParameter(SteamInputParameter.RightStickFlick, true);
+                LogDebug($"[Right] FLICK DETECTED: Starting hold period");
+                _rightFlickHoldFrames = 3; // Hold for 3 frames
                 _rightFlickWasSent = true;
+            }
+            
+            if (_rightFlickHoldFrames > 0)
+            {
+                LogDebug($"[Right] SENDING FLICK PARAMETER: true (hold frames remaining: {_rightFlickHoldFrames})");
+                SendParameter(SteamInputParameter.RightStickFlick, true);
+                _rightFlickHoldFrames--;
+                if (_rightFlickHoldFrames == 0)
+                {
+                    LogDebug($"[Right] SENDING FLICK PARAMETER: false (hold period ended)");
+                    SendParameter(SteamInputParameter.RightStickFlick, false);
+                    _rightFlickWasSent = false;
+                }
             }
             _rightPrevX = rightX;
             _rightPrevY = rightY;
@@ -272,6 +379,7 @@ public class SteamInputModule : Module
         LeftFingerRing,
         LeftFingerPinky,
         LeftStickRotationDirection,
+        LeftStickRotationTick,
         LeftStickFlick,
 
         // Right Controller
@@ -298,6 +406,7 @@ public class SteamInputModule : Module
         RightFingerRing,
         RightFingerPinky,
         RightStickRotationDirection,
+        RightStickRotationTick,
         RightStickFlick
     }
 
@@ -355,27 +464,125 @@ public class SteamInputModule : Module
         return 0f;
     }
 
-    private bool DetectFlick(float currentX, float currentY, float prevX, float prevY, float prevMagnitude, ref int flickFrameCount, float velocityThreshold = 0.5f, float minRadius = 0.7f, float releaseRadius = 0.3f, int maxFrames = 6)
+    private bool DetectFlick(
+        float currentX,
+        float currentY,
+        float prevX,
+        float prevY,
+        float prevMagnitude,
+        ref float flickLastAngle,
+        ref float flickLastX,
+        ref float flickLastY,
+        ref bool flickHadDirection,
+        ref int flickReturnFrames,
+        string handName,
+        float pushThreshold = 0.5f,
+        float centerThreshold = 0.15f,
+        float axisTolerance = 0.7f,
+        int maxReturnFrames = 6
+    )
     {
         float r = (float)System.Math.Sqrt(currentX * currentX + currentY * currentY);
-        float dx = currentX - prevX;
-        float dy = currentY - prevY;
-        float velocity = (float)System.Math.Sqrt(dx * dx + dy * dy);
+        float prevR = prevMagnitude;
         
-        if (velocity > velocityThreshold && prevMagnitude > minRadius)
+        // If stick is pushed out (magnitude > threshold), record the direction ONCE
+        // Only record if we don't already have a direction (first time crossing threshold)
+        if (r > pushThreshold && !flickHadDirection)
         {
-            flickFrameCount = 1;
+            float angle = (float)System.Math.Atan2(currentY, currentX);
+            float angleDeg = angle * 180f / (float)System.Math.PI;
+            flickLastAngle = angle;
+            flickLastX = currentX;
+            flickLastY = currentY;
+            flickHadDirection = true;
+            flickReturnFrames = 0;
+            LogDebug($"[{handName}] FLICK CANDIDATE: Direction recorded - X={currentX:F3}, Y={currentY:F3}, Angle={angleDeg:F1}°, Magnitude={r:F3}");
             return false;
         }
         
-        if (flickFrameCount > 0)
+        // Debug: Log current state periodically when tracking (but not recording new direction)
+        if (flickHadDirection && r > centerThreshold)
         {
-            flickFrameCount++;
-            if (r < releaseRadius || flickFrameCount >= maxFrames)
+            LogDebug($"[{handName}] FLICK TRACKING: Waiting for return to center - Current(X={currentX:F3}, Y={currentY:F3}, R={r:F3}), LastRecorded(X={flickLastX:F3}, Y={flickLastY:F3})");
+        }
+        
+        // If we had a direction and stick is now at center, check for flick
+        if (flickHadDirection && r < centerThreshold)
+        {
+            // Previous frame had direction, current frame is at center
+            // Check if previous frame was also at center (already centered, don't trigger)
+            if (prevR < centerThreshold)
             {
-                flickFrameCount = 0;
-                return true;
+                // Already at center, reset
+                LogDebug($"[{handName}] FLICK REJECTED: Already at center (prevR={prevR:F3}, currentR={r:F3})");
+                flickHadDirection = false;
+                flickReturnFrames = 0;
+                return false;
             }
+            
+            // Previous was pushed out, now at center - check if it was a valid flick
+            bool isValidFlick = false;
+            string rejectionReason = "";
+            
+            // Check if it was a vertical flick (up or down)
+            // Vertical means: -0.7 < x < 0.7 (mostly vertical, not diagonal)
+            bool isVertical = System.Math.Abs(flickLastX) < axisTolerance;
+            
+            // Check if it was a horizontal flick (left or right)
+            // Horizontal means: -0.7 < y < 0.7 (mostly horizontal, not diagonal)
+            bool isHorizontal = System.Math.Abs(flickLastY) < axisTolerance;
+            
+            if (!isVertical && !isHorizontal)
+            {
+                rejectionReason = $"Diagonal movement (X={flickLastX:F3}, Y={flickLastY:F3}) - |X|={System.Math.Abs(flickLastX):F3} >= {axisTolerance} AND |Y|={System.Math.Abs(flickLastY):F3} >= {axisTolerance}";
+            }
+            
+            // Valid flick if it was either vertical OR horizontal (not diagonal)
+            if (isVertical || isHorizontal)
+            {
+                isValidFlick = true;
+                string direction = isVertical ? "VERTICAL" : "HORIZONTAL";
+                LogDebug($"[{handName}] FLICK TRIGGERED: {direction} - LastPos(X={flickLastX:F3}, Y={flickLastY:F3}), CurrentR={r:F3}, PrevR={prevR:F3}");
+            }
+            else
+            {
+                LogDebug($"[{handName}] FLICK REJECTED: {rejectionReason}");
+            }
+            
+            // Reset state
+            flickHadDirection = false;
+            flickReturnFrames = 0;
+            
+            return isValidFlick;
+        }
+        
+        // Return-to-center window:
+        // Once you leave the "pushed" zone (r <= pushThreshold), you must reach center within N frames.
+        // This avoids false cancels caused by higher update rates capturing intermediate radii.
+        if (flickHadDirection && r <= pushThreshold)
+        {
+            if (r > centerThreshold)
+            {
+                flickReturnFrames++;
+                LogDebug($"[{handName}] FLICK RETURNING: r={r:F3} (frame {flickReturnFrames}/{maxReturnFrames})");
+
+                if (flickReturnFrames > maxReturnFrames)
+                {
+                    LogDebug($"[{handName}] FLICK CANCELLED: Did not return to center fast enough (last r={r:F3})");
+                    flickHadDirection = false;
+                    flickReturnFrames = 0;
+                }
+            }
+            else
+            {
+                // Center case is handled above; keep state consistent.
+                flickReturnFrames = 0;
+            }
+        }
+        else if (flickHadDirection && r > pushThreshold)
+        {
+            // Still fully pushed: reset return timer.
+            flickReturnFrames = 0;
         }
         
         return false;

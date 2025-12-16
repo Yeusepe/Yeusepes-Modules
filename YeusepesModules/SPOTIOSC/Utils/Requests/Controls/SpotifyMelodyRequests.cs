@@ -144,6 +144,148 @@ public class SpotifyApiService
         }
     }
 
+    /// <summary>
+    /// Play a URI with optional offset (for playing a specific track within a playlist/album context).
+    /// </summary>
+    public async Task PlayUriWithOffsetAsync(string contextUri, string offsetTrackUri = null, int? offsetPosition = null, string deviceId = null)
+    {
+        try
+        {
+            var req = new PlayerResumePlaybackRequest { DeviceId = deviceId };
+            
+            // Set context URI (playlist, album, etc.)
+            req.ContextUri = contextUri;
+            
+            // Set offset if provided
+            if (!string.IsNullOrEmpty(offsetTrackUri))
+            {
+                req.OffsetParam = new PlayerResumePlaybackRequest.Offset { Uri = offsetTrackUri };
+            }
+            else if (offsetPosition.HasValue)
+            {
+                req.OffsetParam = new PlayerResumePlaybackRequest.Offset { Position = offsetPosition.Value };
+            }
+
+            await _client.Player.ResumePlayback(req);
+        }
+        catch (APIUnauthorizedException)
+        {
+            await RefreshAndReinitializeAsync();
+            var req = new PlayerResumePlaybackRequest { DeviceId = deviceId };
+            req.ContextUri = contextUri;
+            if (!string.IsNullOrEmpty(offsetTrackUri))
+            {
+                req.OffsetParam = new PlayerResumePlaybackRequest.Offset { Uri = offsetTrackUri };
+            }
+            else if (offsetPosition.HasValue)
+            {
+                req.OffsetParam = new PlayerResumePlaybackRequest.Offset { Position = offsetPosition.Value };
+            }
+            await _client.Player.ResumePlayback(req);
+        }
+        catch (APIException ex) when (ex.Message.Contains("Device not found"))
+        {
+            var activeDevice = await GetActiveDeviceAsync();
+            var req = new PlayerResumePlaybackRequest { DeviceId = activeDevice?.Id };
+            req.ContextUri = contextUri;
+            if (!string.IsNullOrEmpty(offsetTrackUri))
+            {
+                req.OffsetParam = new PlayerResumePlaybackRequest.Offset { Uri = offsetTrackUri };
+            }
+            else if (offsetPosition.HasValue)
+            {
+                req.OffsetParam = new PlayerResumePlaybackRequest.Offset { Position = offsetPosition.Value };
+            }
+            await _client.Player.ResumePlayback(req);
+        }
+        catch (APIException ex)
+        {
+            throw new Exception($"Spotify API error during play URI with offset: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Find the position (index) of a track in a playlist. Returns null if not found.
+    /// </summary>
+    public async Task<int?> FindTrackPositionInPlaylistAsync(string playlistId, string trackUri)
+    {
+        try
+        {
+            var playlist = await _client.Playlists.Get(playlistId);
+            if (playlist == null) return null;
+
+            // Get all tracks from the playlist (handle pagination)
+            var allTracks = new List<PlaylistTrack<IPlayableItem>>();
+            var offset = 0;
+            const int limit = 100;
+
+            while (true)
+            {
+                var request = new PlaylistGetItemsRequest
+                {
+                    Limit = limit,
+                    Offset = offset
+                };
+                
+                var page = await _client.Playlists.GetItems(playlistId, request);
+                if (page?.Items == null || page.Items.Count == 0) break;
+                
+                allTracks.AddRange(page.Items);
+                
+                if (page.Items.Count < limit) break;
+                offset += limit;
+            }
+
+            // Find the track position (zero-based)
+            for (int i = 0; i < allTracks.Count; i++)
+            {
+                if (allTracks[i].Track is FullTrack track && track.Uri == trackUri)
+                {
+                    return i;
+                }
+                if (allTracks[i].Track is FullEpisode episode && episode.Uri == trackUri)
+                {
+                    return i;
+                }
+            }
+
+            return null; // Track not found
+        }
+        catch (APIUnauthorizedException)
+        {
+            await RefreshAndReinitializeAsync();
+            return await FindTrackPositionInPlaylistAsync(playlistId, trackUri);
+        }
+        catch (Exception ex)
+        {
+            throw new Exception($"Error finding track position in playlist: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Extract playlist ID from a Spotify playlist URI.
+    /// </summary>
+    public string ExtractPlaylistId(string playlistUri)
+    {
+        if (string.IsNullOrEmpty(playlistUri)) return null;
+        
+        // Handle formats: spotify:playlist:ID or https://open.spotify.com/playlist/ID
+        if (playlistUri.StartsWith("spotify:playlist:"))
+        {
+            return playlistUri.Replace("spotify:playlist:", "");
+        }
+        if (playlistUri.Contains("/playlist/"))
+        {
+            var parts = playlistUri.Split(new[] { "/playlist/" }, StringSplitOptions.None);
+            if (parts.Length > 1)
+            {
+                var id = parts[1].Split('?')[0].Split('&')[0];
+                return id;
+            }
+        }
+        return null;
+    }
+
 
     /// <summary> Pause playback. </summary>
     public async Task PauseAsync(string deviceId = null)

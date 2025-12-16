@@ -50,6 +50,7 @@ namespace YeusepesModules.SPOTIOSC
         private string _currentEphemeralWord1;
         private string _currentEphemeralWord2;
         private Dictionary<SpotiParameters, bool> _ephemeralWordValues = new Dictionary<SpotiParameters, bool>();
+        private Dictionary<SpotiParameters, bool> _ephemeralWordReceiverValues = new Dictionary<SpotiParameters, bool>();
         private bool _isProcessingEphemeralJoin = false;
         private readonly object _ephemeralJoinLock = new object();
         private DateTime _lastEphemeralCheckTime = DateTime.MinValue;
@@ -144,7 +145,7 @@ namespace YeusepesModules.SPOTIOSC
             // URI Playback
             PlayUri,
 
-            // Syncopation Ephemeral Word Parameters
+            // Syncopation Ephemeral Word Parameters (Sending)
             Allegro,
             Cadence,
             Groove,
@@ -152,6 +153,15 @@ namespace YeusepesModules.SPOTIOSC
             Metronome,
             Encore,
             Chorus,
+
+            // Syncopation Ephemeral Word Parameters (Receiving)
+            AllegroReceiver,
+            CadenceReceiver,
+            GrooveReceiver,
+            RitmoReceiver,
+            MetronomeReceiver,
+            EncoreReceiver,
+            ChorusReceiver,
 
             // Audio Features
             GetTrackFeatures,
@@ -214,8 +224,10 @@ namespace YeusepesModules.SPOTIOSC
 
 
             _syncopationHttpClient = new HttpClient();
+            LogDebug($"[OnPreLoad] Initialized _syncopationHttpClient={(_syncopationHttpClient == null ? "NULL" : "SUCCESS")}");
+            LogDebug($"[OnPreLoad] _melodyServerUrl={_melodyServerUrl}");
             
-            // Initialize ephemeral word values dictionary
+            // Initialize ephemeral word values dictionary (sending)
             _ephemeralWordValues[SpotiParameters.Allegro] = false;
             _ephemeralWordValues[SpotiParameters.Cadence] = false;
             _ephemeralWordValues[SpotiParameters.Groove] = false;
@@ -223,6 +235,15 @@ namespace YeusepesModules.SPOTIOSC
             _ephemeralWordValues[SpotiParameters.Metronome] = false;
             _ephemeralWordValues[SpotiParameters.Encore] = false;
             _ephemeralWordValues[SpotiParameters.Chorus] = false;
+
+            // Initialize ephemeral word receiver values dictionary (receiving)
+            _ephemeralWordReceiverValues[SpotiParameters.AllegroReceiver] = false;
+            _ephemeralWordReceiverValues[SpotiParameters.CadenceReceiver] = false;
+            _ephemeralWordReceiverValues[SpotiParameters.GrooveReceiver] = false;
+            _ephemeralWordReceiverValues[SpotiParameters.RitmoReceiver] = false;
+            _ephemeralWordReceiverValues[SpotiParameters.MetronomeReceiver] = false;
+            _ephemeralWordReceiverValues[SpotiParameters.EncoreReceiver] = false;
+            _ephemeralWordReceiverValues[SpotiParameters.ChorusReceiver] = false;
 
             spotifyUtilities = new SpotifyUtilities
             {
@@ -253,7 +274,8 @@ namespace YeusepesModules.SPOTIOSC
               "SpotiOSC/Play/*",
               ParameterMode.ReadWrite,
               "Play [URI]",
-              "Set to true to resume playback, or append /<spotify:uri> to play that URI."
+              "Set to true to resume playback, or append /<spotify:uri> to play that URI. " +
+              "To play a track within a playlist context, use format: /<playlist:uri>|<track:uri> or /<playlist:uri>|position:N"
             );
 
             RegisterParameter<bool>(
@@ -287,8 +309,8 @@ namespace YeusepesModules.SPOTIOSC
             // Playback state (root)
             RegisterParameter<int>(SpotiParameters.ShuffleMode, "SpotiOSC/ShuffleMode", ParameterMode.ReadWrite, "Shuffle Mode (Mapped)", "Mapped shuffle state: off=0, shuffle=1, smart_shuffle=2.");
             RegisterParameter<int>(SpotiParameters.RepeatMode, "SpotiOSC/RepeatMode", ParameterMode.ReadWrite, "Repeat Mode (Mapped)", "Mapped repeat state: off=0, track=1, context=2.");
-            RegisterParameter<int>(SpotiParameters.Timestamp, "SpotiOSC/Timestamp", ParameterMode.ReadWrite, "Timestamp", "Playback timestamp.");
-            RegisterParameter<int>(SpotiParameters.PlaybackPosition, "SpotiOSC/PlaybackPosition", ParameterMode.ReadWrite, "Playback Progress (ms)", "Playback progress in ms.");
+            RegisterParameter<float>(SpotiParameters.Timestamp, "SpotiOSC/Timestamp", ParameterMode.ReadWrite, "Timestamp", "Playback timestamp.");
+            RegisterParameter<float>(SpotiParameters.PlaybackPosition, "SpotiOSC/PlaybackPosition", ParameterMode.ReadWrite, "Playback Progress (ms)", "Playback progress in ms.");
             RegisterParameter<bool>(SpotiParameters.IsPlaying, "SpotiOSC/IsPlaying", ParameterMode.Write, "Is Playing", "Whether playback is active.");
 
             // Device details (state.device)
@@ -342,18 +364,28 @@ namespace YeusepesModules.SPOTIOSC
             RegisterParameter<float>(SpotiParameters.Tempo, "SpotiOSC/Tempo", ParameterMode.Write, "Tempo", "Overall estimated tempo in BPM.");
             RegisterParameter<int>(SpotiParameters.TimeSignature, "SpotiOSC/TimeSignature", ParameterMode.Write, "Time Signature", "Estimated time signature (3-7).");
 
-            RegisterParameter<bool>(SpotiParameters.Allegro, "SpotiOSC/allegro", ParameterMode.ReadWrite, "Allegro", "Ephemeral jam code word.");
-            RegisterParameter<bool>(SpotiParameters.Cadence, "SpotiOSC/cadence", ParameterMode.ReadWrite, "Cadence", "Ephemeral jam code word.");
-            RegisterParameter<bool>(SpotiParameters.Groove, "SpotiOSC/groove", ParameterMode.ReadWrite, "Groove", "Ephemeral jam code word.");
-            RegisterParameter<bool>(SpotiParameters.Ritmo, "SpotiOSC/ritmo", ParameterMode.ReadWrite, "Ritmo", "Ephemeral jam code word.");
-            RegisterParameter<bool>(SpotiParameters.Metronome, "SpotiOSC/metronome", ParameterMode.ReadWrite, "Metronome", "Ephemeral jam code word.");
-            RegisterParameter<bool>(SpotiParameters.Encore, "SpotiOSC/encore", ParameterMode.ReadWrite, "Encore", "Ephemeral jam code word.");
-            RegisterParameter<bool>(SpotiParameters.Chorus, "SpotiOSC/chorus", ParameterMode.ReadWrite, "Chorus", "Ephemeral jam code word.");
+            // Ephemeral word parameters (sending - for creating jam codes)
+            RegisterParameter<bool>(SpotiParameters.Allegro, "SpotiOSC/allegro", ParameterMode.ReadWrite, "Allegro", "Ephemeral jam code word (sending).");
+            RegisterParameter<bool>(SpotiParameters.Cadence, "SpotiOSC/cadence", ParameterMode.ReadWrite, "Cadence", "Ephemeral jam code word (sending).");
+            RegisterParameter<bool>(SpotiParameters.Groove, "SpotiOSC/groove", ParameterMode.ReadWrite, "Groove", "Ephemeral jam code word (sending).");
+            RegisterParameter<bool>(SpotiParameters.Ritmo, "SpotiOSC/ritmo", ParameterMode.ReadWrite, "Ritmo", "Ephemeral jam code word (sending).");
+            RegisterParameter<bool>(SpotiParameters.Metronome, "SpotiOSC/metronome", ParameterMode.ReadWrite, "Metronome", "Ephemeral jam code word (sending).");
+            RegisterParameter<bool>(SpotiParameters.Encore, "SpotiOSC/encore", ParameterMode.ReadWrite, "Encore", "Ephemeral jam code word (sending).");
+            RegisterParameter<bool>(SpotiParameters.Chorus, "SpotiOSC/chorus", ParameterMode.ReadWrite, "Chorus", "Ephemeral jam code word (sending).");
+
+            // Ephemeral word receiver parameters (receiving - for joining jams)
+            RegisterParameter<bool>(SpotiParameters.AllegroReceiver, "SpotiOSC/allegro_receiver", ParameterMode.ReadWrite, "Allegro Receiver", "Ephemeral jam code word (receiving).");
+            RegisterParameter<bool>(SpotiParameters.CadenceReceiver, "SpotiOSC/cadence_receiver", ParameterMode.ReadWrite, "Cadence Receiver", "Ephemeral jam code word (receiving).");
+            RegisterParameter<bool>(SpotiParameters.GrooveReceiver, "SpotiOSC/groove_receiver", ParameterMode.ReadWrite, "Groove Receiver", "Ephemeral jam code word (receiving).");
+            RegisterParameter<bool>(SpotiParameters.RitmoReceiver, "SpotiOSC/ritmo_receiver", ParameterMode.ReadWrite, "Ritmo Receiver", "Ephemeral jam code word (receiving).");
+            RegisterParameter<bool>(SpotiParameters.MetronomeReceiver, "SpotiOSC/metronome_receiver", ParameterMode.ReadWrite, "Metronome Receiver", "Ephemeral jam code word (receiving).");
+            RegisterParameter<bool>(SpotiParameters.EncoreReceiver, "SpotiOSC/encore_receiver", ParameterMode.ReadWrite, "Encore Receiver", "Ephemeral jam code word (receiving).");
+            RegisterParameter<bool>(SpotiParameters.ChorusReceiver, "SpotiOSC/chorus_receiver", ParameterMode.ReadWrite, "Chorus Receiver", "Ephemeral jam code word (receiving).");
 
             // Album Color (RGB)
-            RegisterParameter<int>(SpotiParameters.AlbumColorR, "SpotiOSC/AlbumColorR", ParameterMode.Write, "Album Color R", "Red component of the dominant album color (0-255).");
-            RegisterParameter<int>(SpotiParameters.AlbumColorG, "SpotiOSC/AlbumColorG", ParameterMode.Write, "Album Color G", "Green component of the dominant album color (0-255).");
-            RegisterParameter<int>(SpotiParameters.AlbumColorB, "SpotiOSC/AlbumColorB", ParameterMode.Write, "Album Color B", "Blue component of the dominant album color (0-255).");
+            RegisterParameter<float>(SpotiParameters.AlbumColorR, "SpotiOSC/AlbumColorR", ParameterMode.Write, "Album Color R", "Red component of the dominant album color (0-255).");
+            RegisterParameter<float>(SpotiParameters.AlbumColorG, "SpotiOSC/AlbumColorG", ParameterMode.Write, "Album Color G", "Green component of the dominant album color (0-255).");
+            RegisterParameter<float>(SpotiParameters.AlbumColorB, "SpotiOSC/AlbumColorB", ParameterMode.Write, "Album Color B", "Blue component of the dominant album color (0-255).");
 
             #endregion
 
@@ -597,6 +629,13 @@ namespace YeusepesModules.SPOTIOSC
             {
                 bool value = parameter.GetValue<bool>();
                 _ephemeralWordValues[param] = value;
+                // Sender parameters don't trigger join detection
+            }
+            
+            if (IsEphemeralWordReceiverParameter(param))
+            {
+                bool value = parameter.GetValue<bool>();
+                _ephemeralWordReceiverValues[param] = value;
                 HandleEphemeralWordParameter(param, value);
             }
 
@@ -649,23 +688,147 @@ namespace YeusepesModules.SPOTIOSC
                 {
                     var uri = parameter.GetWildcard<string>(0);
                     LogDebug($"Playing URI: {uri}");
-                    // fire‐and‐forget
-                    _ = Task.Run(async () =>
+                    
+                    // Check for combined format: playlist:ID|track:ID or playlist:ID|position:5
+                    if (uri.Contains("|"))
                     {
-                        try
+                        var parts = uri.Split('|');
+                        if (parts.Length == 2)
                         {
-                            await _apiService.PlayUriAsync(uri, spotifyRequestContext.DeviceId);
-                            LogDebug($"Successfully started playing URI: {uri}");
+                            var contextUri = parts[0].Trim();
+                            var offsetPart = parts[1].Trim();
+                            
+                            // fire-and-forget
+                            _ = Task.Run(async () =>
+                            {
+                                try
+                                {
+                                    // Check if offset is a track URI or position
+                                    if (offsetPart.StartsWith("spotify:track:") || offsetPart.StartsWith("track:"))
+                                    {
+                                        var trackUri = offsetPart.StartsWith("track:") 
+                                            ? "spotify:" + offsetPart 
+                                            : offsetPart;
+                                        
+                                        // Find the track's position in the playlist and use that instead of the URI
+                                        // This ensures the playlist queues correctly from that position
+                                        var playlistId = ExtractPlaylistId(contextUri);
+                                        if (!string.IsNullOrEmpty(playlistId))
+                                        {
+                                            LogDebug($"Finding track position in playlist for {trackUri}...");
+                                            var trackPosition = await _apiService.FindTrackPositionInPlaylistAsync(playlistId, trackUri);
+                                            if (trackPosition.HasValue)
+                                            {
+                                                LogDebug($"Found track at position {trackPosition.Value}, playing playlist from that position...");
+                                                await _apiService.PlayUriWithOffsetAsync(
+                                                    contextUri, 
+                                                    offsetPosition: trackPosition.Value, 
+                                                    deviceId: spotifyRequestContext.DeviceId
+                                                );
+                                                LogDebug($"Successfully started playing playlist with track position offset");
+                                            }
+                                            else
+                                            {
+                                                LogDebug($"Track not found in playlist, falling back to track URI offset");
+                                                await _apiService.PlayUriWithOffsetAsync(
+                                                    contextUri, 
+                                                    offsetTrackUri: trackUri, 
+                                                    deviceId: spotifyRequestContext.DeviceId
+                                                );
+                                            }
+                                        }
+                                        else
+                                        {
+                                            LogDebug($"Could not extract playlist ID, using track URI as offset");
+                                            await _apiService.PlayUriWithOffsetAsync(
+                                                contextUri, 
+                                                offsetTrackUri: trackUri, 
+                                                deviceId: spotifyRequestContext.DeviceId
+                                            );
+                                        }
+                                    }
+                                    else if (offsetPart.StartsWith("position:") && int.TryParse(offsetPart.Replace("position:", ""), out int position))
+                                    {
+                                        LogDebug($"Playing playlist {contextUri} starting from position {position}");
+                                        await _apiService.PlayUriWithOffsetAsync(
+                                            contextUri, 
+                                            offsetPosition: position, 
+                                            deviceId: spotifyRequestContext.DeviceId
+                                        );
+                                        LogDebug($"Successfully started playing playlist with position offset");
+                                    }
+                                    else
+                                    {
+                                        // Try to find track position in playlist
+                                        var playlistId = ExtractPlaylistId(contextUri);
+                                        if (!string.IsNullOrEmpty(playlistId) && offsetPart.StartsWith("spotify:track:"))
+                                        {
+                                            LogDebug($"Finding track position in playlist...");
+                                            var trackPosition = await _apiService.FindTrackPositionInPlaylistAsync(playlistId, offsetPart);
+                                            if (trackPosition.HasValue)
+                                            {
+                                                LogDebug($"Found track at position {trackPosition.Value}, playing playlist...");
+                                                await _apiService.PlayUriWithOffsetAsync(
+                                                    contextUri, 
+                                                    offsetPosition: trackPosition.Value, 
+                                                    deviceId: spotifyRequestContext.DeviceId
+                                                );
+                                            }
+                                            else
+                                            {
+                                                LogDebug($"Track not found in playlist, using track URI as offset");
+                                                await _apiService.PlayUriWithOffsetAsync(
+                                                    contextUri, 
+                                                    offsetTrackUri: offsetPart, 
+                                                    deviceId: spotifyRequestContext.DeviceId
+                                                );
+                                            }
+                                        }
+                                        else
+                                        {
+                                            throw new Exception($"Invalid offset format. Use 'spotify:track:ID', 'track:ID', or 'position:N'");
+                                        }
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    LogDebug($"Error playing URI with offset {uri}: {ex.Message}");
+                                    SendParameter(SpotiParameters.Error, true);
+                                    await Task.Delay(100);
+                                    SendParameter(SpotiParameters.Error, false);
+                                }
+                            });
                         }
-                        catch (Exception ex)
+                        else
                         {
-                            LogDebug($"Error playing URI {uri}: {ex.Message}");
+                            LogDebug($"Invalid combined URI format. Expected: 'playlist:ID|track:ID' or 'playlist:ID|position:N'");
                             SendParameter(SpotiParameters.Error, true);
-                            // Reset error after delay
-                            await Task.Delay(100);
-                            SendParameter(SpotiParameters.Error, false);
+                            _ = Task.Run(async () =>
+                            {
+                                await Task.Delay(100);
+                                SendParameter(SpotiParameters.Error, false);
+                            });
                         }
-                    });
+                    }
+                    else
+                    {
+                        // Original behavior: play single URI
+                        _ = Task.Run(async () =>
+                        {
+                            try
+                            {
+                                await _apiService.PlayUriAsync(uri, spotifyRequestContext.DeviceId);
+                                LogDebug($"Successfully started playing URI: {uri}");
+                            }
+                            catch (Exception ex)
+                            {
+                                LogDebug($"Error playing URI {uri}: {ex.Message}");
+                                SendParameter(SpotiParameters.Error, true);
+                                await Task.Delay(100);
+                                SendParameter(SpotiParameters.Error, false);
+                            }
+                        });
+                    }
                 }
                 else
                 {
@@ -850,6 +1013,7 @@ namespace YeusepesModules.SPOTIOSC
 
         private async Task RegisterWithSyncopationServerAsync()
         {
+            LogDebug($"[RegisterWithSyncopationServerAsync] Called - _melodyServerUrl={_melodyServerUrl}");
             try
             {
                 if (string.IsNullOrEmpty(_melodyServerUrl) || _melodyServerUrl.Contains("your-melody-server"))
@@ -858,27 +1022,43 @@ namespace YeusepesModules.SPOTIOSC
                     return;
                 }
 
+                LogDebug($"[RegisterWithSyncopationServerAsync] Sending registration request to {_melodyServerUrl}/register");
+                LogDebug($"[RegisterWithSyncopationServerAsync] _syncopationHttpClient={(_syncopationHttpClient == null ? "NULL" : "INITIALIZED")}");
                 var request = new HttpRequestMessage(HttpMethod.Post, $"{_melodyServerUrl}/register");
                 var response = await _syncopationHttpClient.SendAsync(request);
+                
+                LogDebug($"[RegisterWithSyncopationServerAsync] Response status: {response.StatusCode}");
                 
                 if (response.IsSuccessStatusCode)
                 {
                     var content = await response.Content.ReadAsStringAsync();
+                    LogDebug($"[RegisterWithSyncopationServerAsync] Response content: {content}");
+                    
                     var result = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(content);
                     if (result.TryGetProperty("instance_id", out var instanceIdElement))
                     {
                         _syncopationInstanceId = instanceIdElement.GetString();
-                        LogDebug($"Registered with syncopation server. Instance ID: {_syncopationInstanceId}");
+                        LogDebug($"[RegisterWithSyncopationServerAsync] Registered with syncopation server. Instance ID: {_syncopationInstanceId}");
+                    }
+                    else
+                    {
+                        LogDebug("[RegisterWithSyncopationServerAsync] Response does not contain instance_id property");
                     }
                 }
                 else
                 {
-                    LogDebug($"Failed to register with syncopation server: {response.StatusCode}");
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    LogDebug($"[RegisterWithSyncopationServerAsync] Failed to register with syncopation server: {response.StatusCode} - {errorContent}");
                 }
             }
             catch (Exception ex)
             {
-                LogDebug($"Error registering with syncopation server: {ex.Message}");
+                LogDebug($"[RegisterWithSyncopationServerAsync] Exception: {ex.GetType().Name} - {ex.Message}");
+                LogDebug($"[RegisterWithSyncopationServerAsync] Stack trace: {ex.StackTrace}");
+                if (ex.InnerException != null)
+                {
+                    LogDebug($"[RegisterWithSyncopationServerAsync] Inner exception: {ex.InnerException.GetType().Name} - {ex.InnerException.Message}");
+                }
             }
         }
 
@@ -911,11 +1091,29 @@ namespace YeusepesModules.SPOTIOSC
 
         private async Task<(string word1, string word2)?> CreateSyncopationJamAsync(string sessionId)
         {
+            LogDebug($"[CreateSyncopationJamAsync] Called with sessionId={(string.IsNullOrEmpty(sessionId) ? "NULL/EMPTY" : sessionId)}");
+            
             try
             {
+                LogDebug($"[CreateSyncopationJamAsync] Checking _syncopationInstanceId={(string.IsNullOrEmpty(_syncopationInstanceId) ? "NULL/EMPTY" : _syncopationInstanceId)}");
+                LogDebug($"[CreateSyncopationJamAsync] Checking _syncopationHttpClient={(_syncopationHttpClient == null ? "NULL" : "INITIALIZED")}");
+                LogDebug($"[CreateSyncopationJamAsync] Checking _melodyServerUrl={(string.IsNullOrEmpty(_melodyServerUrl) ? "NULL/EMPTY" : _melodyServerUrl)}");
+                
                 if (string.IsNullOrEmpty(_syncopationInstanceId))
                 {
-                    LogDebug("Not registered with syncopation server. Cannot create jam code.");
+                    LogDebug("[CreateSyncopationJamAsync] Not registered with syncopation server. Cannot create jam code.");
+                    return null;
+                }
+
+                if (_syncopationHttpClient == null)
+                {
+                    LogDebug("[CreateSyncopationJamAsync] _syncopationHttpClient is NULL - this should not happen!");
+                    return null;
+                }
+
+                if (string.IsNullOrEmpty(_melodyServerUrl))
+                {
+                    LogDebug("[CreateSyncopationJamAsync] _melodyServerUrl is NULL or EMPTY!");
                     return null;
                 }
 
@@ -926,17 +1124,26 @@ namespace YeusepesModules.SPOTIOSC
                 };
 
                 var json = System.Text.Json.JsonSerializer.Serialize(payload);
+                LogDebug($"[CreateSyncopationJamAsync] Payload JSON: {json}");
+                
                 var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
-                var request = new HttpRequestMessage(HttpMethod.Post, $"{_melodyServerUrl}/jam/create")
+                var requestUrl = $"{_melodyServerUrl}/jam/create";
+                LogDebug($"[CreateSyncopationJamAsync] Request URL: {requestUrl}");
+                
+                var request = new HttpRequestMessage(HttpMethod.Post, requestUrl)
                 {
                     Content = content
                 };
 
+                LogDebug("[CreateSyncopationJamAsync] Sending HTTP request...");
                 var response = await _syncopationHttpClient.SendAsync(request);
+                LogDebug($"[CreateSyncopationJamAsync] HTTP response status: {response.StatusCode}");
                 
                 if (response.IsSuccessStatusCode)
                 {
                     var responseContent = await response.Content.ReadAsStringAsync();
+                    LogDebug($"[CreateSyncopationJamAsync] Response content: {responseContent}");
+                    
                     var result = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(responseContent);
                     
                     if (result.TryGetProperty("word1", out var word1Element) && 
@@ -944,18 +1151,28 @@ namespace YeusepesModules.SPOTIOSC
                     {
                         string word1 = word1Element.GetString();
                         string word2 = word2Element.GetString();
-                        LogDebug($"Created ephemeral code: {word1} {word2}");
+                        LogDebug($"[CreateSyncopationJamAsync] Created ephemeral code: {word1} {word2}");
                         return (word1, word2);
+                    }
+                    else
+                    {
+                        LogDebug("[CreateSyncopationJamAsync] Response does not contain word1 and/or word2 properties");
                     }
                 }
                 else
                 {
-                    LogDebug($"Failed to create syncopation jam: {response.StatusCode}");
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    LogDebug($"[CreateSyncopationJamAsync] Failed to create syncopation jam: {response.StatusCode} - {errorContent}");
                 }
             }
             catch (Exception ex)
             {
-                LogDebug($"Error creating syncopation jam: {ex.Message}");
+                LogDebug($"[CreateSyncopationJamAsync] Exception: {ex.GetType().Name} - {ex.Message}");
+                LogDebug($"[CreateSyncopationJamAsync] Stack trace: {ex.StackTrace}");
+                if (ex.InnerException != null)
+                {
+                    LogDebug($"[CreateSyncopationJamAsync] Inner exception: {ex.InnerException.GetType().Name} - {ex.InnerException.Message}");
+                }
             }
             return null;
         }
@@ -1180,6 +1397,14 @@ namespace YeusepesModules.SPOTIOSC
                    param == SpotiParameters.Chorus;
         }
 
+        private bool IsEphemeralWordReceiverParameter(SpotiParameters param)
+        {
+            return param == SpotiParameters.AllegroReceiver || param == SpotiParameters.CadenceReceiver ||
+                   param == SpotiParameters.GrooveReceiver || param == SpotiParameters.RitmoReceiver ||
+                   param == SpotiParameters.MetronomeReceiver || param == SpotiParameters.EncoreReceiver ||
+                   param == SpotiParameters.ChorusReceiver;
+        }
+
         private string GetWordNameFromParameter(SpotiParameters param)
         {
             return param switch
@@ -1191,6 +1416,13 @@ namespace YeusepesModules.SPOTIOSC
                 SpotiParameters.Metronome => "metronome",
                 SpotiParameters.Encore => "encore",
                 SpotiParameters.Chorus => "chorus",
+                SpotiParameters.AllegroReceiver => "allegro",
+                SpotiParameters.CadenceReceiver => "cadence",
+                SpotiParameters.GrooveReceiver => "groove",
+                SpotiParameters.RitmoReceiver => "ritmo",
+                SpotiParameters.MetronomeReceiver => "metronome",
+                SpotiParameters.EncoreReceiver => "encore",
+                SpotiParameters.ChorusReceiver => "chorus",
                 _ => null
             };
         }
@@ -1210,10 +1442,27 @@ namespace YeusepesModules.SPOTIOSC
             };
         }
 
+        private SpotiParameters GetReceiverParameterFromWordName(string wordName)
+        {
+            return wordName.ToLower() switch
+            {
+                "allegro" => SpotiParameters.AllegroReceiver,
+                "cadence" => SpotiParameters.CadenceReceiver,
+                "groove" => SpotiParameters.GrooveReceiver,
+                "ritmo" => SpotiParameters.RitmoReceiver,
+                "metronome" => SpotiParameters.MetronomeReceiver,
+                "encore" => SpotiParameters.EncoreReceiver,
+                "chorus" => SpotiParameters.ChorusReceiver,
+                _ => throw new ArgumentException($"Unknown word name: {wordName}")
+            };
+        }
+
         private async void HandleEphemeralWordParameter(SpotiParameters param, bool value)
         {
+            LogDebug($"[HandleEphemeralWordParameter] Called with param={param}, value={value}");
             if (spotifyRequestContext?.IsInJam == true)
             {
+                LogDebug("[HandleEphemeralWordParameter] Already in jam, skipping");
                 return;
             }
 
@@ -1245,32 +1494,37 @@ namespace YeusepesModules.SPOTIOSC
                         }
                     }
                     
-                    var wordParams = new[]
+                    // Check receiver parameters for joining jams
+                    var wordReceiverParams = new[]
                     {
-                        (SpotiParameters.Allegro, "allegro"),
-                        (SpotiParameters.Cadence, "cadence"),
-                        (SpotiParameters.Groove, "groove"),
-                        (SpotiParameters.Ritmo, "ritmo"),
-                        (SpotiParameters.Metronome, "metronome"),
-                        (SpotiParameters.Encore, "encore"),
-                        (SpotiParameters.Chorus, "chorus")
+                        (SpotiParameters.AllegroReceiver, "allegro"),
+                        (SpotiParameters.CadenceReceiver, "cadence"),
+                        (SpotiParameters.GrooveReceiver, "groove"),
+                        (SpotiParameters.RitmoReceiver, "ritmo"),
+                        (SpotiParameters.MetronomeReceiver, "metronome"),
+                        (SpotiParameters.EncoreReceiver, "encore"),
+                        (SpotiParameters.ChorusReceiver, "chorus")
                     };
 
                     var activeWords = new List<string>();
-                    foreach (var (paramEnum, wordName) in wordParams)
+                    foreach (var (paramEnum, wordName) in wordReceiverParams)
                     {
                         try
                         {
-                            bool isActive = _ephemeralWordValues.TryGetValue(paramEnum, out bool value) && value;
+                            bool isActive = _ephemeralWordReceiverValues.TryGetValue(paramEnum, out bool val) && val;
                             if (isActive)
                             {
                                 activeWords.Add(wordName);
+                                LogDebug($"[HandleEphemeralWordParameter] Active receiver word detected: {wordName}");
                             }
                         }
-                        catch
+                        catch (Exception ex)
                         {
+                            LogDebug($"[HandleEphemeralWordParameter] Error checking {wordName}: {ex.Message}");
                         }
                     }
+
+                    LogDebug($"[HandleEphemeralWordParameter] Active words count: {activeWords.Count}, words: [{string.Join(", ", activeWords)}]");
 
                     if (activeWords.Count == 2 && spotifyRequestContext?.IsInJam != true)
                     {
@@ -1287,26 +1541,28 @@ namespace YeusepesModules.SPOTIOSC
                         {
                             var sortedWords = activeWords.OrderBy(w => w).ToList();
                             string key = $"{sortedWords[0]}_{sortedWords[1]}";
+                            LogDebug($"[HandleEphemeralWordParameter] Attempting to join jam with key: {key}");
                             
                             string sessionId = await JoinSyncopationJamAsync(key);
+                            LogDebug($"[HandleEphemeralWordParameter] JoinSyncopationJamAsync returned sessionId: {(string.IsNullOrEmpty(sessionId) ? "NULL/EMPTY" : sessionId)}");
                         if (!string.IsNullOrEmpty(sessionId))
                         {
-                            // Reset all word parameters
-                            _activeParameterUpdates.Add(SpotiParameters.Allegro);
-                            _activeParameterUpdates.Add(SpotiParameters.Cadence);
-                            _activeParameterUpdates.Add(SpotiParameters.Groove);
-                            _activeParameterUpdates.Add(SpotiParameters.Ritmo);
-                            _activeParameterUpdates.Add(SpotiParameters.Metronome);
-                            _activeParameterUpdates.Add(SpotiParameters.Encore);
-                            _activeParameterUpdates.Add(SpotiParameters.Chorus);
+                            // Reset all receiver word parameters
+                            _activeParameterUpdates.Add(SpotiParameters.AllegroReceiver);
+                            _activeParameterUpdates.Add(SpotiParameters.CadenceReceiver);
+                            _activeParameterUpdates.Add(SpotiParameters.GrooveReceiver);
+                            _activeParameterUpdates.Add(SpotiParameters.RitmoReceiver);
+                            _activeParameterUpdates.Add(SpotiParameters.MetronomeReceiver);
+                            _activeParameterUpdates.Add(SpotiParameters.EncoreReceiver);
+                            _activeParameterUpdates.Add(SpotiParameters.ChorusReceiver);
                             
-                            SetParameterSafe(SpotiParameters.Allegro, false);
-                            SetParameterSafe(SpotiParameters.Cadence, false);
-                            SetParameterSafe(SpotiParameters.Groove, false);
-                            SetParameterSafe(SpotiParameters.Ritmo, false);
-                            SetParameterSafe(SpotiParameters.Metronome, false);
-                            SetParameterSafe(SpotiParameters.Encore, false);
-                            SetParameterSafe(SpotiParameters.Chorus, false);
+                            SetParameterSafe(SpotiParameters.AllegroReceiver, false);
+                            SetParameterSafe(SpotiParameters.CadenceReceiver, false);
+                            SetParameterSafe(SpotiParameters.GrooveReceiver, false);
+                            SetParameterSafe(SpotiParameters.RitmoReceiver, false);
+                            SetParameterSafe(SpotiParameters.MetronomeReceiver, false);
+                            SetParameterSafe(SpotiParameters.EncoreReceiver, false);
+                            SetParameterSafe(SpotiParameters.ChorusReceiver, false);
                             
                             bool joinResult = await SpotifyJamRequests.JoinSpotifyJam(sessionId, spotifyRequestContext, spotifyUtilities);
                             if (!joinResult)
@@ -2269,36 +2525,58 @@ namespace YeusepesModules.SPOTIOSC
 
         private async void HandleTouching(bool touching)
         {
+            LogDebug($"[HandleTouching] Called with touching={touching}");
             isTouching = touching;
+            
+            LogDebug($"[HandleTouching] Checking conditions - touching={touching}, spotifyRequestContext?.IsInJam={spotifyRequestContext?.IsInJam}, _joinSessionToken={(string.IsNullOrEmpty(SpotifyJamRequests._joinSessionToken) ? "NULL/EMPTY" : SpotifyJamRequests._joinSessionToken)}");
             
             if (touching && spotifyRequestContext?.IsInJam == true && !string.IsNullOrEmpty(SpotifyJamRequests._joinSessionToken))
             {
+                LogDebug($"[HandleTouching] Conditions met. Checking ephemeral words - _currentEphemeralWord1={(string.IsNullOrEmpty(_currentEphemeralWord1) ? "NULL/EMPTY" : _currentEphemeralWord1)}, _currentEphemeralWord2={(string.IsNullOrEmpty(_currentEphemeralWord2) ? "NULL/EMPTY" : _currentEphemeralWord2)}");
+                
                 if (string.IsNullOrEmpty(_currentEphemeralWord1) || string.IsNullOrEmpty(_currentEphemeralWord2))
                 {
+                    LogDebug($"[HandleTouching] Ephemeral words missing, calling CreateSyncopationJamAsync with sessionId={SpotifyJamRequests._joinSessionToken}");
                     var ephemeralCode = await CreateSyncopationJamAsync(SpotifyJamRequests._joinSessionToken);
                     if (ephemeralCode.HasValue)
                     {
                         _currentEphemeralWord1 = ephemeralCode.Value.word1;
                         _currentEphemeralWord2 = ephemeralCode.Value.word2;
                         
-                        _activeParameterUpdates.Add(GetParameterFromWordName(ephemeralCode.Value.word1));
-                        _activeParameterUpdates.Add(GetParameterFromWordName(ephemeralCode.Value.word2));
+                        LogDebug($"[HandleTouching] Ephemeral code received - word1={_currentEphemeralWord1}, word2={_currentEphemeralWord2}");
                         
-                        SetParameterSafe(GetParameterFromWordName(ephemeralCode.Value.word1), true);
-                        SetParameterSafe(GetParameterFromWordName(ephemeralCode.Value.word2), true);
+                        var param1 = GetParameterFromWordName(ephemeralCode.Value.word1);
+                        var param2 = GetParameterFromWordName(ephemeralCode.Value.word2);
+                        LogDebug($"[HandleTouching] About to set parameters - word1 param={param1}, word2 param={param2}");
                         
-                        LogDebug($"Ephemeral code created: {ephemeralCode.Value.word1} {ephemeralCode.Value.word2}");
+                        _activeParameterUpdates.Add(param1);
+                        _activeParameterUpdates.Add(param2);
+                        
+                        SetParameterSafe(param1, true);
+                        SetParameterSafe(param2, true);
+                        
+                        LogDebug($"[HandleTouching] Ephemeral code created and parameters set: {ephemeralCode.Value.word1} {ephemeralCode.Value.word2}");
                     }
                     else
                     {
-                        LogDebug("Failed to create ephemeral code on syncopation server.");
+                        LogDebug("[HandleTouching] Failed to create ephemeral code on syncopation server.");
                     }
                 }
+                else
+                {
+                    LogDebug($"[HandleTouching] Ephemeral words already exist, skipping creation");
+                }
             }
-            else if (!touching)
+            else
+            {
+                LogDebug($"[HandleTouching] Conditions not met - not creating ephemeral code");
+            }
+            
+            if (!touching)
             {
                 if (!string.IsNullOrEmpty(_currentEphemeralWord1) && !string.IsNullOrEmpty(_currentEphemeralWord2))
                 {
+                    LogDebug($"[HandleTouching] Touching=false, clearing ephemeral words");
                     _activeParameterUpdates.Add(GetParameterFromWordName(_currentEphemeralWord1));
                     _activeParameterUpdates.Add(GetParameterFromWordName(_currentEphemeralWord2));
                     
@@ -2951,6 +3229,29 @@ namespace YeusepesModules.SPOTIOSC
             {
                 LogDebug($"Error setting repeat mode: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Extract playlist ID from a Spotify playlist URI.
+        /// </summary>
+        private string ExtractPlaylistId(string playlistUri)
+        {
+            if (string.IsNullOrEmpty(playlistUri)) return null;
+            
+            if (playlistUri.StartsWith("spotify:playlist:"))
+            {
+                return playlistUri.Replace("spotify:playlist:", "");
+            }
+            if (playlistUri.Contains("/playlist/"))
+            {
+                var parts = playlistUri.Split(new[] { "/playlist/" }, StringSplitOptions.None);
+                if (parts.Length > 1)
+                {
+                    var id = parts[1].Split('?')[0].Split('&')[0];
+                    return id;
+                }
+            }
+            return null;
         }
 
         #region Continuous Position Updates
