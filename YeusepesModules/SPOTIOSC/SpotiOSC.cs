@@ -45,7 +45,7 @@ namespace YeusepesModules.SPOTIOSC
         
         // Syncopation Server Communication
         private string _syncopationInstanceId;
-        private string _melodyServerUrl = "";        
+        private string _melodyServerUrl = "https://melody.yucp.club/syncopation";        
         private HttpClient _syncopationHttpClient;
         private string _currentEphemeralWord1;
         private string _currentEphemeralWord2;
@@ -325,7 +325,7 @@ namespace YeusepesModules.SPOTIOSC
 
             // Track details (state.item)
             RegisterParameter<int>(SpotiParameters.DiscNumber, "SpotiOSC/DiscNumber", ParameterMode.Write, "Disc Number", "Track disc number.");
-            RegisterParameter<int>(SpotiParameters.TrackDurationMs, "SpotiOSC/TrackDurationMs", ParameterMode.Write, "Track Duration (ms)", "Duration of the track in ms.");
+            RegisterParameter<float>(SpotiParameters.TrackDurationMs, "SpotiOSC/TrackDurationMs", ParameterMode.Write, "Track Duration (ms)", "Duration of the track in ms.");
             RegisterParameter<bool>(SpotiParameters.IsExplicit, "SpotiOSC/IsExplicit", ParameterMode.Write, "Explicit", "Whether track is explicit.");
             RegisterParameter<bool>(SpotiParameters.IsLocal, "SpotiOSC/IsLocal", ParameterMode.Write, "Is Local", "Whether track is local.");
             RegisterParameter<int>(SpotiParameters.SongPopularity, "SpotiOSC/SongPopularity", ParameterMode.Write, "Song Popularity", "Popularity of the current song.");
@@ -2266,7 +2266,7 @@ namespace YeusepesModules.SPOTIOSC
             if (item.TryGetProperty("duration_ms", out JsonElement duration))
             {
                 spotifyRequestContext.TrackDurationMs = duration.GetInt32();
-                SetParameterSafe(SpotiParameters.TrackDurationMs, duration.GetInt32());
+                SetParameterSafe(SpotiParameters.TrackDurationMs, (float)duration.GetInt32());
                 LogDebug($"Track duration: {spotifyRequestContext.TrackDurationMs}");
             }
             if (item.TryGetProperty("disc_number", out JsonElement disc))
@@ -3315,7 +3315,7 @@ namespace YeusepesModules.SPOTIOSC
                         if (newPosition != _lastKnownPositionMs)
                         {
                             // Update the position parameter
-                            SetParameterSafe(SpotiParameters.PlaybackPosition, newPosition);
+                            SetParameterSafe(SpotiParameters.PlaybackPosition, (float)newPosition);
                             
                             // Update tracking variables
                             _lastKnownPositionMs = newPosition;
@@ -3341,7 +3341,7 @@ namespace YeusepesModules.SPOTIOSC
             _trackDurationMs = durationMs;
             
             // Send the current position immediately
-            SetParameterSafe(SpotiParameters.PlaybackPosition, progressMs);
+            SetParameterSafe(SpotiParameters.PlaybackPosition, (float)progressMs);
             
             LogDebug($"Position tracking updated - Progress: {progressMs}ms, Playing: {isPlaying}, Duration: {durationMs}ms");
         }

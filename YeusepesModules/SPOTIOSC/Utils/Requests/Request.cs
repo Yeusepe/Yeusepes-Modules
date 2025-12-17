@@ -631,12 +631,12 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
                 DominantColor = color;
                 
                 // Send RGB parameters if utilities are available
-                // Cast byte to int since OSC parameters expect int type
+                // Cast byte to float since OSC parameters are registered as float type
                 if (utilities?.SendParameter != null)
                 {
-                    utilities.SendParameter(SpotiOSC.SpotiParameters.AlbumColorR, (int)color.R);
-                    utilities.SendParameter(SpotiOSC.SpotiParameters.AlbumColorG, (int)color.G);
-                    utilities.SendParameter(SpotiOSC.SpotiParameters.AlbumColorB, (int)color.B);
+                    utilities.SendParameter(SpotiOSC.SpotiParameters.AlbumColorR, (float)color.R);
+                    utilities.SendParameter(SpotiOSC.SpotiParameters.AlbumColorG, (float)color.G);
+                    utilities.SendParameter(SpotiOSC.SpotiParameters.AlbumColorB, (float)color.B);
                 }
             }
             else
@@ -646,9 +646,9 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
                 // Send zero RGB parameters if utilities are available
                 if (utilities?.SendParameter != null)
                 {
-                    utilities.SendParameter(SpotiOSC.SpotiParameters.AlbumColorR, 0);
-                    utilities.SendParameter(SpotiOSC.SpotiParameters.AlbumColorG, 0);
-                    utilities.SendParameter(SpotiOSC.SpotiParameters.AlbumColorB, 0);
+                    utilities.SendParameter(SpotiOSC.SpotiParameters.AlbumColorR, 0f);
+                    utilities.SendParameter(SpotiOSC.SpotiParameters.AlbumColorG, 0f);
+                    utilities.SendParameter(SpotiOSC.SpotiParameters.AlbumColorB, 0f);
                 }
             }
         }

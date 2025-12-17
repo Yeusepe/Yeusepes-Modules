@@ -46,6 +46,15 @@ public class SteamInputModule : Module
     private float _rightFlickLastY = 0f;
     private bool _leftFlickHadDirection = false;
     private bool _rightFlickHadDirection = false;
+    
+    // Track if rotation occurred during a flick gesture (prevents false flicks after rotation)
+    private bool _leftRotatedDuringFlickGesture = false;
+    private bool _rightRotatedDuringFlickGesture = false;
+    
+    // Require >1 rotation pulse during a gesture before suppressing flick.
+    // This avoids rejecting legitimate flicks that include tiny angle noise.
+    private int _leftRotationPulsesDuringGesture = 0;
+    private int _rightRotationPulsesDuringGesture = 0;
 
     protected override void OnPreLoad()
     {
@@ -157,6 +166,17 @@ public class SteamInputModule : Module
 
             // Left Stick - Rotation Detection (pulse + tick)
             float leftPulseDirection = CalculateRotationDirection(leftX, leftY, ref _leftPrevAngleRad, ref _leftInitialized, ref _leftAccumulatedRotationDelta);
+            float leftMagnitude = (float)System.Math.Sqrt(leftX * leftX + leftY * leftY);
+            
+            // Track rotation pulses during an active flick gesture.
+            // We only suppress flick if we see multiple rotation pulses while the stick is pushed out.
+            if (leftPulseDirection != 0f && (_leftFlickHadDirection || leftMagnitude > 0.5f))
+            {
+                _leftRotationPulsesDuringGesture++;
+                if (_leftRotationPulsesDuringGesture >= 2)
+                    _leftRotatedDuringFlickGesture = true;
+            }
+            
             if (leftPulseDirection != 0f)
             {
                 _leftRotationHoldFrames = RotationHoldFrames;
@@ -181,7 +201,6 @@ public class SteamInputModule : Module
             }
 
             // Left Stick - Flick Detection
-            float leftMagnitude = (float)System.Math.Sqrt(leftX * leftX + leftY * leftY);
             bool leftFlick = DetectFlick(
                 leftX, leftY,
                 _leftPrevX, _leftPrevY,
@@ -190,6 +209,7 @@ public class SteamInputModule : Module
                 ref _leftFlickLastX,
                 ref _leftFlickLastY,
                 ref _leftFlickHadDirection,
+                ref _leftRotatedDuringFlickGesture,
                 ref _leftFlickReturnFrames,
                 "Left"
             );
@@ -263,6 +283,16 @@ public class SteamInputModule : Module
 
             // Right Stick - Rotation Detection (pulse + tick)
             float rightPulseDirection = CalculateRotationDirection(rightX, rightY, ref _rightPrevAngleRad, ref _rightInitialized, ref _rightAccumulatedRotationDelta);
+            float rightMagnitude = (float)System.Math.Sqrt(rightX * rightX + rightY * rightY);
+            
+            // Track rotation pulses during an active flick gesture.
+            if (rightPulseDirection != 0f && (_rightFlickHadDirection || rightMagnitude > 0.5f))
+            {
+                _rightRotationPulsesDuringGesture++;
+                if (_rightRotationPulsesDuringGesture >= 2)
+                    _rightRotatedDuringFlickGesture = true;
+            }
+            
             if (rightPulseDirection != 0f)
             {
                 _rightRotationHoldFrames = RotationHoldFrames;
@@ -287,7 +317,6 @@ public class SteamInputModule : Module
             }
 
             // Right Stick - Flick Detection
-            float rightMagnitude = (float)System.Math.Sqrt(rightX * rightX + rightY * rightY);
             bool rightFlick = DetectFlick(
                 rightX, rightY,
                 _rightPrevX, _rightPrevY,
@@ -296,6 +325,7 @@ public class SteamInputModule : Module
                 ref _rightFlickLastX,
                 ref _rightFlickLastY,
                 ref _rightFlickHadDirection,
+                ref _rightRotatedDuringFlickGesture,
                 ref _rightFlickReturnFrames,
                 "Right"
             );
@@ -474,12 +504,13 @@ public class SteamInputModule : Module
         ref float flickLastX,
         ref float flickLastY,
         ref bool flickHadDirection,
+        ref bool rotatedDuringGesture,
         ref int flickReturnFrames,
         string handName,
-        float pushThreshold = 0.5f,
-        float centerThreshold = 0.15f,
-        float axisTolerance = 0.7f,
-        int maxReturnFrames = 6
+        float pushThreshold = 0.4f,
+        float centerThreshold = 0.2f,
+        float axisTolerance = 0.85f,
+        int maxReturnFrames = 10
     )
     {
         float r = (float)System.Math.Sqrt(currentX * currentX + currentY * currentY);
@@ -495,7 +526,11 @@ public class SteamInputModule : Module
             flickLastX = currentX;
             flickLastY = currentY;
             flickHadDirection = true;
+            rotatedDuringGesture = false; // Reset rotation flag for new gesture
             flickReturnFrames = 0;
+            // Reset rotation pulse counter for this hand's gesture
+            if (handName == "Left") _leftRotationPulsesDuringGesture = 0;
+            if (handName == "Right") _rightRotationPulsesDuringGesture = 0;
             LogDebug($"[{handName}] FLICK CANDIDATE: Direction recorded - X={currentX:F3}, Y={currentY:F3}, Angle={angleDeg:F1}°, Magnitude={r:F3}");
             return false;
         }
@@ -516,7 +551,22 @@ public class SteamInputModule : Module
                 // Already at center, reset
                 LogDebug($"[{handName}] FLICK REJECTED: Already at center (prevR={prevR:F3}, currentR={r:F3})");
                 flickHadDirection = false;
+                rotatedDuringGesture = false;
                 flickReturnFrames = 0;
+                if (handName == "Left") _leftRotationPulsesDuringGesture = 0;
+                if (handName == "Right") _rightRotationPulsesDuringGesture = 0;
+                return false;
+            }
+            
+            // If user was rotating during the gesture, do NOT treat release-to-center as flick
+            if (rotatedDuringGesture)
+            {
+                LogDebug($"[{handName}] FLICK REJECTED: Rotation occurred during gesture");
+                flickHadDirection = false;
+                rotatedDuringGesture = false;
+                flickReturnFrames = 0;
+                if (handName == "Left") _leftRotationPulsesDuringGesture = 0;
+                if (handName == "Right") _rightRotationPulsesDuringGesture = 0;
                 return false;
             }
             
@@ -551,7 +601,10 @@ public class SteamInputModule : Module
             
             // Reset state
             flickHadDirection = false;
+            rotatedDuringGesture = false;
             flickReturnFrames = 0;
+            if (handName == "Left") _leftRotationPulsesDuringGesture = 0;
+            if (handName == "Right") _rightRotationPulsesDuringGesture = 0;
             
             return isValidFlick;
         }
@@ -570,7 +623,10 @@ public class SteamInputModule : Module
                 {
                     LogDebug($"[{handName}] FLICK CANCELLED: Did not return to center fast enough (last r={r:F3})");
                     flickHadDirection = false;
+                    rotatedDuringGesture = false;
                     flickReturnFrames = 0;
+                    if (handName == "Left") _leftRotationPulsesDuringGesture = 0;
+                    if (handName == "Right") _rightRotationPulsesDuringGesture = 0;
                 }
             }
             else
