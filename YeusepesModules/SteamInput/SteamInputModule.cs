@@ -58,6 +58,31 @@ public class SteamInputModule : Module
 
     protected override void OnPreLoad()
     {
+        // Rotation Sensitivity Settings
+        CreateSlider(SteamInputSetting.RotationSensitivity, "Rotation Sensitivity", 
+            "How much rotation is needed to trigger a rotation tick. Lower values = more sensitive (detects smaller rotations)", 
+            0.02f, 0.001f, 0.1f, 0.001f);
+        CreateSlider(SteamInputSetting.RotationDeadzone, "Rotation Deadzone", 
+            "Minimum stick magnitude required to detect rotation. Prevents false triggers when stick is near center", 
+            0.2f, 0.0f, 0.5f, 0.01f);
+
+        // Flick Sensitivity Settings
+        CreateSlider(SteamInputSetting.FlickPushThreshold, "Flick Push Threshold", 
+            "How far out the stick needs to be pushed to start a flick gesture (0-1)", 
+            0.4f, 0.2f, 0.8f, 0.01f);
+        CreateSlider(SteamInputSetting.FlickCenterThreshold, "Flick Center Threshold", 
+            "How close to center the stick needs to return to complete a flick (0-1)", 
+            0.2f, 0.05f, 0.4f, 0.01f);
+        CreateSlider(SteamInputSetting.FlickAxisTolerance, "Flick Axis Tolerance", 
+            "How strict the axis alignment needs to be. Higher values = more lenient (allows more diagonal movement)", 
+            0.85f, 0.5f, 1.0f, 0.01f);
+
+        CreateGroup("Rotation Settings", "Configure rotation detection sensitivity", 
+            SteamInputSetting.RotationSensitivity, SteamInputSetting.RotationDeadzone);
+        CreateGroup("Flick Settings", "Configure flick detection sensitivity", 
+            SteamInputSetting.FlickPushThreshold, SteamInputSetting.FlickCenterThreshold, 
+            SteamInputSetting.FlickAxisTolerance);
+
         // Left Controller - Stick
         RegisterParameter<float>(SteamInputParameter.LeftStickX, "SteamInput/LHand/Stick/X", ParameterMode.Write, "Left Stick X", "Left stick X position (-1 to 1)");
         RegisterParameter<float>(SteamInputParameter.LeftStickY, "SteamInput/LHand/Stick/Y", ParameterMode.Write, "Left Stick Y", "Left stick Y position (-1 to 1)");
@@ -146,6 +171,13 @@ public class SteamInputModule : Module
         
         if (!manager.Initialised) return;
 
+        // Get sensitivity settings once per update
+        float rotationSensitivity = GetSettingValue<float>(SteamInputSetting.RotationSensitivity);
+        float rotationDeadzone = GetSettingValue<float>(SteamInputSetting.RotationDeadzone);
+        float flickPushThreshold = GetSettingValue<float>(SteamInputSetting.FlickPushThreshold);
+        float flickCenterThreshold = GetSettingValue<float>(SteamInputSetting.FlickCenterThreshold);
+        float flickAxisTolerance = GetSettingValue<float>(SteamInputSetting.FlickAxisTolerance);
+
         var leftController = manager.GetLeftController();
         var rightController = manager.GetRightController();
 
@@ -165,7 +197,7 @@ public class SteamInputModule : Module
             SendParameter(SteamInputParameter.LeftStickClick, leftInput.Stick.Click);
 
             // Left Stick - Rotation Detection (pulse + tick)
-            float leftPulseDirection = CalculateRotationDirection(leftX, leftY, ref _leftPrevAngleRad, ref _leftInitialized, ref _leftAccumulatedRotationDelta);
+            float leftPulseDirection = CalculateRotationDirection(leftX, leftY, ref _leftPrevAngleRad, ref _leftInitialized, ref _leftAccumulatedRotationDelta, rotationDeadzone, 0.001f, rotationSensitivity);
             float leftMagnitude = (float)System.Math.Sqrt(leftX * leftX + leftY * leftY);
             
             // Track rotation pulses during an active flick gesture.
@@ -211,7 +243,10 @@ public class SteamInputModule : Module
                 ref _leftFlickHadDirection,
                 ref _leftRotatedDuringFlickGesture,
                 ref _leftFlickReturnFrames,
-                "Left"
+                "Left",
+                flickPushThreshold,
+                flickCenterThreshold,
+                flickAxisTolerance
             );
             
             // Handle flick parameter with hold frames
@@ -282,7 +317,7 @@ public class SteamInputModule : Module
             SendParameter(SteamInputParameter.RightStickClick, rightInput.Stick.Click);
 
             // Right Stick - Rotation Detection (pulse + tick)
-            float rightPulseDirection = CalculateRotationDirection(rightX, rightY, ref _rightPrevAngleRad, ref _rightInitialized, ref _rightAccumulatedRotationDelta);
+            float rightPulseDirection = CalculateRotationDirection(rightX, rightY, ref _rightPrevAngleRad, ref _rightInitialized, ref _rightAccumulatedRotationDelta, rotationDeadzone, 0.001f, rotationSensitivity);
             float rightMagnitude = (float)System.Math.Sqrt(rightX * rightX + rightY * rightY);
             
             // Track rotation pulses during an active flick gesture.
@@ -327,7 +362,10 @@ public class SteamInputModule : Module
                 ref _rightFlickHadDirection,
                 ref _rightRotatedDuringFlickGesture,
                 ref _rightFlickReturnFrames,
-                "Right"
+                "Right",
+                flickPushThreshold,
+                flickCenterThreshold,
+                flickAxisTolerance
             );
             
             // Handle flick parameter with hold frames
@@ -381,6 +419,15 @@ public class SteamInputModule : Module
             SendParameter(SteamInputParameter.RightFingerRing, rightInput.Skeleton.Ring);
             SendParameter(SteamInputParameter.RightFingerPinky, rightInput.Skeleton.Pinky);
         }
+    }
+
+    private enum SteamInputSetting
+    {
+        RotationSensitivity,
+        RotationDeadzone,
+        FlickPushThreshold,
+        FlickCenterThreshold,
+        FlickAxisTolerance
     }
 
     private enum SteamInputParameter
