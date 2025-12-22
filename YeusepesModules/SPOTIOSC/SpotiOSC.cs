@@ -1702,29 +1702,41 @@ namespace YeusepesModules.SPOTIOSC
                     clientToken = CredentialManager.LoadClientToken();
                 }
 
-                bool isAuthorized = await ProfileAttributesRequest.FetchProfileAttributesAsync(
-                    _httpClient, accessToken, clientToken, Log, LogDebug);
-
-                if (!isAuthorized)
+                try
                 {
-                    LogDebug("Unauthorized response received. Deleting invalid tokens...");
-                    CredentialManager.ClearAllTokensAndCookies(); // Remove invalid tokens
+                    bool isAuthorized = await ProfileAttributesRequest.FetchProfileAttributesAsync(
+                        _httpClient, accessToken, clientToken, Log, LogDebug);
 
-                    LogDebug("Attempting to refresh tokens...");
-                    if (!await RefreshTokensAsync())
+                    LogDebug($"Profile fetch result: isAuthorized={isAuthorized}");
+
+                    if (!isAuthorized)
                     {
-                        Log("Failed to refresh tokens after unauthorized response. Exiting.");
-                        return false;
+                        LogDebug("Treating failure as unauthorized - deleting tokens");
+                        LogDebug("Unauthorized response received. Deleting invalid tokens...");
+                        CredentialManager.ClearAllTokensAndCookies(); // Remove invalid tokens
+
+                        LogDebug("Attempting to refresh tokens...");
+                        if (!await RefreshTokensAsync())
+                        {
+                            Log("Failed to refresh tokens after unauthorized response. Exiting.");
+                            return false;
+                        }
+
+                        accessToken = CredentialManager.LoadAccessToken();
+                        clientToken = CredentialManager.LoadClientToken();
+
+                        isAuthorized = await ProfileAttributesRequest.FetchProfileAttributesAsync(
+                            _httpClient, accessToken, clientToken, Log, LogDebug);
                     }
 
-                    accessToken = CredentialManager.LoadAccessToken();
-                    clientToken = CredentialManager.LoadClientToken();
-
-                    isAuthorized = await ProfileAttributesRequest.FetchProfileAttributesAsync(
-                        _httpClient, accessToken, clientToken, Log, LogDebug);
+                    return isAuthorized;
                 }
-
-                return isAuthorized;
+                catch (RateLimitException ex)
+                {
+                    Log($"Rate limit exceeded. {ex.Message}");
+                    LogDebug("Rate limit error - not deleting tokens as they are still valid");
+                    return false; // Return false but don't delete tokens
+                }
             }
             catch (OperationCanceledException)
             {

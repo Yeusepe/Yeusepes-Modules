@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using VRCOSC.App.Utils;
+using YeusepesModules.SPOTIOSC.Credentials;
 
 namespace YeusepesModules.SPOTIOSC.Utils.Requests
 {
@@ -17,7 +18,21 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
 
         public async Task<UserProfile> GetUserProfileAsync()
         {
-            var request = CreateRequest(HttpMethod.Get, UserProfileUrl);
+            // Try using OAuth2 API token first if available, fallback to web player token
+            string tokenToUse = AccessToken;
+            string apiAccessToken = CredentialManager.LoadApiAccessToken();
+            if (!string.IsNullOrEmpty(apiAccessToken))
+            {
+                tokenToUse = apiAccessToken;
+            }
+            
+            // Create request manually to use the correct token
+            var request = new HttpRequestMessage(HttpMethod.Get, UserProfileUrl);
+            request.Headers.Add("Authorization", $"Bearer {tokenToUse}");
+            request.Headers.Add("Client-Token", ClientToken);
+            request.Headers.Add("App-Platform", "Win32_x86_64");
+            request.Headers.Add("User-Agent", "Spotify/1.0");
+            
             var response = await SendAsync(request);
 
             //Logger.Log($"User profile response: {response ?? "Response is null or empty"}");

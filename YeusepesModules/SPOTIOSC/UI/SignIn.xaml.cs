@@ -34,7 +34,7 @@ namespace YeusepesModules.SPOTIOSC.UI
             Uri resourceLocater = new Uri("/YeusepesModules;component/spotiosc/ui/signin.xaml", UriKind.Relative);
             System.Windows.Application.LoadComponent(this, resourceLocater);            
 
-            spotifyUtilities = ((SpotiOSC)module).spotifyUtilities;
+            spotifyUtilities = ((SpotiOSC)module)?.spotifyUtilities;
 
             CursorManager.SetSpinnerCursor();
             LoadFontFromUrl("https://raw.githubusercontent.com/Yeusepe/Yeusepes-Modules/refs/heads/main/Resources/Fonts/circular-std-2.ttf");
@@ -57,7 +57,10 @@ namespace YeusepesModules.SPOTIOSC.UI
             // show spinner
             await Dispatcher.InvokeAsync(() =>
             {
-                SpinnerOverlay.Visibility = Visibility.Visible;
+                if (SpinnerOverlay != null)
+                {
+                    SpinnerOverlay.Visibility = Visibility.Visible;
+                }
                 CursorManager.SetSpinnerCursor();
             });
 
@@ -76,7 +79,7 @@ namespace YeusepesModules.SPOTIOSC.UI
 
                     if (userProfile != null)
                     {
-                        spotifyUtilities.LogDebug($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}");
+                        spotifyUtilities?.LogDebug($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}");
                         UpdateUIWithUserProfile(
                             userProfile.DisplayName,
                             userProfile.Product,
@@ -103,7 +106,7 @@ namespace YeusepesModules.SPOTIOSC.UI
 
                         if (userProfile != null)
                         {
-                            spotifyUtilities.LogDebug($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}");
+                            spotifyUtilities?.LogDebug($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}");
                             UpdateUIWithUserProfile(
                                 userProfile.DisplayName,
                                 userProfile.Product,
@@ -126,14 +129,17 @@ namespace YeusepesModules.SPOTIOSC.UI
             }
             catch (Exception ex)
             {
-                spotifyUtilities.LogDebug($"Error initializing UI: {ex.Message}");
+                spotifyUtilities?.LogDebug($"Error initializing UI: {ex.Message}");
             }
             finally
             {
                 // hide spinner
                 await Dispatcher.InvokeAsync(() =>
                 {
-                    SpinnerOverlay.Visibility = Visibility.Collapsed;
+                    if (SpinnerOverlay != null)
+                    {
+                        SpinnerOverlay.Visibility = Visibility.Collapsed;
+                    }
                     CursorManager.RestoreCursor();
                 });
             }
@@ -145,12 +151,12 @@ namespace YeusepesModules.SPOTIOSC.UI
 
         private void DisplaySignedInState()
         {
-            if (SignedOutState.Visibility != Visibility.Hidden)
+            if (SignedOutState != null && SignedOutState.Visibility != Visibility.Hidden)
             {
                 SignedOutState.Visibility = Visibility.Hidden;
             }
 
-            if (SignedInState.Visibility != Visibility.Visible)
+            if (SignedInState != null && SignedInState.Visibility != Visibility.Visible)
             {
                 SignedInState.Visibility = Visibility.Visible;
             }
@@ -159,12 +165,12 @@ namespace YeusepesModules.SPOTIOSC.UI
 
         private void DisplaySignedOutState()
         {
-            if (SignedInState.Visibility != Visibility.Hidden)
+            if (SignedInState != null && SignedInState.Visibility != Visibility.Hidden)
             {
                 SignedInState.Visibility = Visibility.Hidden;
             }
 
-            if (SignedOutState.Visibility != Visibility.Visible)
+            if (SignedOutState != null && SignedOutState.Visibility != Visibility.Visible)
             {
                 SignedOutState.Visibility = Visibility.Visible;
             }
@@ -173,21 +179,28 @@ namespace YeusepesModules.SPOTIOSC.UI
 
         private void UpdateUIWithUserProfile(string name, string plan, string imageUrl)
         {
-            spotifyUtilities.LogDebug($"Updating UI with profile: {name}, {plan}, {imageUrl}");
+            spotifyUtilities?.LogDebug($"Updating UI with profile: {name}, {plan}, {imageUrl}");
 
-            UserName.Text = name;
-            PlanText.Text = NativeMethods.CapitalizeFirstLetter(plan);
-            IsPremium = string.Equals(plan, "premium", StringComparison.OrdinalIgnoreCase);
-            if (IsPremium)
+            if (UserName != null)
             {
-                PlanText.Foreground = new SolidColorBrush(Color.FromRgb(212, 175, 55)); // Green color
+                UserName.Text = name;
             }
-            else
+            
+            if (PlanText != null)
             {
-                PlanText.Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255)); // White color
+                PlanText.Text = NativeMethods.CapitalizeFirstLetter(plan);
+                IsPremium = string.Equals(plan, "premium", StringComparison.OrdinalIgnoreCase);
+                if (IsPremium)
+                {
+                    PlanText.Foreground = new SolidColorBrush(Color.FromRgb(212, 175, 55)); // Green color
+                }
+                else
+                {
+                    PlanText.Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255)); // White color
+                }
             }
 
-            if (!string.IsNullOrEmpty(imageUrl))
+            if (!string.IsNullOrEmpty(imageUrl) && ProfileImageBrush != null)
             {
                 try
                 {
@@ -201,7 +214,7 @@ namespace YeusepesModules.SPOTIOSC.UI
                 }
                 catch (Exception ex)
                 {
-                    spotifyUtilities.LogDebug($"Error loading profile image: {ex.Message}");
+                    spotifyUtilities?.LogDebug($"Error loading profile image: {ex.Message}");
                 }
             }
         }
@@ -280,7 +293,10 @@ namespace YeusepesModules.SPOTIOSC.UI
             var parentWindow = Window.GetWindow(this);
 
             // Show spinner overlay
-            SpinnerOverlay.Visibility = Visibility.Visible;
+            if (SpinnerOverlay != null)
+            {
+                SpinnerOverlay.Visibility = Visibility.Visible;
+            }
             CursorManager.SetSpinnerCursor();
 
             try
@@ -308,7 +324,10 @@ namespace YeusepesModules.SPOTIOSC.UI
             finally
             {
                 // Hide spinner overlay and restore cursor
-                SpinnerOverlay.Visibility = Visibility.Collapsed;
+                if (SpinnerOverlay != null)
+                {
+                    SpinnerOverlay.Visibility = Visibility.Collapsed;
+                }
                 CursorManager.RestoreCursor();
             }
         }
