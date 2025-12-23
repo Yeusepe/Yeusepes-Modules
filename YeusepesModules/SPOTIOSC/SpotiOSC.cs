@@ -73,6 +73,12 @@ namespace YeusepesModules.SPOTIOSC
         private int _lastKnownPositionMs;
         private bool _isPlaying = false;
         private int _trackDurationMs = 0;
+        
+        private readonly HashSet<string> _pendingTrackIds = new HashSet<string>();
+        private readonly object _pendingTracksLock = new object();
+        private System.Timers.Timer _batchFetchTimer;
+        private const int BATCH_FETCH_DELAY_MS = 500;
+        private const int MAX_TRACKS_PER_BATCH = 50;
 
         public enum SpotiSettings
         {
@@ -589,7 +595,7 @@ namespace YeusepesModules.SPOTIOSC
                 TriggerEvent
             );
 
-            _dealerWebSocket = new DealerWebSocket(spotifyRequestContext);
+            _dealerWebSocket = new DealerWebSocket(spotifyRequestContext, LogDebug);
             _dealerWebSocket.OnMessageReceived += HandlePlayerEvent;
 
             LogDebug("Starting player event subscription...");
@@ -642,8 +648,7 @@ namespace YeusepesModules.SPOTIOSC
             // Prevent handling changes that originated from within the code
             if (_activeParameterUpdates.Contains(param))
             {
-                _activeParameterUpdates.Remove(param);
-                LogDebug($"Ignored internal update for parameter: {param}");
+                _activeParameterUpdates.Remove(param);                
                 return;
             }
 
@@ -1024,6 +1029,13 @@ namespace YeusepesModules.SPOTIOSC
 
                 LogDebug($"[RegisterWithSyncopationServerAsync] Sending registration request to {_melodyServerUrl}/register");
                 LogDebug($"[RegisterWithSyncopationServerAsync] _syncopationHttpClient={(_syncopationHttpClient == null ? "NULL" : "INITIALIZED")}");
+                
+                if (_syncopationHttpClient == null)
+                {
+                    LogDebug("[RegisterWithSyncopationServerAsync] _syncopationHttpClient is null, initializing...");
+                    _syncopationHttpClient = new HttpClient();
+                }
+                
                 var request = new HttpRequestMessage(HttpMethod.Post, $"{_melodyServerUrl}/register");
                 var response = await _syncopationHttpClient.SendAsync(request);
                 
@@ -1265,6 +1277,7 @@ namespace YeusepesModules.SPOTIOSC
         private async System.Threading.Tasks.Task ListenForNotifications(System.Threading.CancellationToken cancellationToken)
         {
             int reconnectAttempts = 0;
+            bool isFirstConnection = true;
             while (!cancellationToken.IsCancellationRequested)
             {
                 try
@@ -1281,7 +1294,17 @@ namespace YeusepesModules.SPOTIOSC
                     _notificationWebSocket = new System.Net.WebSockets.ClientWebSocket();
                     await _notificationWebSocket.ConnectAsync(uri, cancellationToken);
 
-                    LogDebug("Connected to syncopation notification WebSocket");
+                    // Only log on first connection or when recovering from multiple reconnection attempts
+                    if (isFirstConnection)
+                    {
+                        LogDebug("Connected to syncopation notification WebSocket");
+                        isFirstConnection = false;
+                    }
+                    else if (reconnectAttempts > 3)
+                    {
+                        // Only log reconnections after multiple failed attempts to reduce spam
+                        LogDebug($"Reconnected to syncopation notification WebSocket after {reconnectAttempts} failed attempts");
+                    }
                     reconnectAttempts = 0; // Reset on successful connection
 
                     var buffer = new byte[1024 * 4];
@@ -1606,6 +1629,10 @@ namespace YeusepesModules.SPOTIOSC
 
             try
             {
+                _batchFetchTimer?.Stop();
+                _batchFetchTimer?.Dispose();
+                _batchFetchTimer = null;
+                
                 // Stop dealer WebSocket subscription if active
                 if (_dealerWebSocket != null)
                 {
@@ -1704,37 +1731,38 @@ namespace YeusepesModules.SPOTIOSC
 
                 try
                 {
-                    bool isAuthorized = await ProfileAttributesRequest.FetchProfileAttributesAsync(
-                        _httpClient, accessToken, clientToken, Log, LogDebug);
+                bool isAuthorized = await ProfileAttributesRequest.FetchProfileAttributesAsync(
+                    _httpClient, accessToken, clientToken, Log, LogDebug);
 
                     LogDebug($"Profile fetch result: isAuthorized={isAuthorized}");
 
-                    if (!isAuthorized)
-                    {
+                if (!isAuthorized)
+                {
                         LogDebug("Treating failure as unauthorized - deleting tokens");
-                        LogDebug("Unauthorized response received. Deleting invalid tokens...");
-                        CredentialManager.ClearAllTokensAndCookies(); // Remove invalid tokens
+                    LogDebug("Unauthorized response received. Deleting invalid tokens...");
+                    CredentialManager.ClearAllTokensAndCookies(); // Remove invalid tokens
 
-                        LogDebug("Attempting to refresh tokens...");
-                        if (!await RefreshTokensAsync())
-                        {
-                            Log("Failed to refresh tokens after unauthorized response. Exiting.");
-                            return false;
-                        }
-
-                        accessToken = CredentialManager.LoadAccessToken();
-                        clientToken = CredentialManager.LoadClientToken();
-
-                        isAuthorized = await ProfileAttributesRequest.FetchProfileAttributesAsync(
-                            _httpClient, accessToken, clientToken, Log, LogDebug);
+                    LogDebug("Attempting to refresh tokens...");
+                    if (!await RefreshTokensAsync())
+                    {
+                        Log("Failed to refresh tokens after unauthorized response. Exiting.");
+                        return false;
                     }
 
-                    return isAuthorized;
+                    accessToken = CredentialManager.LoadAccessToken();
+                    clientToken = CredentialManager.LoadClientToken();
+
+                    isAuthorized = await ProfileAttributesRequest.FetchProfileAttributesAsync(
+                        _httpClient, accessToken, clientToken, Log, LogDebug);
                 }
-                catch (RateLimitException ex)
+
+                return isAuthorized;
+                }
+                catch (HttpRequestException ex) when (ex.Message.Contains("429") || ex.Message.Contains("rate limit", StringComparison.OrdinalIgnoreCase) || 
+                                                      (ex.Data.Contains("StatusCode") && ex.Data["StatusCode"] is System.Net.HttpStatusCode statusCode && statusCode == System.Net.HttpStatusCode.TooManyRequests))
                 {
-                    Log($"Rate limit exceeded. {ex.Message}");
-                    LogDebug("Rate limit error - not deleting tokens as they are still valid");
+                    Log($"Rate limit exceeded (429). Please wait before trying again.");
+                    LogDebug($"Rate limit error - not deleting tokens as they are still valid. Message: {ex.Message}");
                     return false; // Return false but don't delete tokens
                 }
             }
@@ -1838,15 +1866,61 @@ namespace YeusepesModules.SPOTIOSC
                         return;
                     }
 
-                    // Cluster updates (hm://connect-state/v1/cluster) are parsed separately if needed.
-                    // Currently we rely primarily on wss://event for main playback JSON state, but
-                    // we still log cluster updates for future use.
+                    // Cluster updates (hm://connect-state/v1/cluster) contain player state updates
                     if (uri.StartsWith("hm://connect-state/v1/cluster", StringComparison.OrdinalIgnoreCase))
                     {
-                        LogDebug("Received connect-state cluster update message");
-                        // A full migration to connect-state would parse ClusterUpdate here using
-                        // Google.Protobuf and map it into spotifyRequestContext.
-                        // For now we only log the presence of these messages.
+                        LogDebug("Received connect-state cluster update message - parsing player state");
+                        
+                        try
+                        {
+                            // Parse cluster update from payloads
+                            if (playerEvent.TryGetProperty("payloads", out var clusterPayloads) && clusterPayloads.ValueKind == JsonValueKind.Array)
+                            {
+                                LogDebug($"Found {clusterPayloads.GetArrayLength()} payload(s) in cluster update");
+                                
+                                foreach (var clusterPayload in clusterPayloads.EnumerateArray())
+                                {
+                                    if (clusterPayload.ValueKind == JsonValueKind.Object && clusterPayload.TryGetProperty("cluster", out var cluster))
+                                    {
+                                        LogDebug("Found cluster object in payload");
+                                        
+                                        // Extract player state from cluster
+                                        if (cluster.TryGetProperty("player_state", out var playerState))
+                                        {
+                                            LogDebug("Found player_state in cluster, parsing...");
+                                            ParseClusterPlayerState(playerState);
+                                        }
+                                        else
+                                        {
+                                            LogDebug("No player_state found in cluster");
+                                        }
+                                        
+                                        // Extract device info
+                                        if (cluster.TryGetProperty("active_device_id", out var activeDeviceId))
+                                        {
+                                            spotifyRequestContext.DeviceId = activeDeviceId.GetString();
+                                            LogDebug($"Updated device ID: {spotifyRequestContext.DeviceId}");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        LogDebug($"Payload is not an object or doesn't contain cluster. ValueKind: {clusterPayload.ValueKind}");
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                LogDebug("No payloads array found in cluster update message");
+                            }
+                            
+                            setState(); // Update OSC parameters
+                        }
+                        catch (Exception ex)
+                        {
+                            LogDebug($"Error processing cluster update: {ex.Message}\n{ex.StackTrace}");
+                        }
+                        
+                        return; // Don't process as wss://event message
                     }
                 }
 
@@ -2251,8 +2325,223 @@ namespace YeusepesModules.SPOTIOSC
             TriggerEvent("VolumeEvent");
         }
 
-
-
+        private void ParseClusterPlayerState(JsonElement playerState)
+        {
+            try
+            {
+                // Parse is_playing and is_paused
+                bool isPlaying = false;
+                bool isPaused = false;
+                
+                if (playerState.TryGetProperty("is_playing", out var isPlayingElem))
+                {
+                    isPlaying = isPlayingElem.GetBoolean();
+                    spotifyRequestContext.IsPlaying = isPlaying;
+                    SetParameterSafe(SpotiParameters.IsPlaying, isPlaying);
+                }
+                
+                if (playerState.TryGetProperty("is_paused", out var isPausedElem))
+                {
+                    isPaused = isPausedElem.GetBoolean();
+                }
+                
+                // Parse position and duration (they're strings in cluster format)
+                int clusterPositionMs = 0;
+                if (playerState.TryGetProperty("position_as_of_timestamp", out var positionElem))
+                {
+                    if (positionElem.ValueKind == JsonValueKind.String && int.TryParse(positionElem.GetString(), out int parsedPosition))
+                    {
+                        clusterPositionMs = parsedPosition;
+                        spotifyRequestContext.ProgressMs = clusterPositionMs;
+                        SetParameterSafe(SpotiParameters.PlaybackPosition, clusterPositionMs);
+                    }
+                    else if (positionElem.ValueKind == JsonValueKind.Number)
+                    {
+                        clusterPositionMs = positionElem.GetInt32();
+                        spotifyRequestContext.ProgressMs = clusterPositionMs;
+                        SetParameterSafe(SpotiParameters.PlaybackPosition, clusterPositionMs);
+                    }
+                }
+                
+                int clusterDurationMs = 0;
+                if (playerState.TryGetProperty("duration", out var durationElem))
+                {
+                    if (durationElem.ValueKind == JsonValueKind.String && int.TryParse(durationElem.GetString(), out int parsedDuration))
+                    {
+                        clusterDurationMs = parsedDuration;
+                        spotifyRequestContext.TrackDurationMs = clusterDurationMs;
+                        SetParameterSafe(SpotiParameters.TrackDurationMs, (float)clusterDurationMs);
+                    }
+                    else if (durationElem.ValueKind == JsonValueKind.Number)
+                    {
+                        clusterDurationMs = durationElem.GetInt32();
+                        spotifyRequestContext.TrackDurationMs = clusterDurationMs;
+                        SetParameterSafe(SpotiParameters.TrackDurationMs, (float)clusterDurationMs);
+                    }
+                }
+                
+                // Parse timestamp
+                if (playerState.TryGetProperty("timestamp", out var timestampElem))
+                {
+                    if (timestampElem.ValueKind == JsonValueKind.String && long.TryParse(timestampElem.GetString(), out long timestamp))
+                    {
+                        spotifyRequestContext.Timestamp = timestamp;
+                    }
+                    else if (timestampElem.ValueKind == JsonValueKind.Number)
+                    {
+                        spotifyRequestContext.Timestamp = timestampElem.GetInt64();
+                    }
+                }
+                
+                // Parse track info
+                if (playerState.TryGetProperty("track", out var track))
+                {
+                    if (track.TryGetProperty("uri", out var trackUri))
+                    {
+                        spotifyRequestContext.TrackUri = trackUri.GetString();
+                    }
+                    
+                    if (track.TryGetProperty("metadata", out var metadata))
+                    {
+                        if (metadata.TryGetProperty("title", out var title))
+                        {
+                            spotifyRequestContext.TrackName = title.GetString();
+                        }
+                        
+                        if (metadata.TryGetProperty("album_title", out var albumTitle))
+                        {
+                            spotifyRequestContext.AlbumName = albumTitle.GetString();
+                        }
+                        
+                        string artistName = null;
+                        string artistUriStr = null;
+                        
+                        if (metadata.TryGetProperty("artist_name", out var artistNameElem))
+                        {
+                            artistName = artistNameElem.GetString();
+                        }
+                        
+                        if (metadata.TryGetProperty("artist_uri", out var artistUri))
+                        {
+                            artistUriStr = artistUri.GetString();
+                        }
+                        
+                        if (string.IsNullOrEmpty(artistName) && !string.IsNullOrEmpty(spotifyRequestContext.TrackUri) && spotifyRequestContext.TrackUri.StartsWith("spotify:track:"))
+                        {
+                            string trackId = spotifyRequestContext.TrackUri.Substring("spotify:track:".Length);
+                            lock (_pendingTracksLock)
+                            {
+                                _pendingTrackIds.Add(trackId);
+                            }
+                            TriggerBatchFetch();
+                        }
+                        
+                        if (!string.IsNullOrEmpty(artistName) || !string.IsNullOrEmpty(artistUriStr))
+                        {
+                            spotifyRequestContext.Artists = new List<(string, string)> { (artistName ?? "", artistUriStr ?? "") };
+                        }
+                        
+                        // Extract album art URLs
+                        if (metadata.TryGetProperty("image_url", out var imageUrl))
+                        {
+                            string imageUrlStr = imageUrl.GetString();
+                            if (!string.IsNullOrEmpty(imageUrlStr))
+                            {
+                                // Convert spotify:image:... to https://i.scdn.co/image/...
+                                if (imageUrlStr.StartsWith("spotify:image:"))
+                                {
+                                    string imageId = imageUrlStr.Substring("spotify:image:".Length);
+                                    spotifyRequestContext.AlbumArtworkUrl = $"https://i.scdn.co/image/{imageId}";
+                                }
+                                else
+                                {
+                                    spotifyRequestContext.AlbumArtworkUrl = imageUrlStr;
+                                }
+                            }
+                        }
+                        else if (metadata.TryGetProperty("image_large_url", out var imageLargeUrl))
+                        {
+                            string imageUrlStr = imageLargeUrl.GetString();
+                            if (!string.IsNullOrEmpty(imageUrlStr))
+                            {
+                                if (imageUrlStr.StartsWith("spotify:image:"))
+                                {
+                                    string imageId = imageUrlStr.Substring("spotify:image:".Length);
+                                    spotifyRequestContext.AlbumArtworkUrl = $"https://i.scdn.co/image/{imageId}";
+                                }
+                                else
+                                {
+                                    spotifyRequestContext.AlbumArtworkUrl = imageUrlStr;
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // Parse context
+                if (playerState.TryGetProperty("context_uri", out var contextUri))
+                {
+                    spotifyRequestContext.ContextUri = contextUri.GetString();
+                }
+                
+                // Parse shuffle and repeat options
+                if (playerState.TryGetProperty("options", out var options))
+                {
+                    if (options.TryGetProperty("shuffling_context", out var shuffling))
+                    {
+                        spotifyRequestContext.ShuffleState = shuffling.GetBoolean();
+                        int shuffleMode = shuffling.GetBoolean() ? 1 : 0;
+                        SetParameterSafe(SpotiParameters.ShuffleMode, shuffleMode);
+                    }
+                    
+                    if (options.TryGetProperty("repeating_context", out var repeatingContext))
+                    {
+                        if (repeatingContext.GetBoolean())
+                        {
+                            spotifyRequestContext.RepeatState = "context";
+                            SetParameterSafe(SpotiParameters.RepeatMode, 2);
+                        }
+                    }
+                    
+                    if (options.TryGetProperty("repeating_track", out var repeatingTrack))
+                    {
+                        if (repeatingTrack.GetBoolean())
+                        {
+                            spotifyRequestContext.RepeatState = "track";
+                            SetParameterSafe(SpotiParameters.RepeatMode, 1);
+                        }
+                    }
+                    
+                    // If no repeat is set, it's off
+                    if (!options.TryGetProperty("repeating_context", out _) && !options.TryGetProperty("repeating_track", out _))
+                    {
+                        spotifyRequestContext.RepeatState = "off";
+                        SetParameterSafe(SpotiParameters.RepeatMode, 0);
+                    }
+                }
+                
+                // Update position tracking for continuous updates
+                UpdatePositionTracking(clusterPositionMs, isPlaying, clusterDurationMs);
+                
+                // Trigger play/pause events
+                if (isPlaying && !isPaused)
+                {
+                    TriggerEvent("PlayEvent");
+                }
+                else
+                {
+                    TriggerEvent("PauseEvent");
+                }
+                
+                UpdateCurrentSongParameter();
+                
+                LogDebug($"Cluster player state parsed: Playing={isPlaying}, Paused={isPaused}, Position={spotifyRequestContext.ProgressMs}ms, Track={spotifyRequestContext.TrackName}");
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Error parsing cluster player state: {ex.Message}");
+            }
+        }
 
         private void ExtractTrackDetails(JsonElement state)
         {
@@ -3356,6 +3645,167 @@ namespace YeusepesModules.SPOTIOSC
             SetParameterSafe(SpotiParameters.PlaybackPosition, (float)progressMs);
             
             LogDebug($"Position tracking updated - Progress: {progressMs}ms, Playing: {isPlaying}, Duration: {durationMs}ms");
+        }
+
+        #endregion
+
+        #region Batch Track Fetching
+
+        private void TriggerBatchFetch()
+        {
+            if (_batchFetchTimer == null)
+            {
+                _batchFetchTimer = new System.Timers.Timer(BATCH_FETCH_DELAY_MS);
+                _batchFetchTimer.Elapsed += async (sender, e) =>
+                {
+                    _batchFetchTimer.Stop();
+                    await FetchBatchTracksAsync();
+                };
+                _batchFetchTimer.AutoReset = false;
+            }
+
+            if (!_batchFetchTimer.Enabled)
+            {
+                _batchFetchTimer.Start();
+            }
+        }
+
+        private async Task FetchBatchTracksAsync()
+        {
+            List<string> trackIdsToFetch;
+            lock (_pendingTracksLock)
+            {
+                if (_pendingTrackIds.Count == 0)
+                {
+                    return;
+                }
+                
+                trackIdsToFetch = _pendingTrackIds.Take(MAX_TRACKS_PER_BATCH).ToList();
+                foreach (var id in trackIdsToFetch)
+                {
+                    _pendingTrackIds.Remove(id);
+                }
+            }
+
+            if (trackIdsToFetch.Count == 0)
+            {
+                return;
+            }
+
+            try
+            {
+                string trackIdsParam = string.Join(",", trackIdsToFetch);
+                var request = new HttpRequestMessage(HttpMethod.Get, $"https://api.spotify.com/v1/tracks?ids={trackIdsParam}");
+                
+                // Use OAuth2 API token for Web API calls, not Web Player token
+                string apiAccessToken = CredentialManager.LoadApiAccessToken();
+                if (string.IsNullOrEmpty(apiAccessToken))
+                {
+                    LogDebug("API access token not available, falling back to web player token");
+                    apiAccessToken = spotifyRequestContext.AccessToken;
+                }
+                
+                request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiAccessToken);
+                                
+                request.Headers.Add("Accept", "*/*");
+                request.Headers.Add("Accept-Language", "en-US,en;q=0.9");
+                request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36");
+                request.Headers.Add("Priority", "u=1, i");
+                request.Headers.Add("Sec-Fetch-Dest", "empty");
+                request.Headers.Add("Sec-Fetch-Mode", "cors");
+                request.Headers.Add("Sec-Fetch-Site", "same-site");
+                request.Headers.Add("Referer", "https://developer.spotify.com/");
+
+                var response = await spotifyRequestContext.HttpClient.SendAsync(request);
+                if (response.IsSuccessStatusCode)
+                {
+                    var json = await response.Content.ReadAsStringAsync();
+                    var trackData = JsonSerializer.Deserialize<JsonElement>(json);
+
+                    if (trackData.TryGetProperty("tracks", out var tracksArray) && tracksArray.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var track in tracksArray.EnumerateArray())
+                        {
+                            if (track.ValueKind == JsonValueKind.Null)
+                            {
+                                continue;
+                            }
+
+                            string trackId = null;
+                            string trackUri = null;
+                            
+                            if (track.TryGetProperty("id", out var idProp))
+                            {
+                                trackId = idProp.GetString();
+                            }
+                            
+                            if (track.TryGetProperty("uri", out var uriProp))
+                            {
+                                trackUri = uriProp.GetString();
+                            }
+
+                            if (string.IsNullOrEmpty(trackId))
+                            {
+                                continue;
+                            }
+
+                            if (track.TryGetProperty("artists", out var artistsArray) && artistsArray.ValueKind == JsonValueKind.Array)
+                            {
+                                var artistList = new List<(string, string)>();
+                                foreach (var artist in artistsArray.EnumerateArray())
+                                {
+                                    string artistNameFromApi = null;
+                                    string artistUri = null;
+
+                                    if (artist.TryGetProperty("name", out var nameProp))
+                                    {
+                                        artistNameFromApi = nameProp.GetString();
+                                    }
+
+                                    if (artist.TryGetProperty("uri", out var artistUriProp))
+                                    {
+                                        artistUri = artistUriProp.GetString();
+                                    }
+
+                                    if (!string.IsNullOrEmpty(artistNameFromApi))
+                                    {
+                                        artistList.Add((artistNameFromApi, artistUri ?? ""));
+                                    }
+                                }
+
+                                if (artistList.Count > 0 && spotifyRequestContext.TrackUri == trackUri)
+                                {
+                                    spotifyRequestContext.Artists = artistList;
+                                    UpdateCurrentSongParameter();
+                                    LogDebug($"Fetched artist names for track {trackId}: {string.Join(", ", artistList.Select(a => a.Item1))}");
+                                }
+                            }
+                        }
+                    }
+                }
+                else if (response.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
+                {
+                    var retryAfter = response.Headers.RetryAfter?.Delta?.TotalMilliseconds ?? 1000;
+                    LogDebug($"Rate limited for batch, will retry after {retryAfter}ms");
+                    lock (_pendingTracksLock)
+                    {
+                        foreach (var trackId in trackIdsToFetch)
+                        {
+                            _pendingTrackIds.Add(trackId);
+                        }
+                    }
+                    await Task.Delay((int)retryAfter);
+                }
+                else
+                {
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    LogDebug($"Failed to fetch batch track info: {response.StatusCode} - {errorContent}");
+                }
+            }
+            catch (Exception ex)
+            {
+                LogDebug($"Error fetching batch track info: {ex.Message}");
+            }
         }
 
         #endregion

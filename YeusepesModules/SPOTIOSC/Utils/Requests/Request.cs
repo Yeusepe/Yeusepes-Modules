@@ -130,8 +130,26 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
             {
                 using (var request = new HttpRequestMessage(HttpMethod.Get, endpoint))
                 {
-                    // Use the access token stored in the context.
-                    request.Headers.Add("Authorization", $"Bearer {context.ApiToken}");
+                    // Use OAuth2 API token for Web API calls, not Web Player token
+                    string apiAccessToken = CredentialManager.LoadApiAccessToken();
+                    if (string.IsNullOrEmpty(apiAccessToken))
+                    {
+                        utilities.LogDebug("API access token not available, falling back to web player token");
+                        apiAccessToken = context.AccessToken;
+                    }
+                    
+                    request.Headers.Add("Authorization", $"Bearer {apiAccessToken}");
+                    
+                    // Add browser-like headers to match the curl request
+                    request.Headers.Add("Accept", "*/*");
+                    request.Headers.Add("Accept-Language", "en-US,en;q=0.9");
+                    request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36");
+                    request.Headers.Add("Priority", "u=1, i");
+                    request.Headers.Add("Sec-Fetch-Dest", "empty");
+                    request.Headers.Add("Sec-Fetch-Mode", "cors");
+                    request.Headers.Add("Sec-Fetch-Site", "same-site");
+                    request.Headers.Add("Referer", "https://developer.spotify.com/");
+                    
                     utilities.LogDebug("Fetching current playback state...");
 
                     HttpResponseMessage response = await context.HttpClient.SendAsync(request);
@@ -276,11 +294,41 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
                             }
                         }
                     }
+                    else if (response.StatusCode == System.Net.HttpStatusCode.NoContent)
+                    {
+                        // 204 No Content means no active playback
+                        utilities.Log("No active playback detected. Please start playing something in Spotify.");
+                        utilities.LogDebug("Response: 204 No Content - No active playback");
+                    }
                     else
                     {
-                        utilities.Log($"Spotify seems to either be paused or your device marked as \"Not active\". Try pausing/unpausing to see if your device activates!");
                         string errorContent = await response.Content.ReadAsStringAsync();
                         utilities.LogDebug($"Error response: {errorContent}");
+                        
+                        // Check if it's an authentication error
+                        if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized || 
+                            response.StatusCode == System.Net.HttpStatusCode.BadRequest)
+                        {
+                            try
+                            {
+                                var errorJson = JsonSerializer.Deserialize<JsonElement>(errorContent);
+                                if (errorJson.TryGetProperty("error", out var errorObj))
+                                {
+                                    if (errorObj.TryGetProperty("message", out var message))
+                                    {
+                                        string errorMessage = message.GetString();
+                                        if (errorMessage.Contains("bearer") || errorMessage.Contains("authentication"))
+                                        {
+                                            utilities.Log("Authentication error: Please ensure you're logged in and try playing something in Spotify.");
+                                            return;
+                                        }
+                                    }
+                                }
+                            }
+                            catch { }
+                        }
+                        
+                        utilities.Log("Unable to fetch playback state. Please start playing something in Spotify.");
                     }
                 }
             }
