@@ -1,6 +1,7 @@
 ﻿using System.Security;
 using System.Security.Cryptography;
 using System.Net;
+using System.Collections.Concurrent;
 using VRCOSC.App.SDK.Modules;
 using YeusepesModules.SPOTIOSC.Credentials;
 using System.Net.Http;
@@ -49,8 +50,8 @@ namespace YeusepesModules.SPOTIOSC
         private HttpClient _syncopationHttpClient;
         private string _currentEphemeralWord1;
         private string _currentEphemeralWord2;
-        private Dictionary<SpotiParameters, bool> _ephemeralWordValues = new Dictionary<SpotiParameters, bool>();
-        private Dictionary<SpotiParameters, bool> _ephemeralWordReceiverValues = new Dictionary<SpotiParameters, bool>();
+        private readonly ConcurrentDictionary<SpotiParameters, bool> _ephemeralWordValues = new();
+        private readonly ConcurrentDictionary<SpotiParameters, bool> _ephemeralWordReceiverValues = new();
         private bool _isProcessingEphemeralJoin = false;
         private readonly object _ephemeralJoinLock = new object();
         private DateTime _lastEphemeralCheckTime = DateTime.MinValue;
@@ -59,7 +60,7 @@ namespace YeusepesModules.SPOTIOSC
         private System.Threading.CancellationTokenSource _notificationCancellationTokenSource;
         private System.Threading.Tasks.Task _notificationTask;
 
-        private HashSet<System.Enum> _activeParameterUpdates = new HashSet<System.Enum>();
+        private readonly ConcurrentDictionary<System.Enum, byte> _activeParameterUpdates = new();
 
         private readonly HashSet<string> _processedEventKeys = new();
         private readonly object _deduplicationLock = new();
@@ -646,11 +647,8 @@ namespace YeusepesModules.SPOTIOSC
             }
 
             // Prevent handling changes that originated from within the code
-            if (_activeParameterUpdates.Contains(param))
-            {
-                _activeParameterUpdates.Remove(param);                
+            if (_activeParameterUpdates.TryRemove(param, out _))
                 return;
-            }
 
             async void Do(Func<SpotifyApiService, Task> work)
             {
@@ -1337,8 +1335,8 @@ namespace YeusepesModules.SPOTIOSC
                                             // Stop sending word parameters
                                             if (!string.IsNullOrEmpty(_currentEphemeralWord1) && !string.IsNullOrEmpty(_currentEphemeralWord2))
                                             {
-                                                _activeParameterUpdates.Add(GetParameterFromWordName(_currentEphemeralWord1));
-                                                _activeParameterUpdates.Add(GetParameterFromWordName(_currentEphemeralWord2));
+                                                _activeParameterUpdates[GetParameterFromWordName(_currentEphemeralWord1)] = 0;
+                                                _activeParameterUpdates[GetParameterFromWordName(_currentEphemeralWord2)] = 0;
                                                 
                                                 SetParameterSafe(GetParameterFromWordName(_currentEphemeralWord1), false);
                                                 SetParameterSafe(GetParameterFromWordName(_currentEphemeralWord2), false);
@@ -1571,13 +1569,13 @@ namespace YeusepesModules.SPOTIOSC
                         if (!string.IsNullOrEmpty(sessionId))
                         {
                             // Reset all receiver word parameters
-                            _activeParameterUpdates.Add(SpotiParameters.AllegroReceiver);
-                            _activeParameterUpdates.Add(SpotiParameters.CadenceReceiver);
-                            _activeParameterUpdates.Add(SpotiParameters.GrooveReceiver);
-                            _activeParameterUpdates.Add(SpotiParameters.RitmoReceiver);
-                            _activeParameterUpdates.Add(SpotiParameters.MetronomeReceiver);
-                            _activeParameterUpdates.Add(SpotiParameters.EncoreReceiver);
-                            _activeParameterUpdates.Add(SpotiParameters.ChorusReceiver);
+                            _activeParameterUpdates[SpotiParameters.AllegroReceiver] = 0;
+                            _activeParameterUpdates[SpotiParameters.CadenceReceiver] = 0;
+                            _activeParameterUpdates[SpotiParameters.GrooveReceiver] = 0;
+                            _activeParameterUpdates[SpotiParameters.RitmoReceiver] = 0;
+                            _activeParameterUpdates[SpotiParameters.MetronomeReceiver] = 0;
+                            _activeParameterUpdates[SpotiParameters.EncoreReceiver] = 0;
+                            _activeParameterUpdates[SpotiParameters.ChorusReceiver] = 0;
                             
                             SetParameterSafe(SpotiParameters.AllegroReceiver, false);
                             SetParameterSafe(SpotiParameters.CadenceReceiver, false);
@@ -2850,8 +2848,8 @@ namespace YeusepesModules.SPOTIOSC
                         var param2 = GetParameterFromWordName(ephemeralCode.Value.word2);
                         LogDebug($"[HandleTouching] About to set parameters - word1 param={param1}, word2 param={param2}");
                         
-                        _activeParameterUpdates.Add(param1);
-                        _activeParameterUpdates.Add(param2);
+                        _activeParameterUpdates[param1] = 0;
+                        _activeParameterUpdates[param2] = 0;
                         
                         SetParameterSafe(param1, true);
                         SetParameterSafe(param2, true);
@@ -2878,8 +2876,8 @@ namespace YeusepesModules.SPOTIOSC
                 if (!string.IsNullOrEmpty(_currentEphemeralWord1) && !string.IsNullOrEmpty(_currentEphemeralWord2))
                 {
                     LogDebug($"[HandleTouching] Touching=false, clearing ephemeral words");
-                    _activeParameterUpdates.Add(GetParameterFromWordName(_currentEphemeralWord1));
-                    _activeParameterUpdates.Add(GetParameterFromWordName(_currentEphemeralWord2));
+                    _activeParameterUpdates[GetParameterFromWordName(_currentEphemeralWord1)] = 0;
+                    _activeParameterUpdates[GetParameterFromWordName(_currentEphemeralWord2)] = 0;
                     
                     SetParameterSafe(GetParameterFromWordName(_currentEphemeralWord1), false);
                     SetParameterSafe(GetParameterFromWordName(_currentEphemeralWord2), false);
@@ -2925,8 +2923,8 @@ namespace YeusepesModules.SPOTIOSC
                 // Stop sending ephemeral code parameters when leaving jam
                 if (!string.IsNullOrEmpty(_currentEphemeralWord1) && !string.IsNullOrEmpty(_currentEphemeralWord2))
                 {
-                    _activeParameterUpdates.Add(GetParameterFromWordName(_currentEphemeralWord1));
-                    _activeParameterUpdates.Add(GetParameterFromWordName(_currentEphemeralWord2));
+                    _activeParameterUpdates[GetParameterFromWordName(_currentEphemeralWord1)] = 0;
+                    _activeParameterUpdates[GetParameterFromWordName(_currentEphemeralWord2)] = 0;
                     
                     SetParameterSafe(GetParameterFromWordName(_currentEphemeralWord1), false);
                     SetParameterSafe(GetParameterFromWordName(_currentEphemeralWord2), false);
@@ -2983,7 +2981,7 @@ namespace YeusepesModules.SPOTIOSC
         {
             try
             {
-                _activeParameterUpdates.Add(parameter);
+                _activeParameterUpdates[parameter] = 0;
                 SendParameter(parameter, value);
             }
             catch (Exception ex)
