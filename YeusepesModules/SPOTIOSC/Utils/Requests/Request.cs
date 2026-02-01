@@ -139,8 +139,7 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
                     }
                     
                     request.Headers.Add("Authorization", $"Bearer {apiAccessToken}");
-                    
-                    // Add browser-like headers to match the curl request
+                                        
                     request.Headers.Add("Accept", "*/*");
                     request.Headers.Add("Accept-Language", "en-US,en;q=0.9");
                     request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36");
