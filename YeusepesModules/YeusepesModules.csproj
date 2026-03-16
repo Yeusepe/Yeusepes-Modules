@@ -129,7 +129,7 @@
 		<PackageReference Include="System.Private.ServiceModel" Version="4.10.3" />
 		
 		<!-- Use different SDK versions based on configuration -->
-		<PackageReference Include="VolcanicArts.VRCOSC.SDK" Version="2025.327.0" Condition="'$(Configuration)' == 'Release' Or '$(Configuration)' == 'Release-NoVRChat' Or '$(Configuration)' == 'Release-NoVIRA' Or '$(Configuration)' == 'Debug'" />
+		<PackageReference Include="VolcanicArts.VRCOSC.SDK" Version="2025.1015.0" Condition="'$(Configuration)' == 'Release' Or '$(Configuration)' == 'Release-NoVRChat' Or '$(Configuration)' == 'Release-NoVIRA' Or '$(Configuration)' == 'Debug'" />
 		<PackageReference Include="VolcanicArts.VRCOSC.SDK" Version="2025.1015.0" Condition="'$(Configuration)' == 'Beta'" />
 		
 		<PackageReference Include="Microsoft.Extensions.FileProviders.Physical" Version="9.0.3" />

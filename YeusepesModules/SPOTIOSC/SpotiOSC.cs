@@ -1,4 +1,4 @@
-﻿using System.Security;
+using System.Security;
 using System.Security.Cryptography;
 using System.Net;
 using System.Collections.Concurrent;
@@ -18,6 +18,7 @@ using VRCOSC.App.Settings;
 using SpotifyAPI.Web;
 using Google.Protobuf;
 using YeusepesModules.SPOTIOSC.Utils.Protobuf;
+using PuppeteerSharp;
 
 
 
@@ -47,7 +48,7 @@ namespace YeusepesModules.SPOTIOSC
         // Syncopation Server Communication
         private string _syncopationInstanceId;
         private string _syncopationInstanceToken;
-        private string _melodyServerUrl = "https://melody.yucp.club";
+        private string _melodyServerUrl = "http://0.0.0.0:8000/";
         private HttpClient _syncopationHttpClient;
         private string _currentEphemeralWord1;
         private string _currentEphemeralWord2;
@@ -74,6 +75,7 @@ namespace YeusepesModules.SPOTIOSC
         private readonly object _deduplicationLock = new();
 
         private CancellationTokenSource _cts = new CancellationTokenSource();
+        private EventHandler<UnobservedTaskExceptionEventArgs> _puppeteerNoiseHandler;
         private bool _getTrackFeaturesEnabled = false;
         
         // Continuous playback position tracking
@@ -549,6 +551,20 @@ namespace YeusepesModules.SPOTIOSC
         {
            
             _cts = new CancellationTokenSource();
+
+            // Suppress known-harmless PuppeteerSharp internal unobserved task exceptions
+            // (redirect response bodies, destroyed execution contexts during navigation)
+            _puppeteerNoiseHandler = (sender, e) =>
+            {
+                if (e.Exception.InnerExceptions.All(ex =>
+                    ex is PuppeteerSharp.PuppeteerException &&
+                    (ex.Message.Contains("redirect", StringComparison.OrdinalIgnoreCase) ||
+                     ex.Message.Contains("Execution Context", StringComparison.OrdinalIgnoreCase))))
+                {
+                    e.SetObserved();
+                }
+            };
+            TaskScheduler.UnobservedTaskException += _puppeteerNoiseHandler;
             
             _httpClient = new HttpClient();
 
@@ -1901,6 +1917,12 @@ namespace YeusepesModules.SPOTIOSC
             LogDebug("Stopping SpotiOSC module...");
             _cts.Cancel(); // Cancel all ongoing operations
 
+            if (_puppeteerNoiseHandler != null)
+            {
+                TaskScheduler.UnobservedTaskException -= _puppeteerNoiseHandler;
+                _puppeteerNoiseHandler = null;
+            }
+
             try
             {
                 _batchFetchTimer?.Stop();
@@ -2117,6 +2139,13 @@ namespace YeusepesModules.SPOTIOSC
         {
             try
             {
+                // Guard: playerEvent must be an Object (Spotify may send unexpected structures in JAMMR 2.1.2+)
+                if (playerEvent.ValueKind != JsonValueKind.Object)
+                {
+                    LogDebug($"Skipping non-object player event (ValueKind: {playerEvent.ValueKind})");
+                    return;
+                }
+
                 LogDebug($"Processing player event: {playerEvent}");
 
                 // Check the URI to determine message type
@@ -2199,10 +2228,16 @@ namespace YeusepesModules.SPOTIOSC
                     }
                 }
 
-                if (playerEvent.TryGetProperty("payloads", out var payloads))
+                if (playerEvent.TryGetProperty("payloads", out var payloads) && payloads.ValueKind == JsonValueKind.Array)
                 {
                     foreach (var payload in payloads.EnumerateArray())
                     {
+                        // Guard: payloads can contain base64 strings (protobuf) in some message types; skip non-objects
+                        if (payload.ValueKind != JsonValueKind.Object)
+                        {
+                            LogDebug($"Skipping non-object payload (ValueKind: {payload.ValueKind})");
+                            continue;
+                        }
                         if (payload.TryGetProperty("session", out var session))
                         {
                             if (IsDuplicateEvent(session))
@@ -2237,13 +2272,14 @@ namespace YeusepesModules.SPOTIOSC
             {
                 string sessionOwner = sessionOwnerId.GetString();
 
-                if (session.TryGetProperty("session_members", out var sessionMembers))
+                if (session.TryGetProperty("session_members", out var sessionMembers) && sessionMembers.ValueKind == JsonValueKind.Array)
                 {
                     foreach (var member in sessionMembers.EnumerateArray())
                     {
-                        if (member.GetProperty("is_current_user").GetBoolean())
+                        if (member.ValueKind != JsonValueKind.Object) continue;
+                        if (member.TryGetProperty("is_current_user", out var isCurrentUserElem) && isCurrentUserElem.GetBoolean())
                         {
-                            currentUserId = member.GetProperty("id").GetString();
+                            currentUserId = member.TryGetProperty("id", out var idElem) ? idElem.GetString() : null;
                             isCurrentUserOwner = currentUserId == sessionOwner;
                             break;
                         }
@@ -2340,7 +2376,7 @@ namespace YeusepesModules.SPOTIOSC
                     }
 
                     // Extract session owner and images
-                    if (session.TryGetProperty("session_members", out var sessionMembers))
+                    if (session.TryGetProperty("session_members", out var sessionMembers) && sessionMembers.ValueKind == JsonValueKind.Array)
                     {
                         int count = sessionMembers.GetArrayLength();
                         SpotifyJamRequests._participantCount = count;
@@ -2348,11 +2384,13 @@ namespace YeusepesModules.SPOTIOSC
                         var images = new List<string>();
                         foreach (var member in sessionMembers.EnumerateArray())
                         {
+                            if (member.ValueKind != JsonValueKind.Object) continue;
                             // Check if this member is the session owner
                             if (session.TryGetProperty("session_owner_id", out var ownerId) &&
-                                member.GetProperty("id").GetString() == ownerId.GetString())
+                                member.TryGetProperty("id", out var memberIdElem) &&
+                                memberIdElem.GetString() == ownerId.GetString())
                             {
-                                spotifyRequestContext.JamOwnerName = member.GetProperty("display_name").GetString();
+                                spotifyRequestContext.JamOwnerName = member.TryGetProperty("display_name", out var displayNameElem) ? displayNameElem.GetString() : null;
                                 LogDebug($"Updated jam owner: {spotifyRequestContext.JamOwnerName}");
                             }
 
@@ -2418,11 +2456,13 @@ namespace YeusepesModules.SPOTIOSC
 
         private void HandleEvents(JsonElement payload)
         {
-            if (!payload.TryGetProperty("events", out var events)) return;
+            if (!payload.TryGetProperty("events", out var events) || events.ValueKind != JsonValueKind.Array) return;
 
             foreach (var ev in events.EnumerateArray())
             {
+                if (ev.ValueKind != JsonValueKind.Object) continue;
                 if (ev.TryGetProperty("event", out var eventDetails) &&
+                    eventDetails.ValueKind == JsonValueKind.Object &&
                     eventDetails.TryGetProperty("state", out var state))
                 {
                     ExtractPlaybackState(state);
@@ -2604,6 +2644,11 @@ namespace YeusepesModules.SPOTIOSC
         {
             try
             {
+                if (playerState.ValueKind != JsonValueKind.Object)
+                {
+                    LogDebug($"Skipping non-object player_state (ValueKind: {playerState.ValueKind})");
+                    return;
+                }
                 // Parse is_playing and is_paused
                 bool isPlaying = false;
                 bool isPaused = false;
@@ -2669,14 +2714,14 @@ namespace YeusepesModules.SPOTIOSC
                 }
                 
                 // Parse track info
-                if (playerState.TryGetProperty("track", out var track))
+                if (playerState.TryGetProperty("track", out var track) && track.ValueKind == JsonValueKind.Object)
                 {
                     if (track.TryGetProperty("uri", out var trackUri))
                     {
                         spotifyRequestContext.TrackUri = trackUri.GetString();
                     }
                     
-                    if (track.TryGetProperty("metadata", out var metadata))
+                    if (track.TryGetProperty("metadata", out var metadata) && metadata.ValueKind == JsonValueKind.Object)
                     {
                         if (metadata.TryGetProperty("title", out var title))
                         {
