@@ -21,7 +21,6 @@ using YeusepesModules.SPOTIOSC.Utils.Protobuf;
 using PuppeteerSharp;
 
 
-
 namespace YeusepesModules.SPOTIOSC
 {
     [ModuleTitle("SpotiOSC")]
@@ -42,13 +41,12 @@ namespace YeusepesModules.SPOTIOSC
         private VolumeUpdateParser _volumeUpdateParser;
 
 
-
         private bool isTouching = false;
         
         // Syncopation Server Communication
         private string _syncopationInstanceId;
         private string _syncopationInstanceToken;
-        private string _melodyServerUrl = "http://0.0.0.0:8000/";
+        private string _melodyServerUrl = "https://melody.yucp.club/";
         private HttpClient _syncopationHttpClient;
         private string _currentEphemeralWord1;
         private string _currentEphemeralWord2;
@@ -237,8 +235,7 @@ namespace YeusepesModules.SPOTIOSC
         protected override void OnPreLoad()
         {
             YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("libusb-1.0.dll", message => Log(message));
-            YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("cvextern.dll", message => Log(message));
-
+            YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("cvextern.dll", message => Log(message));            
 
             _syncopationHttpClient = new HttpClient();
             LogDebug($"[OnPreLoad] Initialized _syncopationHttpClient={(_syncopationHttpClient == null ? "NULL" : "SUCCESS")}");
@@ -967,11 +964,11 @@ namespace YeusepesModules.SPOTIOSC
                     break;
 
                 case SpotiParameters.NextTrack when parameter.GetValue<bool>():
-                    Do(async svc => await svc.NextTrackAsync());
+                    Do(async svc => await svc.NextTrackAsync(spotifyRequestContext.DeviceId));
                     break;
 
                 case SpotiParameters.PreviousTrack when parameter.GetValue<bool>():
-                    Do(async svc => await svc.PreviousTrackAsync());
+                    Do(async svc => await svc.PreviousTrackAsync(spotifyRequestContext.DeviceId));
                     break;
                 case SpotiParameters.RepeatMode
                   when parameter.GetValue<int>() is var mode:

@@ -289,9 +289,6 @@ namespace YeusepesModules.SPOTIOSC.UI
 
         private async void OnSignInClick(object sender, RoutedEventArgs e)
         {
-            // Check if the parent window is still alive.
-            var parentWindow = Window.GetWindow(this);
-
             // Show spinner overlay
             if (SpinnerOverlay != null)
             {
@@ -314,12 +311,15 @@ namespace YeusepesModules.SPOTIOSC.UI
                 }
                 else
                 {
-                    // Handle login failure if necessary
+                    spotifyUtilities?.LogDebug("Spotify sign-in finished without usable tokens. The user is still signed out.");
+                    Dispatcher.Invoke(DisplaySignedOutState);
                 }
             }
             catch (Exception ex)
             {
-                // Optionally log or handle the exception
+                spotifyUtilities?.LogDebug($"Spotify sign-in failed: {ex}");
+                spotifyUtilities?.Log($"Spotify sign-in failed: {ex.Message}");
+                Dispatcher.Invoke(DisplaySignedOutState);
             }
             finally
             {

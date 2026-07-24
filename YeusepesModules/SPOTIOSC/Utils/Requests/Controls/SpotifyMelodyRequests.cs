@@ -311,46 +311,49 @@ public class SpotifyApiService
     }
 
     /// <summary> Skip to next track. </summary>
-    public async Task NextTrackAsync()
-    {
-        try
-        {
-            await _client.Player.SkipNext();
-        }
-        catch (APIUnauthorizedException)
-        {
-            await RefreshAndReinitializeAsync();
-            await _client.Player.SkipNext();
-        }
-        catch (APIException ex) when (ex.Message.Contains("Restriction violated"))
-        {
-            throw new Exception("Next track command failed: Spotify API restriction violated. This may be due to account limitations, device restrictions, or rate limiting.");
-        }
-        catch (APIException ex)
-        {
-            throw new Exception($"Spotify API error during next track: {ex.Message}");
-        }
-    }
+    public Task NextTrackAsync(string deviceId = null) => SkipAsync(true, deviceId);
 
     /// <summary> Skip to previous track. </summary>
-    public async Task PreviousTrackAsync()
+    public Task PreviousTrackAsync(string deviceId = null) => SkipAsync(false, deviceId);
+
+    private async Task SkipAsync(bool next, string deviceId)
     {
+        var what = next ? "next" : "previous";
+
+        Task Send(string id) => next
+            ? _client.Player.SkipNext(new PlayerSkipNextRequest { DeviceId = id })
+            : _client.Player.SkipPrevious(new PlayerSkipPreviousRequest { DeviceId = id });
+
         try
         {
-            await _client.Player.SkipPrevious();
+            await Send(deviceId);
         }
         catch (APIUnauthorizedException)
         {
             await RefreshAndReinitializeAsync();
-            await _client.Player.SkipPrevious();
+            await Send(deviceId);
+        }
+        // Any 404 here is device trouble. Matching on the message is unreliable: a bad device_id
+        // gives "Device not found", nothing playing gives "Player command failed: No active device found".
+        catch (APIException ex) when (ex.Response?.StatusCode == System.Net.HttpStatusCode.NotFound)
+        {
+            // Tracked device went stale; fall back to whatever Spotify currently calls active.
+            var active = await GetActiveDeviceAsync();
+            if (active != null)
+            {
+                await Send(active.Id);
+                return;
+            }
+
+            throw new Exception($"{what} track command failed: {await DescribeNoActiveDeviceAsync()}");
         }
         catch (APIException ex) when (ex.Message.Contains("Restriction violated"))
         {
-            throw new Exception("Previous track command failed: Spotify API restriction violated. This may be due to account limitations, device restrictions, or rate limiting.");
+            throw new Exception($"{what} track command failed: Spotify API restriction violated. This may be due to account limitations, device restrictions, or rate limiting.");
         }
         catch (APIException ex)
         {
-            throw new Exception($"Spotify API error during previous track: {ex.Message}");
+            throw new Exception($"Spotify API error during {what} track: {ex.Message}");
         }
     }
 
@@ -383,6 +386,25 @@ public class SpotifyApiService
     /// <summary> Add a track or episode to the end of the user's queue. </summary>
     public async Task AddToQueueAsync(string uri, string deviceId = null)
         => await _client.Player.AddToQueue(new PlayerAddToQueueRequest(uri) { DeviceId = deviceId });
+
+    /// <summary>
+    /// Names the devices Spotify can actually see, for when none of them is active.
+    /// Without this the module can only report "device not found", which tells nobody anything.
+    /// </summary>
+    private async Task<string> DescribeNoActiveDeviceAsync()
+    {
+        try
+        {
+            var devices = (await _client.Player.GetAvailableDevices()).Devices;
+            return devices.Count == 0
+                ? "no Spotify devices available. Open Spotify on this PC or your phone, then try again."
+                : $"no active Spotify device — start playback first. Spotify can see: {string.Join(", ", devices.Select(d => $"{d.Name} ({d.Type})"))}";
+        }
+        catch (Exception ex)
+        {
+            return $"no active Spotify device, and the device list could not be read: {ex.Message}";
+        }
+    }
 
     /// <summary> Get the currently active device. </summary>
     public async Task<Device> GetActiveDeviceAsync()
@@ -665,23 +687,18 @@ public class SpotifyApiService
     /// </summary>
     public async Task RefreshAndReinitializeAsync()
     {
-        var savedRefresh = CredentialManager.LoadApiRefreshToken();
-        if (string.IsNullOrEmpty(savedRefresh))
-        {
-            var clientToken = CredentialManager.LoadClientToken();
-            var accessToken = CredentialManager.LoadAccessToken();
-            var clientId = CredentialManager.ClientId;
-
-            savedRefresh = CredentialManager.LoadApiRefreshToken();
-        }
-        
-        var refreshRequest = new PKCETokenRefreshRequest(
+        var refreshResponse = await new OAuthClient().RequestToken(new PKCETokenRefreshRequest(
             clientId: CredentialManager.ApiClientId,
-            refreshToken: savedRefresh
-        );
-        var refreshResponse = await new OAuthClient().RequestToken(refreshRequest);
-        
-        _client = new SpotifyClient(refreshResponse.AccessToken);
+            refreshToken: CredentialManager.LoadApiRefreshToken()
+        ));
+
+        CredentialManager.SaveApiAccessToken(refreshResponse.AccessToken);
+        if (!string.IsNullOrEmpty(refreshResponse.RefreshToken))
+            CredentialManager.SaveApiRefreshToken(refreshResponse.RefreshToken);
+
+        // Rebuild through InitializeAsync so the client keeps its PKCE authenticator — a bare
+        // new SpotifyClient(token) can't self-refresh, so the *next* expiry killed every command.
+        await InitializeAsync();
     }
 
 }
