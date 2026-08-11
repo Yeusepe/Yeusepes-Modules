@@ -10,14 +10,15 @@ using System.Windows.Media.Animation;
 using YeusepesModules.ShazamOSC.ShazamAPI;
 
 namespace YeusepesModules.ShazamOSC.UI
-{    
+{
 
     public class ShazamRecognitionContext : INotifyPropertyChanged
     {
-        public event PropertyChangedEventHandler PropertyChanged;
+        public event PropertyChangedEventHandler? PropertyChanged;
 
-        private string _title, _artist, _coverArtUrl;
-        private double _soundLevel;
+        private string _title = "";
+        private string _artist = "";
+        private string _coverArtUrl = "";
         private bool _isListening;    // ← new
         private double _bassLevel;
         private double _trebleLevel;
@@ -59,7 +60,7 @@ namespace YeusepesModules.ShazamOSC.UI
             set { _isListening = value; OnPropertyChanged(); }
         }
 
-        protected void OnPropertyChanged([CallerMemberName] string name = null)
+        protected void OnPropertyChanged([CallerMemberName] string? name = null)
             => PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(name));
     }
     public class LevelToScaleConverter : IValueConverter
@@ -142,6 +143,7 @@ namespace YeusepesModules.ShazamOSC.UI
     /// </summary>
     public partial class LastRecognized : UserControl
     {
+        private readonly ShazamOSC _module;
         private readonly LevelToScaleConverter _circleConverter = new LevelToScaleConverter();
         private readonly InverseLevelToScaleConverter _logoConverter = new InverseLevelToScaleConverter();
         private readonly SineEase _easing = new SineEase { EasingMode = EasingMode.EaseOut };
@@ -149,6 +151,7 @@ namespace YeusepesModules.ShazamOSC.UI
         public LastRecognized(ShazamOSC module)
         {
             InitializeComponent();
+            _module = module;
             DataContext = module.RecognitionContext;
 
             module.RecognitionContext.PropertyChanged += (s, e) =>
@@ -174,7 +177,10 @@ namespace YeusepesModules.ShazamOSC.UI
                 transform.BeginAnimation(ScaleTransform.ScaleYProperty, anim);
             }));
         }
+
+        private void OnRecognizeClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+        {
+            _module.TriggerRecognition();
+        }
     }
-
-
 }

@@ -20,7 +20,7 @@ namespace YeusepesModules.ShazamOSC.UI
         public ICommand OpenSpotifyCommand { get; }
         public ICommand OpenShazamCommand { get; }
 
-        public SavedSong(string rawJson, Action<string> logDebug = null)
+        public SavedSong(string rawJson, Action<string>? logDebug = null)
         {
             if (string.IsNullOrWhiteSpace(rawJson))
                 throw new ArgumentNullException(nameof(rawJson));
@@ -124,6 +124,8 @@ namespace YeusepesModules.ShazamOSC.UI
         }
 
         public event EventHandler? CanExecuteChanged;
+
+        public void RaiseCanExecuteChanged() => CanExecuteChanged?.Invoke(this, EventArgs.Empty);
 
         public bool CanExecute(object? parameter) => _canExecute(parameter);
 

@@ -50,11 +50,12 @@ namespace YeusepesModules.ShazamOSC
         private readonly List<string> savedSongs = new();
         private string lastSong = string.Empty;
 
-        private IServiceProvider _provider;
-        private IShazamUtilities _utils;
-        private DispatcherTimer _liveTimer;
+        private IServiceProvider _provider = null!;
+        private IShazamUtilities _utils = null!;
+        private DispatcherTimer _liveTimer = null!;
         private bool LiveListening = false;
 
+        private readonly object _recognitionCtsLock = new();
         private CancellationTokenSource? _recognitionCts;
 
         public ShazamRecognitionContext RecognitionContext { get; } = new ShazamRecognitionContext();
@@ -141,7 +142,7 @@ namespace YeusepesModules.ShazamOSC
         }
         protected override Task OnModuleStop()
         {
-            _recognitionCts?.Cancel();
+            DisposeRecognition();
             if (_liveTimer?.IsEnabled == true)
                 _liveTimer.Stop();
             base.OnModuleStop();
@@ -171,15 +172,12 @@ namespace YeusepesModules.ShazamOSC
                 bool shouldStart = parameter.GetValue<bool>();
                 if (shouldStart)
                 {
-                    // cancel any in‑flight run, then start a new one
-                    _recognitionCts?.Cancel();
-                    _recognitionCts = new CancellationTokenSource();
-                    _ = Task.Run(() => RecognizeFromDesktop(_recognitionCts.Token), _recognitionCts.Token);
+                    TriggerRecognition();
                 }
                 else
                 {
                     // user flipped Recognize back off
-                    _recognitionCts?.Cancel();
+                    CancelRecognition();
                 }
             }
             if (parameter.Lookup.Equals(ShazamParameters.LiveListening))
@@ -436,10 +434,11 @@ namespace YeusepesModules.ShazamOSC
                     // wherever you process a successful recognition:
                     RecognitionContext.Title = title;
                     RecognitionContext.Artist = artist;
-                    RecognitionContext.CoverArtUrl = trackNode["images"]?["coverart"]?.GetValue<string>() ?? "";                    
+                    var imagesNode = trackNode["images"] as JsonObject;
+                    RecognitionContext.CoverArtUrl = imagesNode?["coverart"]?.GetValue<string>() ?? "";
                     
                     return true;
-                }                
+                }
                 _utils.LogDebug("RecognizeAttempt: no signatures yielded any match");
                 return false;
             }
@@ -495,8 +494,50 @@ namespace YeusepesModules.ShazamOSC
         /// </summary>
         public new void LogDebug(string message) => base.LogDebug(message);
 
+        public void TriggerRecognition()
+        {
+            StartRecognition();
+        }
 
+        private void StartRecognition()
+        {
+            var newCts = new CancellationTokenSource();
+            var token = newCts.Token;
+            CancellationTokenSource? previousCts;
 
+            lock (_recognitionCtsLock)
+            {
+                previousCts = _recognitionCts;
+                _recognitionCts = newCts;
+            }
+
+            previousCts?.Cancel();
+            previousCts?.Dispose();
+
+            _ = Task.Run(() => RecognizeFromDesktop(token));
+        }
+
+        private void CancelRecognition()
+        {
+            lock (_recognitionCtsLock)
+            {
+                _recognitionCts?.Cancel();
+            }
+        }
+
+        private void DisposeRecognition()
+        {
+            CancellationTokenSource? currentCts;
+
+            lock (_recognitionCtsLock)
+            {
+                currentCts = _recognitionCts;
+                _recognitionCts = null;
+            }
+
+            currentCts?.Cancel();
+            currentCts?.Dispose();
+        }
 
         private void SaveDebugRecording(MemoryStream audio)
         {
@@ -522,7 +563,7 @@ namespace YeusepesModules.ShazamOSC
             SetVariableValue("RecognizedSong", lastSong);
         }
 
-        private void OnLiveTimerTick(object sender, EventArgs e)
+        private void OnLiveTimerTick(object? sender, EventArgs e)
         {
             try
             {
@@ -535,13 +576,8 @@ namespace YeusepesModules.ShazamOSC
                 }
 
                 LogDebug("Live listening timer tick - starting recognition attempt");
-                
-                // Cancel any existing recognition
-                _recognitionCts?.Cancel();
-                _recognitionCts = new CancellationTokenSource();
-                
-                // Start recognition in background
-                _ = Task.Run(() => RecognizeFromDesktop(_recognitionCts.Token), _recognitionCts.Token);
+
+                StartRecognition();
             }
             catch (Exception ex)
             {
