@@ -26,12 +26,9 @@ namespace YeusepesModules.SPOTIOSC.Utils.Requests
                 tokenToUse = apiAccessToken;
             }
             
-            // Create request manually to use the correct token
-            var request = new HttpRequestMessage(HttpMethod.Get, UserProfileUrl);
-            request.Headers.Add("Authorization", $"Bearer {tokenToUse}");
-            request.Headers.Add("Client-Token", ClientToken);
-            request.Headers.Add("App-Platform", "Win32_x86_64");
-            request.Headers.Add("User-Agent", "Spotify/1.0");
+            using var request = new HttpRequestMessage(HttpMethod.Get, UserProfileUrl);
+            request.Headers.Authorization =
+                new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", tokenToUse);
             
             var response = await SendAsync(request);
 
