@@ -32,7 +32,7 @@
         <Style x:Key="NowPlayingTextBlock"
                TargetType="TextBlock">
             <Setter Property="FontFamily"
-                    Value="/YeusepesModules;component/Resources/Fonts/CircularStd-Book.ttf#Circular Std Book" />
+                    Value="/YeusepesModules;component/SPOTIOSC/Resources/Fonts/circular-std-6.ttf#Circular Std Book" />
             <Setter Property="FontSize"
                     Value="12" />
             <Setter Property="Foreground"
@@ -43,7 +43,7 @@
                TargetType="TextBlock"
                BasedOn="{StaticResource NowPlayingTextBlock}">
             <Setter Property="FontFamily"
-                    Value="/YeusepesModules;component/Resources/Fonts/CircularStd-Book.ttf#Circular Std Book" />
+                    Value="/YeusepesModules;component/SPOTIOSC/Resources/Fonts/circular-std-6.ttf#Circular Std Book" />
             <Setter Property="FontSize"
                     Value="17" />
             <Setter Property="FontWeight"

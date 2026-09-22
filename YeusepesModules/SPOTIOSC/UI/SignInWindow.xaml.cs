@@ -1,50 +1,28 @@
-﻿using System;
-using System.ComponentModel;
-using System.Reflection;
 using System.Windows;
-using VRCOSC.App.SDK.Modules;
 using VRCOSC.App.UI.Core;
 
-namespace YeusepesModules.SPOTIOSC.UI
+namespace YeusepesModules.SPOTIOSC.UI;
+
+public partial class SignInWindow : IManagedWindow
 {
-    public partial class SignInWindow : IManagedWindow
+    private readonly SpotiOSC _module;
+    private object _comparer;
+
+    public SignInWindow(SpotiOSC module)
     {
-        private readonly SpotiOSC _module;
-        private object _comparer;  // Holds the comparer value
+        InitializeComponent();
+        _module = module;
+        _comparer = module;
+        SourceInitialized += OnSourceInitialized;
+        Closed += (_, _) => _comparer = new object();
+    }
 
-        public SignInWindow(SpotiOSC module)
-        {
-            InitializeComponent();
-            _module = module;
-            // Initially, use the module as the comparer.
-            _comparer = _module;
+    public object GetComparer() => _comparer;
 
-            // Defer UI initialization until SourceInitialized.
-            SourceInitialized += SignInWindow_SourceInitialized;            
-            // When the window closes, invalidate the comparer.
-            Closed += SignInWindow_Closed;
-        }            
-
-        private void SignInWindow_SourceInitialized(object? sender, EventArgs e)
-        {
-            // The module's OnPreLoad should have registered settings by now.
-            var customSetting = _module.GetSetting(SpotiOSC.SpotiSettings.SignInButton);
-            var signInControl = new SignIn(_module, customSetting);
-            MainGrid.Children.Insert(0, signInControl);
-
-            // inside SignInWindow_SourceInitialized(...)
-            var advancedCreds = new AdvancedCredentials();
-            // if you need to pass dependencies you can do it here…
-            MainGrid.Children.Add(advancedCreds);
-        }
-
-        private void SignInWindow_Closed(object sender, EventArgs e)
-        {
-            // Invalidate the comparer so the WindowManager won't reuse this closed window.
-            _comparer = new object();
-        }
-
-        // IManagedWindow implementation.
-        public object GetComparer() => _comparer;
+    private void OnSourceInitialized(object? sender, EventArgs args)
+    {
+        var setting = _module.GetSetting(SpotiOSC.SpotiSettings.SignInButton);
+        MainGrid.Children.Insert(0, new SignIn(_module, setting));
+        MainGrid.Children.Add(new AdvancedCredentials());
     }
 }

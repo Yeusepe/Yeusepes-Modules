@@ -1,371 +1,174 @@
-﻿using System;
+using System.Diagnostics;
+using System.Net.Http;
 using System.Windows;
 using System.Windows.Controls;
-using VRCOSC.App.SDK.Modules.Attributes.Settings;
-using YeusepesModules.SPOTIOSC.Credentials;
-using VRCOSC.App.SDK.Modules;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using VRCOSC.App.SDK.Modules;
+using VRCOSC.App.SDK.Modules.Attributes.Settings;
 using VRCOSC.App.Utils;
-using System.IO;
-using System.Net.Http;
-using YeusepesModules.SPOTIOSC;
-using System.Text.Json;
+using YeusepesModules.SPOTIOSC.Credentials;
+using YeusepesModules.SPOTIOSC.Runtime.Spotify;
 using YeusepesModules.SPOTIOSC.Utils.Requests;
 using YeusepesLowLevelTools;
-using System.Windows.Data;
-using Octokit;
 using static YeusepesLowLevelTools.Loader;
-using System.Reflection;
 
-namespace YeusepesModules.SPOTIOSC.UI
+namespace YeusepesModules.SPOTIOSC.UI;
 
+public partial class SignIn : UserControl
 {
-    public partial class SignIn : UserControl
+    private readonly SpotifyUtilities? _utilities;
+
+    public SignIn(Module module, ModuleSetting setting)
     {
-        private ModuleSetting _setting;
-        private readonly string _tempFontDirectory = Path.GetTempPath();
-        public bool IsPremium { get; set; }
+        Application.LoadComponent(
+            this,
+            new Uri("/YeusepesModules;component/spotiosc/ui/signin.xaml", UriKind.Relative));
+        _utilities = ((SpotiOSC)module).spotifyUtilities;
+        _ = setting;
+        ApplyFonts();
+        _ = InitializeAsync();
+    }
 
-        SpotifyUtilities spotifyUtilities;
-
-        public SignIn(VRCOSC.App.SDK.Modules.Module module, ModuleSetting setting)
+    private async Task InitializeAsync()
+    {
+        SetBusy(true);
+        try
         {
-            Uri resourceLocater = new Uri("/YeusepesModules;component/spotiosc/ui/signin.xaml", UriKind.Relative);
-            System.Windows.Application.LoadComponent(this, resourceLocater);            
+            if (!CredentialManager.IsUserSignedIn() && CredentialManager.HasSavedCookie())
+                await CredentialManager.LoginAndCaptureCookiesAsync();
+            await RefreshAccountAsync();
+        }
+        catch (Exception exception)
+        {
+            _utilities?.LogDebug($"Spotify account view initialization failed: {exception.Message}");
+            ShowSignedIn(false);
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
 
-            spotifyUtilities = ((SpotiOSC)module)?.spotifyUtilities;
-
-            CursorManager.SetSpinnerCursor();
-            LoadFontFromUrl("https://raw.githubusercontent.com/Yeusepe/Yeusepes-Modules/refs/heads/main/Resources/Fonts/circular-std-2.ttf");
-            LoadFontFromUrl("https://raw.githubusercontent.com/Yeusepe/Yeusepes-Modules/refs/heads/main/Resources/Fonts/circular-std-3.ttf");
-            LoadFontFromUrl("https://raw.githubusercontent.com/Yeusepe/Yeusepes-Modules/refs/heads/main/Resources/Fonts/circular-std-3.ttf");
-            LoadFontFromUrl("https://raw.githubusercontent.com/Yeusepe/Yeusepes-Modules/refs/heads/main/Resources/Fonts/circular-std-4.ttf");
-            LoadFontFromUrl("https://raw.githubusercontent.com/Yeusepe/Yeusepes-Modules/refs/heads/main/Resources/Fonts/circular-std-5.ttf");
-            LoadFontFromUrl("https://raw.githubusercontent.com/Yeusepe/Yeusepes-Modules/refs/heads/main/Resources/Fonts/circular-std-6.ttf");
-            LoadFontFromUrl("https://raw.githubusercontent.com/Yeusepe/Yeusepes-Modules/refs/heads/main/Resources/Fonts/circular-std-7.ttf");
-            // Thread InitializeUIAsync() on a separate thread
-            _setting = setting;
-            _ = InitializeUIAsync();
-            // Set the font after downloading
-            this.Loaded += (s, e) => ApplyFonts();
-            CursorManager.RestoreCursor();
+    private async Task RefreshAccountAsync()
+    {
+        if (!CredentialManager.IsUserSignedIn())
+        {
+            ShowSignedIn(false);
+            return;
         }
 
-        private async Task InitializeUIAsync()
+        using var httpClient = new HttpClient();
+        var profile = await new SpotifyProfileClient(
+            httpClient,
+            CredentialManager.LoadAccessToken()).GetAsync();
+
+        ApplyProfile(profile);
+        ShowSignedIn(true);
+    }
+
+    private void ApplyProfile(SpotifyProfile profile)
+    {
+        UserName.Text = profile.DisplayName ?? string.Empty;
+        PlanText.Text = NativeMethods.CapitalizeFirstLetter(profile.Product ?? string.Empty);
+        var isPremium = string.Equals(profile.Product, "premium", StringComparison.OrdinalIgnoreCase);
+        PlanText.Foreground = new SolidColorBrush(isPremium
+            ? Color.FromRgb(212, 175, 55)
+            : Colors.White);
+
+        var imageUrl = profile.Images?.FirstOrDefault()?.Url;
+        if (string.IsNullOrEmpty(imageUrl)) return;
+        try
         {
-            // show spinner
-            await Dispatcher.InvokeAsync(() =>
+            var image = new BitmapImage();
+            image.BeginInit();
+            image.UriSource = new Uri(imageUrl, UriKind.Absolute);
+            image.CacheOption = BitmapCacheOption.OnLoad;
+            image.EndInit();
+            ProfileImageBrush.ImageSource = image;
+        }
+        catch (Exception exception)
+        {
+            _utilities?.LogDebug($"Profile image failed to load: {exception.Message}");
+        }
+    }
+
+    private void ShowSignedIn(bool signedIn)
+    {
+        SignedInState.Visibility = signedIn ? Visibility.Visible : Visibility.Hidden;
+        SignedOutState.Visibility = signedIn ? Visibility.Hidden : Visibility.Visible;
+    }
+
+    private void SetBusy(bool busy)
+    {
+        SpinnerOverlay.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        if (busy) CursorManager.SetSpinnerCursor();
+        else CursorManager.RestoreCursor();
+    }
+
+    private void ApplyFonts()
+    {
+        HeyText.FontFamily = FontHelper.Book;
+        UserName.FontFamily = FontHelper.Bold;
+        ExclamationText.FontFamily = FontHelper.Bold;
+        YourAccountText.FontFamily = FontHelper.Book;
+        SignOutText.FontFamily = FontHelper.Bold;
+        SpinnerText.FontFamily = FontHelper.Bold;
+    }
+
+    private async void OnSignInClick(object sender, RoutedEventArgs args)
+    {
+        SetBusy(true);
+        try
+        {
+            await CredentialManager.LoginAsync();
+            await RefreshAccountAsync();
+        }
+        catch (Exception exception)
+        {
+            _utilities?.LogDebug($"Spotify sign-in failed: {exception}");
+            _utilities?.Log($"Spotify sign-in failed: {exception.Message}");
+            ShowSignedIn(false);
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
+    private void OnYourAccountClick(object sender, RoutedEventArgs args)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo("https://www.spotify.com/account/overview/")
             {
-                if (SpinnerOverlay != null)
-                {
-                    SpinnerOverlay.Visibility = Visibility.Visible;
-                }
-                CursorManager.SetSpinnerCursor();
+                UseShellExecute = true
             });
-
-            try
-            {
-                // 1) If we already have a valid token, just fetch profile
-                if (CredentialManager.IsUserSignedIn())
-                {
-                    using var httpClient = new HttpClient();                    
-                    var profileRequest = new SpotifyProfileRequest(
-                        httpClient,
-                        CredentialManager.LoadAccessToken(),
-                        CredentialManager.LoadClientToken()
-                    );
-                    var userProfile = await profileRequest.GetUserProfileAsync();
-
-                    if (userProfile != null)
-                    {
-                        spotifyUtilities?.LogDebug($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}");
-                        UpdateUIWithUserProfile(
-                            userProfile.DisplayName,
-                            userProfile.Product,
-                            userProfile.Images?.FirstOrDefault()?.Url
-                        );
-                        await Dispatcher.InvokeAsync(DisplaySignedInState);
-                        return;
-                    }
-                }
-                // 2) Not signed in, but cookie exists → run the non-UI login (no Puppeteer)
-                else if (CredentialManager.HasSavedCookie())
-                {
-                    await CredentialManager.LoginAndCaptureCookiesAsync();
-
-                    if (CredentialManager.IsUserSignedIn())
-                    {
-                        using var httpClient = new HttpClient();
-                        var profileRequest = new SpotifyProfileRequest(
-                            httpClient,
-                            CredentialManager.LoadAccessToken(),
-                            CredentialManager.LoadClientToken()
-                        );
-                        var userProfile = await profileRequest.GetUserProfileAsync();
-
-                        if (userProfile != null)
-                        {
-                            spotifyUtilities?.LogDebug($"User profile fetched: {userProfile.DisplayName}, {userProfile.Product}");
-                            UpdateUIWithUserProfile(
-                                userProfile.DisplayName,
-                                userProfile.Product,
-                                userProfile.Images?.FirstOrDefault()?.Url
-                            );
-                            await Dispatcher.InvokeAsync(DisplaySignedInState);
-                            return;
-                        }
-                    }
-
-                    await Dispatcher.InvokeAsync(DisplaySignedOutState);
-                    return;
-                }
-                // 3) No token & no cookie → signed out, no browser ever opened
-                else
-                {
-                    await Dispatcher.InvokeAsync(DisplaySignedOutState);
-                    return;
-                }
-            }
-            catch (Exception ex)
-            {
-                spotifyUtilities?.LogDebug($"Error initializing UI: {ex.Message}");
-            }
-            finally
-            {
-                // hide spinner
-                await Dispatcher.InvokeAsync(() =>
-                {
-                    if (SpinnerOverlay != null)
-                    {
-                        SpinnerOverlay.Visibility = Visibility.Collapsed;
-                    }
-                    CursorManager.RestoreCursor();
-                });
-            }
         }
-
-
-
-
-
-        private void DisplaySignedInState()
+        catch (Exception exception)
         {
-            if (SignedOutState != null && SignedOutState.Visibility != Visibility.Hidden)
-            {
-                SignedOutState.Visibility = Visibility.Hidden;
-            }
-
-            if (SignedInState != null && SignedInState.Visibility != Visibility.Visible)
-            {
-                SignedInState.Visibility = Visibility.Visible;
-            }
+            MessageBox.Show(
+                $"Failed to open the account page: {exception.Message}",
+                "Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
         }
+    }
 
-
-        private void DisplaySignedOutState()
+    private void OnSignOutClick(object sender, RoutedEventArgs args)
+    {
+        try
         {
-            if (SignedInState != null && SignedInState.Visibility != Visibility.Hidden)
-            {
-                SignedInState.Visibility = Visibility.Hidden;
-            }
-
-            if (SignedOutState != null && SignedOutState.Visibility != Visibility.Visible)
-            {
-                SignedOutState.Visibility = Visibility.Visible;
-            }
+            CredentialManager.SignOut();
+            ShowSignedIn(false);
         }
-
-
-        private void UpdateUIWithUserProfile(string name, string plan, string imageUrl)
+        catch (Exception exception)
         {
-            spotifyUtilities?.LogDebug($"Updating UI with profile: {name}, {plan}, {imageUrl}");
-
-            if (UserName != null)
-            {
-                UserName.Text = name;
-            }
-            
-            if (PlanText != null)
-            {
-                PlanText.Text = NativeMethods.CapitalizeFirstLetter(plan);
-                IsPremium = string.Equals(plan, "premium", StringComparison.OrdinalIgnoreCase);
-                if (IsPremium)
-                {
-                    PlanText.Foreground = new SolidColorBrush(Color.FromRgb(212, 175, 55)); // Green color
-                }
-                else
-                {
-                    PlanText.Foreground = new SolidColorBrush(Color.FromRgb(255, 255, 255)); // White color
-                }
-            }
-
-            if (!string.IsNullOrEmpty(imageUrl) && ProfileImageBrush != null)
-            {
-                try
-                {
-                    var image = new BitmapImage();
-                    image.BeginInit();
-                    image.UriSource = new Uri(imageUrl, UriKind.Absolute);
-                    image.CacheOption = BitmapCacheOption.OnLoad;
-                    image.EndInit();
-
-                    ProfileImageBrush.ImageSource = image;
-                }
-                catch (Exception ex)
-                {
-                    spotifyUtilities?.LogDebug($"Error loading profile image: {ex.Message}");
-                }
-            }
+            MessageBox.Show(
+                $"Failed to sign out: {exception.Message}",
+                "Error",
+                MessageBoxButton.OK,
+                MessageBoxImage.Error);
         }
-
-
-
-        private void ApplyFonts()
-        {
-            try
-            {
-                // Define font paths
-                string boldFontPath = Path.Combine(_tempFontDirectory, "circular-std-4.ttf");
-                string blackFontPath = Path.Combine(_tempFontDirectory, "circular-std-2.ttf");
-                string bookFontPath = Path.Combine(_tempFontDirectory, "circular-std-6.ttf");
-
-                // Validate the existence of font files
-                if (!File.Exists(boldFontPath) || !File.Exists(blackFontPath) || !File.Exists(bookFontPath))
-                {
-                    MessageBox.Show("Font files are missing. Please ensure they are downloaded correctly.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                    return;
-                }
-
-                // Load fonts dynamically
-                var boldFontFamily = new FontFamily(new Uri(boldFontPath, UriKind.Absolute), "./#Circular Std Bold");
-                var blackFontFamily = new FontFamily(new Uri(blackFontPath, UriKind.Absolute), "./#Circular Std Black");
-                var regularFontFamily = new FontFamily(new Uri(bookFontPath, UriKind.Absolute), "./#Circular Std Book");
-
-                // Apply fonts to specific elements
-                HeyText.FontFamily = regularFontFamily;
-                UserName.FontFamily = boldFontFamily;
-                ExclamationText.FontFamily = boldFontFamily;
-                YourAccountText.FontFamily = regularFontFamily;
-                SignOutText.FontFamily = boldFontFamily;
-                SpinnerText.FontFamily = boldFontFamily;
-
-                ////Logger.Log("Fonts successfully applied.");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error applying fonts: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private async void LoadFontFromUrl(string fontUrl)
-        {
-            try
-            {
-                using HttpClient client = new();
-                byte[] fontData = await client.GetByteArrayAsync(fontUrl);
-
-                // Extract a unique filename from the URL
-                string fileName = Path.GetFileNameWithoutExtension(fontUrl) + ".ttf";
-                string tempFontPath = Path.Combine(_tempFontDirectory, fileName);
-
-                // Check if the file already exists
-                if (File.Exists(tempFontPath))
-                {
-                    ////Logger.Log($"Font already exists: {tempFontPath}");
-                    return; // Skip downloading if the file already exists
-                }
-
-                // Save the font data
-                await File.WriteAllBytesAsync(tempFontPath, fontData);
-
-                ////Logger.Log($"Font downloaded and saved to: {tempFontPath}");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error loading font: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private async void OnSignInClick(object sender, RoutedEventArgs e)
-        {
-            // Show spinner overlay
-            if (SpinnerOverlay != null)
-            {
-                SpinnerOverlay.Visibility = Visibility.Visible;
-            }
-            CursorManager.SetSpinnerCursor();
-
-            try
-            {
-                await CredentialManager.LoginAsync();
-                if (CredentialManager.IsUserSignedIn())
-                {
-                    // Update UI on main thread
-                    Dispatcher.Invoke(() =>
-                    {
-                        DisplaySignedInState();
-                    });
-                    // Reload profile details asynchronously
-                    await InitializeUIAsync();
-                }
-                else
-                {
-                    spotifyUtilities?.LogDebug("Spotify sign-in finished without usable tokens. The user is still signed out.");
-                    Dispatcher.Invoke(DisplaySignedOutState);
-                }
-            }
-            catch (Exception ex)
-            {
-                spotifyUtilities?.LogDebug($"Spotify sign-in failed: {ex}");
-                spotifyUtilities?.Log($"Spotify sign-in failed: {ex.Message}");
-                Dispatcher.Invoke(DisplaySignedOutState);
-            }
-            finally
-            {
-                // Hide spinner overlay and restore cursor
-                if (SpinnerOverlay != null)
-                {
-                    SpinnerOverlay.Visibility = Visibility.Collapsed;
-                }
-                CursorManager.RestoreCursor();
-            }
-        }
-
-
-
-        private void OnYourAccountClick(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                // Open Spotify account overview page
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-                {
-                    FileName = "https://www.spotify.com/account/overview/",
-                    UseShellExecute = true
-                });
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Failed to open the account page: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-        private void OnSignOutClick(object sender, RoutedEventArgs e)
-        {
-            try
-            {
-                // Sign out logic
-                CredentialManager.SignOut(); // Assuming this method clears stored tokens or cookies
-                DisplaySignedOutState(); // Update the UI to show the signed-out state
-                ////Logger.Log("User signed out successfully.");
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Failed to sign out: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-            }
-        }
-
-
     }
 }
