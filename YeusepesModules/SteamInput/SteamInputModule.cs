@@ -83,6 +83,21 @@ public class SteamInputModule : Module
             SteamInputSetting.FlickPushThreshold, SteamInputSetting.FlickCenterThreshold, 
             SteamInputSetting.FlickAxisTolerance);
 
+        // Touchpad as Joystick Settings
+        CreateToggle(SteamInputSetting.LeftTouchpadAsJoystick,
+            "Left Touchpad as Joystick",
+            "Route left touchpad input to joystick parameters when pad is touched (for controllers without a stick, e.g. Vive wands)",
+            false);
+        CreateToggle(SteamInputSetting.RightTouchpadAsJoystick,
+            "Right Touchpad as Joystick",
+            "Route right touchpad input to joystick parameters when pad is touched (for controllers without a stick, e.g. Vive wands)",
+            false);
+
+        CreateGroup("Touchpad as Joystick",
+            "Route touchpad input into the joystick pipeline for controllers without physical sticks (e.g. Vive wands)",
+            SteamInputSetting.LeftTouchpadAsJoystick,
+            SteamInputSetting.RightTouchpadAsJoystick);
+
         // Left Controller - Stick
         RegisterParameter<float>(SteamInputParameter.LeftStickX, "SteamInput/LHand/Stick/X", ParameterMode.Write, "Left Stick X", "Left stick X position (-1 to 1)");
         RegisterParameter<float>(SteamInputParameter.LeftStickY, "SteamInput/LHand/Stick/Y", ParameterMode.Write, "Left Stick Y", "Left stick Y position (-1 to 1)");
@@ -185,16 +200,24 @@ public class SteamInputModule : Module
         {
             var leftInput = leftController.Input;
 
-            // Left Stick
-            float leftX = leftInput.Stick.Position.X;
-            float leftY = leftInput.Stick.Position.Y;
+            // Left Stick (resolved through touchpad-as-joystick when enabled)
+            bool leftTouchpadAsJoystick = GetSettingValue<bool>(SteamInputSetting.LeftTouchpadAsJoystick);
+            var leftEffective = ResolveEffectiveStick(
+                leftInput.Stick.Position.X, leftInput.Stick.Position.Y,
+                leftInput.Stick.Touch, leftInput.Stick.Click,
+                leftInput.Pad.Position.X, leftInput.Pad.Position.Y,
+                leftInput.Pad.Touch, leftInput.Pad.Click,
+                leftTouchpadAsJoystick);
+
+            float leftX = leftEffective.X;
+            float leftY = leftEffective.Y;
             SendParameter(SteamInputParameter.LeftStickX, leftX);
             SendParameter(SteamInputParameter.LeftStickY, leftY);
             var leftAngle = (float)(System.Math.Atan2(leftY, leftX) * 180.0 / System.Math.PI);
             if (leftAngle < 0) leftAngle += 360f;
             SendParameter(SteamInputParameter.LeftStickAngle, leftAngle);
-            SendParameter(SteamInputParameter.LeftStickTouch, leftInput.Stick.Touch);
-            SendParameter(SteamInputParameter.LeftStickClick, leftInput.Stick.Click);
+            SendParameter(SteamInputParameter.LeftStickTouch, leftEffective.Touch);
+            SendParameter(SteamInputParameter.LeftStickClick, leftEffective.Click);
 
             // Left Stick - Rotation Detection (pulse + tick)
             float leftPulseDirection = CalculateRotationDirection(leftX, leftY, ref _leftPrevAngleRad, ref _leftInitialized, ref _leftAccumulatedRotationDelta, rotationDeadzone, 0.001f, rotationSensitivity);
@@ -305,16 +328,24 @@ public class SteamInputModule : Module
         {
             var rightInput = rightController.Input;
 
-            // Right Stick
-            float rightX = rightInput.Stick.Position.X;
-            float rightY = rightInput.Stick.Position.Y;
+            // Right Stick (resolved through touchpad-as-joystick when enabled)
+            bool rightTouchpadAsJoystick = GetSettingValue<bool>(SteamInputSetting.RightTouchpadAsJoystick);
+            var rightEffective = ResolveEffectiveStick(
+                rightInput.Stick.Position.X, rightInput.Stick.Position.Y,
+                rightInput.Stick.Touch, rightInput.Stick.Click,
+                rightInput.Pad.Position.X, rightInput.Pad.Position.Y,
+                rightInput.Pad.Touch, rightInput.Pad.Click,
+                rightTouchpadAsJoystick);
+
+            float rightX = rightEffective.X;
+            float rightY = rightEffective.Y;
             SendParameter(SteamInputParameter.RightStickX, rightX);
             SendParameter(SteamInputParameter.RightStickY, rightY);
             var rightAngle = (float)(System.Math.Atan2(rightY, rightX) * 180.0 / System.Math.PI);
             if (rightAngle < 0) rightAngle += 360f;
             SendParameter(SteamInputParameter.RightStickAngle, rightAngle);
-            SendParameter(SteamInputParameter.RightStickTouch, rightInput.Stick.Touch);
-            SendParameter(SteamInputParameter.RightStickClick, rightInput.Stick.Click);
+            SendParameter(SteamInputParameter.RightStickTouch, rightEffective.Touch);
+            SendParameter(SteamInputParameter.RightStickClick, rightEffective.Click);
 
             // Right Stick - Rotation Detection (pulse + tick)
             float rightPulseDirection = CalculateRotationDirection(rightX, rightY, ref _rightPrevAngleRad, ref _rightInitialized, ref _rightAccumulatedRotationDelta, rotationDeadzone, 0.001f, rotationSensitivity);
@@ -427,7 +458,9 @@ public class SteamInputModule : Module
         RotationDeadzone,
         FlickPushThreshold,
         FlickCenterThreshold,
-        FlickAxisTolerance
+        FlickAxisTolerance,
+        LeftTouchpadAsJoystick,
+        RightTouchpadAsJoystick
     }
 
     private enum SteamInputParameter
@@ -485,6 +518,17 @@ public class SteamInputModule : Module
         RightStickRotationDirection,
         RightStickRotationTick,
         RightStickFlick
+    }
+
+    private (float X, float Y, bool Touch, bool Click) ResolveEffectiveStick(
+        float stickX, float stickY, bool stickTouch, bool stickClick,
+        float padX, float padY, bool padTouch, bool padClick,
+        bool touchpadAsJoystick)
+    {
+        if (touchpadAsJoystick && padTouch)
+            return (padX, padY, true, padClick);
+
+        return (stickX, stickY, stickTouch, stickClick);
     }
 
     private float CalculateRotationDirection(float currentX, float currentY, ref float prevAngleRad, ref bool initialized, ref float accumulatedDelta, float deadzone = 0.2f, float minDeltaRad = 0.001f, float pulseThresholdRad = 0.02f)
