@@ -1,4 +1,4 @@
-﻿using System.Drawing;
+using System.Drawing;
 using System.Drawing.Imaging;
 using VRCOSC.App.SDK.Modules;
 using VRCOSC.App.SDK.Modules.Attributes.Settings;
@@ -11,6 +11,8 @@ using YeusepesModules.SPOTIOSC.Credentials;
 using System.Text.Json;
 using System.IO;
 
+
+
 namespace YeusepesModules.OSCQR
 {
     [ModuleTitle("OSCQR")]
@@ -20,18 +22,15 @@ namespace YeusepesModules.OSCQR
     [ModuleSettingsWindow(typeof(SavedQRCodesWindow))]
     public class OSCQR : Module
     {
-        // Instance of the generic screen utilities
         public ScreenUtilities screenUtilities;
 
-        // Runtime storage for detected QR codes
         private List<string> savedQRCodes = new List<string>();
         private string lastDetectedQRCode = string.Empty;
 
-        // Spotify code detection
         private SpotifyTrackInfo lastSpotifyTrackInfo = null;
         private long? lastDetectedSpotifyCode = null;
+        private SpotifyStripDetector _spcodeDetector;
 
-        // Event to notify when QR codes list is updated
         public event Action QRCodesUpdated;
 
         #region Module Enums
@@ -40,7 +39,6 @@ namespace YeusepesModules.OSCQR
         {
             SavedQRCodes,
             SaveImagesToggle
-            // GPU/Display settings are now handled by ScreenUtilities.
         }
 
         public enum OSCQRParameter
@@ -64,13 +62,12 @@ namespace YeusepesModules.OSCQR
 
 
             screenUtilities = ScreenUtilities.EnsureInitialized(
-                LogDebug,         // Logging delegate
-                GetSettingValue<String>,  // Function to retrieve settings
-                SetSettingValue,  // Function to save settings
+                LogDebug,
+                GetSettingValue<String>,
+                SetSettingValue,
                 CreateTextBox
             );
 
-            // Register our module parameters.
             RegisterParameter<bool>(
                 OSCQRParameter.StartRecording,
                 "OSCQR/StartRecording",
@@ -112,7 +109,6 @@ namespace YeusepesModules.OSCQR
             );            
 
 
-            // Register a custom setting for viewing saved QR codes.
             CreateCustomSetting(
                 OSCQRSettings.SavedQRCodes,
                 new StringModuleSetting(
@@ -123,7 +119,6 @@ namespace YeusepesModules.OSCQR
                 )
             );
 
-            // Register a toggle for saving debug images.
             CreateToggle(
                 OSCQRSettings.SaveImagesToggle,
                 "Save Captured Images",
@@ -131,27 +126,41 @@ namespace YeusepesModules.OSCQR
                 false
             );
            
-            // Provide a callback so that every time a new image is captured,
-            // the OSCQR module runs its QR detection logic.
-            screenUtilities.SetWhatDoInCapture((IImage image) =>
-            {
-                DetectQRCode(image);
-            });
+            screenUtilities.SetWhatDoInCapture(DetectCodes);
 
-            // Register the runtime view to show saved QR codes in the runtime UI
             SetRuntimeView(typeof(SavedQRCodesRuntimeView));
+
+            // Spotify strip detector (ONNX) narrows the search; decoding works without it (full-frame fallback).
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    var onnx = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "models", "spcode_yolov8n.onnx");
+                    if (!File.Exists(onnx))
+                    {
+                        Directory.CreateDirectory(Path.GetDirectoryName(onnx));
+                        using var client = new System.Net.Http.HttpClient { Timeout = TimeSpan.FromMinutes(2) };
+                        var bytes = await client.GetByteArrayAsync("https://raw.githubusercontent.com/Yeusepe/spcode-detector/refs/heads/main/models/spcode_yolov8n.onnx");
+                        await File.WriteAllBytesAsync(onnx + ".tmp", bytes);
+                        File.Move(onnx + ".tmp", onnx, true);
+                    }
+                    _spcodeDetector = SpotifyStripDetector.TryCreate(onnx, LogDebug);
+                    LogDebug($"Spotify strip detector {(_spcodeDetector != null ? "ready" : "unavailable, using full-frame decode")}");
+                }
+                catch (Exception ex)
+                {
+                    LogDebug($"Spotify strip detector unavailable ({ex.Message}), using full-frame decode");
+                }
+            });
         }
 
         protected override Task<bool> OnModuleStart()
         {
-            // Initialize the generic screen utilities.
             var result = screenUtilities.OnModuleStart();
             Log($"Selected GPU: {screenUtilities.GetSelectedGraphicsCard()}");
             Log($"Selected Display: {screenUtilities.GetSelectedDisplay()}");
-            // Clear any previous error.
             SendParameter(OSCQRParameter.Error, false);
             
-            // Check if Spotify credentials are available
             if (IsSpotifyCredentialsAvailable())
             {
                 Log("Spotify credentials found - Spotify code scanning enabled");
@@ -203,7 +212,6 @@ namespace YeusepesModules.OSCQR
         {
             try
             {
-                // Check if we have a valid access token from the credential manager
                 var accessToken = CredentialManager.LoadAccessToken();
                 var apiAccessToken = CredentialManager.LoadApiAccessToken();
                 
@@ -219,7 +227,6 @@ namespace YeusepesModules.OSCQR
         {
             try
             {
-                // Try to get access token from credential manager
                 var accessToken = CredentialManager.LoadAccessToken();
                 if (string.IsNullOrEmpty(accessToken))
                 {
@@ -245,128 +252,70 @@ namespace YeusepesModules.OSCQR
 
         #region QR Code Detection
 
-        private void DetectQRCode(IImage image)
+        // Runs on the capture thread for each scanned frame; true keeps the fast scan rate.
+        private bool DetectCodes(Bitmap bitmap)
         {
-            if (image == null)
-            {
-                Log("Received null image.");
-                SendParameter(OSCQRParameter.QRCodeFound, false);
-                return;
-            }
             try
             {
-                using (Bitmap bitmap = TransformIImageToBitmap(image))
+                if (GetSettingValue<bool>(OSCQRSettings.SaveImagesToggle))
+                    SaveDebugImage(bitmap);
+
+                string qrResult = ScanQRCode(bitmap);
+                bool qrFound = !string.IsNullOrEmpty(qrResult);
+                SendParameter(OSCQRParameter.QRCodeFound, qrFound);
+                if (qrFound) lastDetectedQRCode = qrResult;
+
+                bool spotifyFound = false;
+                if (IsSpotifyCredentialsAvailable())
                 {
-                    if (bitmap == null)
+                    var spotifyMediaRef = DetectSpotifyCode(bitmap);
+                    spotifyFound = spotifyMediaRef.HasValue;
+                    SendParameter(OSCQRParameter.SpotifyCodeFound, spotifyFound);
+                    if (spotifyMediaRef.HasValue && spotifyMediaRef.Value != lastDetectedSpotifyCode)
                     {
-                        Log("Failed to convert IImage to Bitmap.");
-                        SendParameter(OSCQRParameter.QRCodeFound, false);
-                        return;
-                    }
-
-                    // Preprocess the image (for example, convert to grayscale)
-                    Bitmap processedBitmap = PreprocessImage(bitmap);
-
-                    // Optionally, save the image for debugging if the setting is enabled.
-                    bool saveImages = GetSettingValue<bool>(OSCQRSettings.SaveImagesToggle);
-                    if (saveImages)
-                    {
-                        SaveDebugImage(processedBitmap);
-                    }
-
-                    // Attempt to scan for a QR code.
-                    string qrResult = ScanQRCode(processedBitmap);
-                    if (!string.IsNullOrEmpty(qrResult))
-                    {                        
-                        SendParameter(OSCQRParameter.QRCodeFound, true);
-                        lastDetectedQRCode = qrResult;
-                    }
-                    else
-                    {                        
-                        SendParameter(OSCQRParameter.QRCodeFound, false);
-                    }
-
-                    // Check for Spotify codes if credentials are available
-                    bool hasCredentials = IsSpotifyCredentialsAvailable();
-                    Log($"Spotify credentials available: {hasCredentials}");
-                    
-                    if (hasCredentials)
-                    {
-                        Log("Attempting Spotify code detection...");
-                        var spotifyMediaRef = SpotifyCodeDecoder.DetectSpotifyCode(processedBitmap, Log);
-                        Log($"Spotify code detection result: {(spotifyMediaRef.HasValue ? $"Found media ref {spotifyMediaRef.Value}" : "No code detected")}");
-                        
-                        if (spotifyMediaRef.HasValue && spotifyMediaRef.Value != lastDetectedSpotifyCode)
+                        lastDetectedSpotifyCode = spotifyMediaRef.Value;
+                        Log($"New Spotify code detected: {spotifyMediaRef.Value}");
+                        _ = Task.Run(async () =>
                         {
-                            lastDetectedSpotifyCode = spotifyMediaRef.Value;
-                            SendParameter(OSCQRParameter.SpotifyCodeFound, true);
-                            Log($"New Spotify code detected: {spotifyMediaRef.Value}");
-                            
-                            // Get track info asynchronously
-                            _ = Task.Run(async () =>
+                            var trackInfo = await GetSpotifyTrackInfoAsync(spotifyMediaRef.Value);
+                            if (trackInfo != null)
                             {
-                                try
-                                {
-                                    var trackInfo = await GetSpotifyTrackInfoAsync(spotifyMediaRef.Value);
-                                    if (trackInfo != null)
-                                    {
-                                        lastSpotifyTrackInfo = trackInfo;
-                                        Log($"Spotify code detected - {trackInfo.Type}: {trackInfo.Name}");
-                                    }
-                                    else
-                                    {
-                                        Log("Failed to retrieve track info for Spotify code");
-                                    }
-                                }
-                                catch (Exception ex)
-                                {
-                                    Log($"Error processing Spotify code: {ex.Message}");
-                                }
-                            });
-                        }
-                        else if (!spotifyMediaRef.HasValue)
-                        {
-                            SendParameter(OSCQRParameter.SpotifyCodeFound, false);
-                        }
+                                lastSpotifyTrackInfo = trackInfo;
+                                Log($"Spotify code detected - {trackInfo.Type}: {trackInfo.Name}");
+                            }
+                        });
                     }
-                    else
-                    {
-                        Log("Skipping Spotify code detection - no credentials available");
-                    }
+                }
+                return qrFound || spotifyFound;
+            }
+            catch (Exception ex)
+            {
+                Log($"Error in DetectCodes: {ex.Message}");
+                SendParameter(OSCQRParameter.Error, true);
+                return false;
+            }
+        }
+
+        // Detector ROIs first (colour frame, as the model was trained); full frame catches codes the model misses.
+        private long? DetectSpotifyCode(Bitmap frame)
+        {
+            try
+            {
+                foreach (var roi in _spcodeDetector?.Detect(frame) ?? new List<Rectangle>())
+                {
+                    using var crop = frame.Clone(roi, frame.PixelFormat);
+                    var mediaRef = SpotifyCodeDecoder.DetectSpotifyCode(crop);
+                    if (mediaRef.HasValue) return mediaRef;
                 }
             }
             catch (Exception ex)
             {
-                Log($"Error in DetectQRCode: {ex.Message}");
-                SendParameter(OSCQRParameter.Error, true);
+                LogDebug($"Spotify strip detector error: {ex.Message}");
             }
-        }
-
-        private Bitmap PreprocessImage(Bitmap bitmap)
-        {
-            // Example: convert the image to grayscale.
-            Bitmap grayBitmap = new Bitmap(bitmap.Width, bitmap.Height);
-            using (Graphics g = Graphics.FromImage(grayBitmap))
-            {
-                var colorMatrix = new ColorMatrix(new float[][]
-                {
-                    new float[] {0.3f, 0.3f, 0.3f, 0, 0},
-                    new float[] {0.59f, 0.59f, 0.59f, 0, 0},
-                    new float[] {0.11f, 0.11f, 0.11f, 0, 0},
-                    new float[] {0, 0, 0, 1, 0},
-                    new float[] {0, 0, 0, 0, 1}
-                });
-
-                using (var attributes = new ImageAttributes())
-                {
-                    attributes.SetColorMatrix(colorMatrix);
-                    g.DrawImage(bitmap,
-                        new Rectangle(0, 0, bitmap.Width, bitmap.Height),
-                        0, 0, bitmap.Width, bitmap.Height,
-                        GraphicsUnit.Pixel, attributes);
-                }
-            }
-            return grayBitmap;
+            // ponytail: full-frame pass capped at 1920px wide (4K took ~1.6s per frame); codes under ~100px at 4K are lost.
+            if (frame.Width <= 1920) return SpotifyCodeDecoder.DetectSpotifyCode(frame);
+            using var small = new Bitmap(frame, 1920, frame.Height * 1920 / frame.Width);
+            return SpotifyCodeDecoder.DetectSpotifyCode(small);
         }
 
         private void SaveDebugImage(Bitmap bitmap)
@@ -387,6 +336,9 @@ namespace YeusepesModules.OSCQR
             }
         }
 
+        // Capture thread only (ZBar scanners aren't thread-safe). QR only: skips ZBar's 1D barcode passes.
+        [ThreadStatic] private static ImageScanner _qrScanner;
+
         public static string ScanQRCode(Bitmap bitmap)
         {
             if (bitmap == null)
@@ -394,27 +346,42 @@ namespace YeusepesModules.OSCQR
 
             try
             {
-                // Force a 24‑bit RGB copy (ZBarSharp will convert it to Y800 internally)
-                using var rgb = new Bitmap(bitmap.Width, bitmap.Height, PixelFormat.Format24bppRgb);
-                using (var g = Graphics.FromImage(rgb))
-                    g.DrawImage(bitmap, 0, 0, bitmap.Width, bitmap.Height);
+                if (_qrScanner == null)
+                {
+                    _qrScanner = new ImageScanner { Cache = true };
+                    _qrScanner.SetConfiguration(SymbolType.None, Config.Enable, 0);
+                    _qrScanner.SetConfiguration(SymbolType.QRCODE, Config.Enable, 1);
+                }
 
-                using var scanner = new ImageScanner { Cache = true };
-                var symbols = scanner.Scan(rgb);
-                return symbols.FirstOrDefault()?.Data ?? string.Empty;
+                int w = bitmap.Width, h = bitmap.Height;
+                var gray = new byte[w * h];
+                var data = bitmap.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+                try
+                {
+                    unsafe
+                    {
+                        for (int y = 0; y < h; y++)
+                        {
+                            byte* row = (byte*)data.Scan0 + y * data.Stride;
+                            for (int x = 0; x < w; x++)
+                                gray[y * w + x] = (byte)((row[x * 4] * 29 + row[x * 4 + 1] * 150 + row[x * 4 + 2] * 77) >> 8);
+                        }
+                    }
+                }
+                finally { bitmap.UnlockBits(data); }
+
+                using var image = new ZBar.Image { Width = (uint)w, Height = (uint)h, Format = ZBar.Image.FourCC('Y', '8', '0', '0'), Data = gray };
+                _qrScanner.Scan(image);
+                return image.Symbols.FirstOrDefault()?.Data ?? string.Empty;
             }
             catch (Exception ex)
             {
-                // Log the full inner exception message (and stacktrace if you like)
-                throw new InvalidOperationException($"ZBar scan failed: {ex.GetBaseException().Message}");                
+                throw new InvalidOperationException($"ZBar scan failed: {ex.GetBaseException().Message}");
             }
         }
 
-
-
         private void SaveCurrentQRCode()
         {
-            // Save QR code if available
             if (!string.IsNullOrEmpty(lastDetectedQRCode))
             {
                 if (!savedQRCodes.Contains(lastDetectedQRCode))
@@ -428,7 +395,6 @@ namespace YeusepesModules.OSCQR
                 }
             }
             
-            // Save Spotify code if available
             if (lastSpotifyTrackInfo != null && lastDetectedSpotifyCode.HasValue)
             {
                 var spotifyCodeInfo = $"Spotify {lastSpotifyTrackInfo.Type}: {lastSpotifyTrackInfo.Name} - {lastSpotifyTrackInfo.Url}";
@@ -444,7 +410,6 @@ namespace YeusepesModules.OSCQR
                 }
             }
             
-            // Notify runtime view that codes list has been updated
             if (!string.IsNullOrEmpty(lastDetectedQRCode) || (lastSpotifyTrackInfo != null && lastDetectedSpotifyCode.HasValue))
             {
                 QRCodesUpdated?.Invoke();
@@ -453,7 +418,7 @@ namespace YeusepesModules.OSCQR
 
         public List<string> GetSavedQRCodes()
         {
-            return new List<string>(savedQRCodes); // Return a copy of the saved QR codes
+            return new List<string>(savedQRCodes);
         }
 
         public SpotifyTrackInfo GetLastSpotifyTrackInfo()
@@ -470,7 +435,6 @@ namespace YeusepesModules.OSCQR
         {
             Console.WriteLine("=== Spotify Code Detection Test ===");
             
-            // Test 1: Check credentials
             var hasCredentials = IsSpotifyCredentialsAvailable();
             Console.WriteLine($"1. Spotify credentials available: {hasCredentials}");
             
@@ -486,7 +450,6 @@ namespace YeusepesModules.OSCQR
                 Console.WriteLine("   No credentials available - some tests will be skipped");
             }
             
-            // Test 2: Real Spotify code image detection
             Console.WriteLine("\n2. Testing with real Spotify code image...");
             try
             {
@@ -545,7 +508,6 @@ namespace YeusepesModules.OSCQR
                 Console.WriteLine($"   Stack trace: {ex.StackTrace}");
             }
             
-            // Test 3: Basic barcode detection algorithm
             Console.WriteLine("\n3. Testing basic barcode detection algorithm...");
             try
             {
@@ -564,7 +526,6 @@ namespace YeusepesModules.OSCQR
         
         private Bitmap CreateTestBarcode()
         {
-            // Create a simple test bitmap
             var bitmap = new Bitmap(200, 100);
             using (var g = Graphics.FromImage(bitmap))
             {
@@ -581,58 +542,5 @@ namespace YeusepesModules.OSCQR
 
         #endregion
 
-        #region Image Conversion Helpers
-
-        public static Bitmap TransformIImageToBitmap(IImage image)
-        {
-            if (image == null)
-                throw new ArgumentNullException(nameof(image), "Input image is null.");
-
-            try
-            {
-                int width = image.Width;
-                int height = image.Height;
-                if (width <= 0 || height <= 0)
-                    throw new ArgumentException("Invalid image dimensions.");
-
-                Bitmap bitmap = new Bitmap(width, height, PixelFormat.Format32bppArgb);
-                BitmapData bitmapData = bitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, bitmap.PixelFormat);
-
-                try
-                {
-                    int bytesPerPixel = System.Drawing.Image.GetPixelFormatSize(bitmap.PixelFormat) / 8;
-                    int totalBytes = bitmapData.Stride * height;
-                    byte[] pixelBuffer = new byte[totalBytes];
-
-                    for (int y = 0; y < height; y++)
-                    {
-                        IImageRow row = image.Rows[y];
-                        for (int x = 0; x < width; x++)
-                        {
-                            IColor color = row[x];
-                            int pixelIndex = (y * bitmapData.Stride) + (x * bytesPerPixel);
-                            pixelBuffer[pixelIndex + 3] = color.A;
-                            pixelBuffer[pixelIndex + 2] = color.R;
-                            pixelBuffer[pixelIndex + 1] = color.G;
-                            pixelBuffer[pixelIndex] = color.B;
-                        }
-                    }
-
-                    System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapData.Scan0, totalBytes);
-                }
-                finally
-                {
-                    bitmap.UnlockBits(bitmapData);
-                }
-
-                return bitmap;
-            }
-            catch (Exception ex)
-            {
-                throw new InvalidOperationException("Error transforming IImage to Bitmap.", ex);
-            }
-        }
-
-        #endregion
     }
 }

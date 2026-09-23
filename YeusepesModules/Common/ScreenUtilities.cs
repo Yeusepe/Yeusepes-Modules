@@ -14,6 +14,7 @@ using YeusepesModules.IDC.Encoder;
 using VRCOSC.App.SDK.Parameters;
 using HPPH;
 using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 using System.Windows.Media.Imaging;
 using System.Windows;
 using VRCOSC.App.SDK.Providers.Hardware;
@@ -35,7 +36,9 @@ namespace YeusepesModules.Common.ScreenUtilities
         ScreenUtilitySelector screenSelector;
 
         Action<ScreenUtilitiesParameters, bool> sendBoolParameter;
-        Action<HPPH.IImage> whatDoInCapture;
+        Func<Bitmap, bool> whatDoInCapture; // returns true when something was detected (keeps the fast scan rate)
+
+        private const int MinScanInterval = 100, MaxScanInterval = 500;
 
         private Dictionary<string, ICaptureZone> _captureZones = new Dictionary<string, ICaptureZone>();
 
@@ -105,7 +108,6 @@ namespace YeusepesModules.Common.ScreenUtilities
             GetSettingValue = getSettingValue;
             this.setSettingValue = setSettingValue;
 
-            // Initialize screen capture service.
             screenCaptureService = new DX11ScreenCaptureService();            
 
             createTextBox(ScreenUtilitiesSettings.SelectedGraphicsCard,
@@ -114,7 +116,6 @@ namespace YeusepesModules.Common.ScreenUtilities
                           "Capture Display", "Which display to capture", "Default");
 
 
-            // 1️⃣ Read whatever’s already persisted (or fall back to "Default")
             var savedGPU = GetSettingValue(ScreenUtilitiesSettings.SelectedGraphicsCard) ?? "Default";
             var savedDisplay = GetSettingValue(ScreenUtilitiesSettings.SelectedDisplay) ?? "Default";                                    
 
@@ -125,7 +126,6 @@ namespace YeusepesModules.Common.ScreenUtilities
             screenSelector = selector;
 
             selector.ScreenUtilities = this;
-            // Persist changes
             screenSelector.GPUSelectionChanged += (_, gpu) =>
             {
                 Log($"GPUSelectionChanged → new GPU = {gpu}");
@@ -137,32 +137,21 @@ namespace YeusepesModules.Common.ScreenUtilities
                 setSettingValue(ScreenUtilitiesSettings.SelectedDisplay, disp);
             };
 
-            // Populate and apply saved values
             selector.RefreshLists(GetGraphicsCards(), GetDisplays());
             selector.SelectedGPU = GetSettingValue(ScreenUtilitiesSettings.SelectedGraphicsCard) ?? "Default";
             selector.SelectedDisplay = GetSettingValue(ScreenUtilitiesSettings.SelectedDisplay) ?? "Default";
 
-            // Live preview
             selector.LiveCaptureProvider = CaptureImageForDisplay;
 
-            // At some point you need to obtain the instantiated ScreenUtilitySelector.
-            // For example, if your framework calls a method when the view is ready:
-            // this.screenSelector = GetSettingView(ScreenUtilitiesSettings.SelectedDisplay) as ScreenUtilitySelector;
-            // And then subscribe to its events:
-            // After screenCaptureService is initialized in your ScreenUtilities constructor or OnModuleStart:
             if (screenSelector != null)
             {
-                // Actively get GPU names from your capture service.
-                var gpuList = GetGraphicsCards(); // your existing method
-                                                  // Get displays using your capture service.
-                var displayList = GetDisplays();  // your existing method
+                var gpuList = GetGraphicsCards();
+                var displayList = GetDisplays();
 
-                // Update the selector's lists.
                 screenSelector.RefreshLists(gpuList, displayList);
 
                 screenSelector.LiveCaptureProvider = (displayName) =>
                 {
-                    // Get the first available graphics card.
                     var defaultCardNullable = screenCaptureService?.GetGraphicsCards().FirstOrDefault();
                     if (defaultCardNullable == null)
                     {
@@ -171,7 +160,6 @@ namespace YeusepesModules.Common.ScreenUtilities
                     }
                     GraphicsCard defaultCard = defaultCardNullable.Value;
 
-                    // Get the list of displays for this graphics card.
                     var displays = screenCaptureService.GetDisplays(defaultCard);
                     var disp = displays.FirstOrDefault(d => d.DeviceName == displayName);
                     if (disp == null || string.IsNullOrEmpty(disp.DeviceName))
@@ -180,7 +168,6 @@ namespace YeusepesModules.Common.ScreenUtilities
                         return null;
                     }
 
-                    // Get the screen capture for this display.
                     var screenCapture = screenCaptureService.GetScreenCapture(disp);
                     if (screenCapture == null)
                     {
@@ -188,7 +175,6 @@ namespace YeusepesModules.Common.ScreenUtilities
                         return null;
                     }
 
-                    // Call CaptureScreen to initialize internal properties.
                     screenCapture.CaptureScreen();
 
                     // Wait a short period to allow the display property to be updated.
@@ -200,14 +186,10 @@ namespace YeusepesModules.Common.ScreenUtilities
                         return null;
                     }
 
-                    // Cache the capture zone: register it only once per display.
                     if (!_captureZones.TryGetValue(displayName, out ICaptureZone captureZone) || captureZone == null)
                     {
                         try
                         {
-                            // Register the capture zone. 
-                            // Depending on your setup, this might need to be called on the UI thread.
-                            // If so, wrap in Dispatcher.Invoke:
                             System.Windows.Application.Current.Dispatcher.Invoke(() =>
                             {
                                 captureZone = screenCapture.RegisterCaptureZone(0, 0, screenCapture.Display.Width, screenCapture.Display.Height);
@@ -226,10 +208,8 @@ namespace YeusepesModules.Common.ScreenUtilities
                         _captureZones[displayName] = captureZone;
                     }
 
-                    // Now update the capture.
                     screenCapture.CaptureScreen();
 
-                    // Lock the capture zone to retrieve the image.
                     using (var zoneLock = captureZone.Lock())
                     {
                         var image = captureZone.Image;
@@ -239,10 +219,8 @@ namespace YeusepesModules.Common.ScreenUtilities
                             return null;
                         }
 
-                        // Convert the IImage to a Bitmap using your helper.
                         Bitmap bmp = TransformIImageToBitmap(image);
 
-                        // Convert the Bitmap to a WPF BitmapSource.
                         IntPtr hBitmap = bmp.GetHbitmap();
                         try
                         {
@@ -262,7 +240,7 @@ namespace YeusepesModules.Common.ScreenUtilities
             }
         }
 
-        public void SetWhatDoInCapture(Action<HPPH.IImage> whatDoInCapture)
+        public void SetWhatDoInCapture(Func<Bitmap, bool> whatDoInCapture)
         {
             this.whatDoInCapture = whatDoInCapture;
         }
@@ -287,7 +265,6 @@ namespace YeusepesModules.Common.ScreenUtilities
             switch (parameter.Lookup)
             {
                 case ScreenUtilitiesParameters.StartRecording:
-                    // LogDebug("Start Recording parameter received. Value: " + parameter.GetValue<bool>());
                     bool shouldStartRecording = parameter.GetValue<bool>();
                     if (shouldStartRecording && !isCapturing)
                     {
@@ -305,32 +282,27 @@ namespace YeusepesModules.Common.ScreenUtilities
 
         public void StartCapture()
         {
-            //sendBoolParameter(ScreenUtilitiesParameters.Error, false);
             if (screenCaptureService == null)
             {
                 Log("Cannot start capture. screenCaptureService is null.");
-                //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                 return;
             }
 
             if (selectedGraphicsCard == null)
             {
                 Log("Cannot start capture. No GPU selected.");
-                //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                 return;
             }
 
             if (selectedDisplay == null || !selectedDisplay.HasValue)
             {
                 Log("Cannot start capture. No display selected.");
-                //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                 return;
             }
 
             if (selectedDisplay.Value.Width <= 0 || selectedDisplay.Value.Height <= 0)
             {
                 Log($"Cannot start capture. Invalid display dimensions: Width={selectedDisplay.Value.Width}, Height={selectedDisplay.Value.Height}");
-                //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                 return;
             }
 
@@ -339,8 +311,6 @@ namespace YeusepesModules.Common.ScreenUtilities
             captureThread = new Thread(() => RunCaptureLoop());
             captureThread.IsBackground = true;
             captureThread.Start();
-
-            // LogDebug("Started screen capture.");
         }
 
         public bool TryFindVRChatWindow()
@@ -392,11 +362,10 @@ namespace YeusepesModules.Common.ScreenUtilities
 
             selectedDisplay = displays.FirstOrDefault(d => d.DeviceName == screen.DeviceName);
 
-            // Handle user-selected display
             string selectedDisplayName = null;
             try
             {
-                selectedDisplayName = GetSelectedDisplay(); // Safely get the selected display setting
+                selectedDisplayName = GetSelectedDisplay();
             }
             catch (Exception ex)
             {
@@ -425,7 +394,6 @@ namespace YeusepesModules.Common.ScreenUtilities
             string selectedGPUName = GetSelectedGraphicsCard();
             string selectedDisplayName = GetSelectedDisplay();
 
-            // If GPU is "Default," autodetect VRChat
             if (selectedGPUName == "Default")
             {
                 if (!TryFindVRChatWindow())
@@ -437,7 +405,6 @@ namespace YeusepesModules.Common.ScreenUtilities
             }
             else
             {
-                // Manually set the GPU
                 var graphicsCards = screenCaptureService?.GetGraphicsCards();
                 selectedGraphicsCard = graphicsCards?.FirstOrDefault(gc => gc.Name.Equals(selectedGPUName, StringComparison.OrdinalIgnoreCase));
 
@@ -455,7 +422,6 @@ namespace YeusepesModules.Common.ScreenUtilities
                 }
             }
 
-            // If Display is "Default," autodetect VRChat display
             if (selectedDisplayName == "Default")
             {
                 if (selectedGraphicsCard != null && !TryFindVRChatWindow())
@@ -466,7 +432,6 @@ namespace YeusepesModules.Common.ScreenUtilities
             }
             else
             {
-                // Manually set the display
                 var displays = screenCaptureService?.GetDisplays(selectedGraphicsCard.Value);
                 selectedDisplay = displays?.FirstOrDefault(d => d.DeviceName.Equals(selectedDisplayName, StringComparison.OrdinalIgnoreCase));
 
@@ -496,7 +461,6 @@ namespace YeusepesModules.Common.ScreenUtilities
 
         public string GetSelectedGraphicsCard()
         {
-            // If you prefer, read directly from the screenSelector.
             var saved = GetSettingValue(ScreenUtilitiesSettings.SelectedGraphicsCard);
             var gpu = !string.IsNullOrWhiteSpace(saved) ? saved : "Default";
             Log($"Selected GPU from settings: {gpu}");
@@ -508,7 +472,7 @@ namespace YeusepesModules.Common.ScreenUtilities
             var cards = screenCaptureService?.GetGraphicsCards().Select(gc => gc.Name).ToList();
             if (cards != null)
             {
-                cards.Insert(0, "Default"); // Add "Default" option for auto-detection
+                cards.Insert(0, "Default");
             }
             return cards ?? new List<string> { "Default" };
         }
@@ -521,7 +485,7 @@ namespace YeusepesModules.Common.ScreenUtilities
 
             if (displays != null)
             {
-                displays.Insert(0, "Default"); // Add "Default" option for auto-detection
+                displays.Insert(0, "Default");
             }
             Log($"Displays: {string.Join(", ", displays)}");
             return displays ?? new List<string> { "Default" };
@@ -533,20 +497,16 @@ namespace YeusepesModules.Common.ScreenUtilities
         {
             try
             {
-                // Validate the screen capture service
                 if (screenCaptureService == null)
                 {
                     Log("Error: screenCaptureService is null. Cannot continue.");
-                    //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                     isCapturing = false;
                     return;
                 }
 
-                // Validate the selected display
                 if (selectedDisplay == null || !selectedDisplay.HasValue)
                 {
                     Log("Error: selectedDisplay is null or invalid. Cannot continue.");
-                    //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                     isCapturing = false;
                     return;
                 }
@@ -554,17 +514,14 @@ namespace YeusepesModules.Common.ScreenUtilities
                 if (selectedDisplay.Value.Width <= 0 || selectedDisplay.Value.Height <= 0)
                 {
                     Log($"Error: Invalid display dimensions: Width={selectedDisplay.Value.Width}, Height={selectedDisplay.Value.Height}");
-                    //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                     isCapturing = false;
                     return;
                 }
 
-                // Initialize screen capture
                 var screenCapture = screenCaptureService.GetScreenCapture(selectedDisplay.Value);
                 if (screenCapture == null)
                 {
                     Log("Error: screenCapture is null. Cannot initialize screen capture.");
-                    //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                     isCapturing = false;
                     return;
                 }
@@ -572,75 +529,92 @@ namespace YeusepesModules.Common.ScreenUtilities
                 if (screenCapture.Display == null || screenCapture.Display.Width <= 0 || screenCapture.Display.Height <= 0)
                 {
                     Log($"Error: Invalid screen capture display dimensions: Width={screenCapture.Display.Width}, Height={screenCapture.Display.Height}");
-                    //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                     isCapturing = false;
                     return;
                 }
 
-                // Attempt to register the capture zone
                 ICaptureZone? captureZone = null;
                 try
                 {
+                    // GPU halves the frame (mip level) until it's ~1080p wide: 4K reads back 4x less data.
+                    int downscale = 0;
+                    while ((screenCapture.Display.Width >> (downscale + 1)) >= 1920) downscale++;
                     captureZone = screenCapture.RegisterCaptureZone(
-                        0, 0, screenCapture.Display.Width, screenCapture.Display.Height
+                        0, 0, screenCapture.Display.Width, screenCapture.Display.Height, downscale
                     );
 
                     if (captureZone == null)
                     {
-                        //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                         throw new NullReferenceException("RegisterCaptureZone returned null.");
                     }
                 }
                 catch (Exception ex)
                 {
                     Log($"Error during RegisterCaptureZone: {ex.Message}. Stack Trace: {ex.StackTrace}");
-                    //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                     isCapturing = false;
                     return;
                 }
 
                 BringVRChatToFront();
+                UseBackgroundQos();
 
-                // Main capture loop
-                while (isCapturing)
+                // Main capture loop: scan fast while something is found, back off to MaxScanInterval when idle,
+                // and skip processing entirely when the view hasn't changed since the last empty scan.
+                int interval = MinScanInterval;
+                byte[]? lastSamples = null;
+                var sinceScan = Stopwatch.StartNew();
+                try
                 {
-                    try
+                    while (isCapturing)
                     {
-                        screenCapture.CaptureScreen();
-
-                        using (captureZone.Lock())
+                        var tick = Stopwatch.StartNew();
+                        try
                         {
-                            var image = captureZone.Image;
-                            if (image != null)
+                            Bitmap? frame = null;
+                            if (screenCapture.CaptureScreen()) // false: nothing on screen changed within the timeout
                             {
-                                whatDoInCapture(image);
+                                using (captureZone.Lock())
+                                {
+                                    var samples = SampleLuma(captureZone.RawBuffer, captureZone.Width, captureZone.Height, captureZone.Stride);
+                                    // ponytail: forced rescan every 2s in case a sub-threshold change mattered
+                                    if (interval == MinScanInterval || sinceScan.ElapsedMilliseconds > 2000 || Changed(samples, lastSamples))
+                                    {
+                                        lastSamples = samples;
+                                        frame = TransformIImageToBitmap(captureZone.Image); // copy out, release the lock before processing
+                                    }
+                                }
                             }
-                            else
+                            if (frame != null)
                             {
-                                // LogDebug("No image captured in the current frame.");
+                                bool found;
+                                using (frame) found = whatDoInCapture(frame);
+                                sinceScan.Restart();
+                                interval = found ? MinScanInterval : Math.Min(MaxScanInterval, interval + 100);
                             }
                         }
-                    }
-                    catch (Exception ex)
-                    {
-                        Log($"Error during screen capture or processing: {ex.Message}");
-                        //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
-                    }
+                        catch (Exception ex)
+                        {
+                            Log($"Error during screen capture or processing: {ex.Message}");
+                        }
 
-                    // Adjust the sleep interval based on performance needs
-                    Thread.Sleep(100);
+                        int wait = interval - (int)tick.ElapsedMilliseconds;
+                        if (wait > 0) Thread.Sleep(wait);
+                    }
+                }
+                finally
+                {
+                    // The capture instance is shared per display; a leaked zone would keep being read back every frame.
+                    screenCapture.UnregisterCaptureZone(captureZone);
                 }
             }
             catch (Exception ex)
             {
                 Log($"Critical error in capture loop: {ex.Message}. Stack Trace: {ex.StackTrace}");
-                //sendBoolParameter(ScreenUtilitiesParameters.Error, true);
                 isCapturing = false;
             }
 
         }
 
-        // In ScreenUtilities class:
         public Bitmap TakeScreenshot()
         {
             var vr = NativeMethods.GetVRChatWindowHandle();
@@ -700,11 +674,9 @@ namespace YeusepesModules.Common.ScreenUtilities
                     return null;
                 }
 
-                // Capture the current screen content.
                 screenCapture.CaptureScreen();
 
                 Log($"Capturing screen: {screenCapture.Display.DeviceName} ({screenCapture.Display.Width}x{screenCapture.Display.Height})");
-                // Lock the capture zone to access the captured image safely.
                 using (var zoneLock = captureZone.Lock())
                 {
                     IImage image = captureZone.Image;
@@ -714,8 +686,6 @@ namespace YeusepesModules.Common.ScreenUtilities
                         return null;
                     }
 
-                    // Convert the IImage to a Bitmap.
-                    // This helper method should mimic the logic from OSCQR's TransformIImageToBitmap.
                     Bitmap bmp = TransformIImageToBitmap(image);
                     Log("Screenshot taken.");
                     return bmp;
@@ -746,26 +716,9 @@ namespace YeusepesModules.Common.ScreenUtilities
 
                 try
                 {
-                    int bytesPerPixel = Image.GetPixelFormatSize(bitmap.PixelFormat) / 8;
-                    int totalBytes = bitmapData.Stride * height;
-                    byte[] pixelBuffer = new byte[totalBytes];
-
-                    for (int y = 0; y < height; y++)
-                    {
-                        IImageRow row = image.Rows[y];
-                        for (int x = 0; x < width; x++)
-                        {
-                            IColor color = row[x];
-
-                            int pixelIndex = (y * bitmapData.Stride) + (x * bytesPerPixel);
-                            pixelBuffer[pixelIndex + 3] = color.A; // Alpha
-                            pixelBuffer[pixelIndex + 2] = color.R; // Red
-                            pixelBuffer[pixelIndex + 1] = color.G; // Green
-                            pixelBuffer[pixelIndex] = color.B;     // Blue
-                        }
-                    }
-
-                    System.Runtime.InteropServices.Marshal.Copy(pixelBuffer, 0, bitmapData.Scan0, totalBytes);
+                    // Format32bppArgb is BGRA in memory with stride == width * 4, so it's one bulk copy (was per-pixel: ~67ms at 4K).
+                    var bgra = image.ColorFormat == IColorFormat.BGRA ? image : image.ConvertTo<ColorBGRA>();
+                    unsafe { bgra.CopyTo(new Span<byte>((void*)bitmapData.Scan0, bitmapData.Stride * height)); }
                 }
                 finally
                 {
@@ -780,6 +733,42 @@ namespace YeusepesModules.Common.ScreenUtilities
             }
         }
 
+        // ~64x36 green-channel samples (BGRA) of the frame: a cheap "did the view change" fingerprint.
+        private static byte[] SampleLuma(ReadOnlySpan<byte> bgra, int width, int height, int stride)
+        {
+            const int cols = 64, rows = 36;
+            var samples = new byte[cols * rows];
+            for (int r = 0; r < rows; r++)
+                for (int c = 0; c < cols; c++)
+                    samples[r * cols + c] = bgra[(r * height / rows) * stride + (c * width / cols) * 4 + 1];
+            return samples;
+        }
+
+        private static bool Changed(byte[] now, byte[]? before)
+        {
+            if (before == null) return true;
+            long diff = 0;
+            for (int i = 0; i < now.Length; i++) diff += Math.Abs(now[i] - before[i]);
+            return diff > now.Length * 3; // mean change > 3/255 (tuning knob: lower = more rescans)
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ThreadPowerThrottlingState { public uint Version, ControlMask, StateMask; }
+
+        [DllImport("kernel32.dll")]
+        private static extern bool SetThreadInformation(IntPtr thread, int infoClass, ref ThreadPowerThrottlingState info, int size);
+
+        [DllImport("kernel32.dll")]
+        private static extern IntPtr GetCurrentThread();
+
+        // Background work: lower priority than VRChat, and EcoQoS (efficiency cores / lower clocks) on Windows 11.
+        private static void UseBackgroundQos()
+        {
+            Thread.CurrentThread.Priority = ThreadPriority.BelowNormal;
+            var state = new ThreadPowerThrottlingState { Version = 1, ControlMask = 1, StateMask = 1 }; // EXECUTION_SPEED
+            SetThreadInformation(GetCurrentThread(), 3 /* ThreadPowerThrottling */, ref state, Marshal.SizeOf<ThreadPowerThrottlingState>());
+        }
+
 
         public void BringVRChatToFront()
         {
@@ -791,14 +780,12 @@ namespace YeusepesModules.Common.ScreenUtilities
                 return;
             }
 
-            // Check if the window is minimized, and restore it
             if (NativeMethods.IsIconic(vrChatWindowHandle))
             {
                 NativeMethods.ShowWindowAsync(vrChatWindowHandle, NativeMethods.SW_RESTORE);
                 Log("Restored minimized VRChat window.");
             }
 
-            // Bring the window to the foreground
             if (!NativeMethods.SetForegroundWindow(vrChatWindowHandle))
             {
                 Log("Failed to bring VRChat window to the front.");
@@ -811,7 +798,6 @@ namespace YeusepesModules.Common.ScreenUtilities
 
         public BitmapSource CaptureImageForDisplay(string displayName)
         {
-            // Get the GPU name from settings and available GPUs from the capture service.
             string selectedGPUName = GetSelectedGraphicsCard();
             var graphicsCards = screenCaptureService?.GetGraphicsCards();
             if (graphicsCards == null || !graphicsCards.Any())
@@ -820,7 +806,6 @@ namespace YeusepesModules.Common.ScreenUtilities
                 return null;
             }
 
-            // Determine which GPU to use – if a manual selection fails, fall back to the first available.
             GraphicsCard targetGPU;
             if (selectedGPUName == "Default")
             {
@@ -836,7 +821,6 @@ namespace YeusepesModules.Common.ScreenUtilities
                 }
             }
 
-            // Get the displays for the target GPU and find the display by name.
             var displays = screenCaptureService.GetDisplays(targetGPU);
             var disp = displays.FirstOrDefault(d => d.DeviceName.Equals(displayName, StringComparison.OrdinalIgnoreCase));
             if (disp == null)
@@ -845,14 +829,12 @@ namespace YeusepesModules.Common.ScreenUtilities
                 return null;
             }
 
-            // Validate the display dimensions.
             if (disp.Width <= 0 || disp.Height <= 0)
             {
                 Log($"Display '{displayName}' has invalid dimensions: {disp.Width}x{disp.Height}");
                 return null;
             }
 
-            // Get the screen capture for the display.
             var screenCapture = screenCaptureService.GetScreenCapture(disp);
             if (screenCapture == null)
             {
@@ -860,19 +842,16 @@ namespace YeusepesModules.Common.ScreenUtilities
                 return null;
             }
 
-            // Perform an initial capture to update internal properties.
             screenCapture.CaptureScreen();
             // Wait briefly to allow the capture properties to update.
             System.Threading.Thread.Sleep(50);
 
-            // Ensure that the screen capture’s Display property is valid.
             if (screenCapture.Display == null || screenCapture.Display.Width <= 0 || screenCapture.Display.Height <= 0)
             {
                 Log("Screen capture's Display is null or invalid after CaptureScreen.");
                 return null;
             }
 
-            // Register the capture zone on the UI thread.
             ICaptureZone captureZone = null;
             try
             {
@@ -892,7 +871,6 @@ namespace YeusepesModules.Common.ScreenUtilities
                 return null;
             }
 
-            // Update the capture zone by capturing the screen.
             screenCapture.CaptureScreen();
             using (var zoneLock = captureZone.Lock())
             {
@@ -902,7 +880,6 @@ namespace YeusepesModules.Common.ScreenUtilities
                     Log("No image captured.");
                     return null;
                 }
-                // Convert the IImage to a Bitmap.
                 Bitmap bmp = TransformIImageToBitmap(image);
                 IntPtr hBitmap = bmp.GetHbitmap();
                 try
@@ -927,7 +904,6 @@ namespace YeusepesModules.Common.ScreenUtilities
         public void StopCapture()
         {
             isCapturing = false;
-            // Wait for the thread, if it takes too long, abort it
             if (captureThread != null && !captureThread.Join(5000))
             {
                 try
