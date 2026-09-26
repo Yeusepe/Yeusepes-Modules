@@ -27,7 +27,6 @@
             <Geometry>
                 M191.186 181.799C191.186 171.009 183.071 162.755 172.28 162.755C161.721 162.755 153.467 171.009 153.467 181.799C153.467 192.589 161.905 200.705 172.28 200.705C183.071 200.705 191.186 192.266 191.186 181.799Z
             </Geometry>
-            <!-- Include the other geometries as needed -->
         </GeometryGroup>
         <Style x:Key="NowPlayingTextBlock"
                TargetType="TextBlock">
@@ -35,6 +34,8 @@
                     Value="/YeusepesModules;component/SPOTIOSC/Resources/Fonts/circular-std-6.ttf#Circular Std Book" />
             <Setter Property="FontSize"
                     Value="12" />
+            <Setter Property="TextTrimming"
+                    Value="CharacterEllipsis" />
             <Setter Property="Foreground"
                     Value="{Binding DominantColor, Converter={StaticResource ColorBrightnessToForegroundConverter}}"/>
         </Style>
@@ -53,16 +54,11 @@
         </Style>
     </UserControl.Resources>
     <StackPanel>
-        <!-- Border for rounded corners -->
         <Border CornerRadius="10"
                 ClipToBounds="True">
             <Border.Background>
                 <SolidColorBrush Color="{Binding DominantColor}" />
             </Border.Background>
-
-
-
-            <!-- Main content inside the border -->
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -70,14 +66,10 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <!-- Album artwork and text on the left -->
-                <StackPanel Grid.Column="0"
-                            Margin="10"
-                            Orientation="Horizontal"
-                            VerticalAlignment="Center">
-                    <Border Width="60"
+                    <Border Grid.Column="0"
+                            Width="60"
                             Height="60"
-                            Margin="10"
+                            Margin="20"
                             CornerRadius="10"
                             Background="Transparent">
                         <Border.Clip>
@@ -89,15 +81,17 @@
                                Stretch="UniformToFill" />
                     </Border>
 
-                    <StackPanel Orientation="Vertical"
+                    <StackPanel Grid.Column="1"
+                                Orientation="Vertical"
                                 VerticalAlignment="Center"
-                                Margin="10">
+                                Margin="0,10,20,10">
                         <TextBlock Text="{Binding TrackName}"
+                                   ToolTip="{Binding TrackName}"
                                    Style="{StaticResource NowPlayingTitleTextBlock}" />
                         <TextBlock Text="{Binding ArtistNames}"
+                                   ToolTip="{Binding ArtistNames}"
                                    Style="{StaticResource NowPlayingTextBlock}"/>
                     </StackPanel>
-                </StackPanel>
                 
                 <Viewbox Grid.Column="2"
                          Width="30"
@@ -110,7 +104,6 @@
                 </Viewbox>
             </Grid>
         </Border>
-        <!-- Bar at the bottom -->
         <Border Background="#1DB954"
                 Height="70"
                 CornerRadius="0,0,10,10"
@@ -121,25 +114,22 @@
                 Visibility="{Binding IsInJam, Converter={StaticResource BooleanToVisibilityConverter}}">
             <Grid Margin="10,30,10,0">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <!-- For the jam name -->
                     <ColumnDefinition Width="*" />
-                    <!-- Spacer -->
-                    <ColumnDefinition Width="Auto" />
-                    <!-- For the participant images -->
+                    <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <!-- TextBlock for jam name -->
                 <TextBlock Grid.Column="0"
                            Text="{Binding JamOwnerName, StringFormat='{}{0}\'s Jam'}"
+                           TextTrimming="CharacterEllipsis"
                            VerticalAlignment="Center"
                            Foreground="Black"
                            FontWeight="Bold"
                            FontSize="14" />
 
-                <!-- ItemsControl for participant images -->
-                <ItemsControl Grid.Column="2"
+                <ItemsControl Grid.Column="1"
                               ItemsSource="{Binding JamParticipantImages}"
+                              HorizontalAlignment="Right"
+                              ClipToBounds="True"
                               MaxHeight="50"
                               Margin="0,5,0,0"
                               MaxWidth="300">

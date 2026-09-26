@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net.Http;
 using VRCOSC.App.SDK.Modules;
 using VRCOSC.App.SDK.Parameters;
+using VRCOSC.App.SDK.VRChat;
 using VRCOSC.App.Settings;
 using YeusepesModules.Common;
 using YeusepesModules.SPOTIOSC.Credentials;
@@ -21,7 +22,7 @@ namespace YeusepesModules.SPOTIOSC;
 public sealed class SpotiOSC : Module
 {
     private const string MelodyServerUrl = "https://melody.yucp.club/";
-    private readonly ConcurrentDictionary<Enum, byte> _activeParameterUpdates = new();
+    private readonly ConcurrentDictionary<Enum, object> _activeParameterUpdates = new();
     private HttpClient? _httpClient;
     private SpotiOscOutput? _output;
     private SpotiOscRuntime? _runtime;
@@ -112,7 +113,29 @@ public sealed class SpotiOSC : Module
         TimeSignature,
         AlbumColorR,
         AlbumColorG,
-        AlbumColorB
+        AlbumColorB,
+        WorldJamHosting,
+        WorldJamPrompt,
+        WorldJamJoin,
+        WorldJamDismiss,
+        WorldJamTransmit,
+        WorldJamReceive,
+        WorldJamBits,
+        WorldJamTransmitLow,
+        WorldJamTransmitHigh,
+        WorldJamReceive1,
+        WorldJamReceive2,
+        WorldJamReceive3,
+        WorldJamReceiveLow0,
+        WorldJamReceiveLow1,
+        WorldJamReceiveLow2,
+        WorldJamReceiveLow3,
+        WorldJamReceiveHigh0,
+        WorldJamReceiveHigh1,
+        WorldJamReceiveHigh2,
+        WorldJamReceiveHigh3,
+        JammrResize,
+        JammrGadget
     }
 
     protected override void OnPreLoad()
@@ -206,10 +229,39 @@ public sealed class SpotiOSC : Module
         if (parameter.Lookup is not SpotiParameters lookup) return;
         if (_runtime is not null && _runtime.IsEphemeral(lookup))
             _runtime.HandleEphemeral(lookup, parameter.GetValue<bool>());
-        if (_activeParameterUpdates.TryRemove(lookup, out _)) return;
+        if (_activeParameterUpdates.TryRemove(lookup, out var sentValue) &&
+            Equals(sentValue, parameter.GetValue<object>())) return;
 
+        int beaconInput = (int)lookup - (int)SpotiParameters.WorldJamReceive1;
+        if (beaconInput >= 0 && beaconInput < 11) {
+            int lane = beaconInput < 3 ? beaconInput + 1 : (beaconInput - 3) % 4;
+            int part = beaconInput < 3 ? 0 : 1 + (beaconInput - 3) / 4;
+            _runtime?.ReceiveWorldJam(lane, part, parameter.GetValue<float>());
+            return;
+        }
         switch (lookup)
         {
+            case SpotiParameters.JammrResize:
+                _runtime?.SetJamLocalControl(0, parameter.GetValue<float>());
+                break;
+            case SpotiParameters.JammrGadget:
+                _runtime?.SetJamLocalControl(1, parameter.GetValue<bool>() ? 1 : 0);
+                break;
+            case SpotiParameters.WorldJamReceive:
+                _runtime?.ReceiveWorldJam(parameter.GetValue<float>());
+                break;
+            case SpotiParameters.WorldJamBits:
+                _runtime?.SetWorldJamBandwidth(parameter.GetValue<int>());
+                break;
+            case SpotiParameters.WorldJamHosting:
+                RunBackground(() => _runtime!.SetWorldHostingAsync(parameter.GetValue<bool>()), "World jam hosting");
+                break;
+            case SpotiParameters.WorldJamJoin when parameter.GetValue<bool>():
+                RunBackground(() => _runtime!.JoinWorldJamAsync(), "World jam join");
+                break;
+            case SpotiParameters.WorldJamDismiss when parameter.GetValue<bool>():
+                _runtime?.DismissWorldJam();
+                break;
             case SpotiParameters.WantJam:
                 RunBackground(() => _runtime!.SetWantJamAsync(parameter.GetValue<bool>()), "Jam request");
                 break;
@@ -226,6 +278,13 @@ public sealed class SpotiOSC : Module
     {
         LogDebug("Stopping SpotiOSC module...");
         await StopRuntimeAsync();
+    }
+
+    protected override void OnAvatarChange(AvatarConfig? avatarConfig)
+    {
+        base.OnAvatarChange(avatarConfig);
+        if (_runtime is not null) _output?.Set(SpotiParameters.Enabled, true);
+        _runtime?.RefreshWorldPrompt();
     }
 
     [ModuleUpdate(ModuleUpdateMode.ChatBox)]
@@ -293,7 +352,7 @@ public sealed class SpotiOSC : Module
     {
         try
         {
-            _activeParameterUpdates[parameter] = 0;
+            _activeParameterUpdates[parameter] = value;
             SendParameter(parameter, value);
         }
         catch (Exception exception)
@@ -350,6 +409,23 @@ public sealed class SpotiOSC : Module
 
     private void RegisterParameters()
     {
+        RegisterParameter<int>(SpotiParameters.WorldJamTransmit, "SpotiOSC/WorldJam/Transmit", ParameterMode.Write, "World Jam Beacon", "Local framed invitation transport.");
+        RegisterParameter<float>(SpotiParameters.JammrResize, "SpotiOSC/JAMMR/Resize", ParameterMode.Read, "JAMMR Resize", "Prioritize local resize changes over background discovery.");
+        RegisterParameter<bool>(SpotiParameters.JammrGadget, "SpotiOSC/Gadget/On", ParameterMode.Read, "JAMMR Gadget", "Prioritize gadget changes over background discovery.");
+        RegisterParameter<int>(SpotiParameters.WorldJamTransmitLow, "SpotiOSC/WorldJam/TransmitLow", ParameterMode.Write, "World Jam Low", "Local borrowed song bits.");
+        RegisterParameter<int>(SpotiParameters.WorldJamTransmitHigh, "SpotiOSC/WorldJam/TransmitHigh", ParameterMode.Write, "World Jam High", "Local borrowed song bits.");
+        for (int index = 0; index < 11; index++) {
+            int lane = index < 3 ? index + 1 : (index - 3) % 4;
+            string part = index < 3 ? "" : index < 7 ? "Low" : "High";
+            RegisterParameter<float>((SpotiParameters)((int)SpotiParameters.WorldJamReceive1 + index),
+                "SpotiOSC/WorldJam/Receive" + part + lane, ParameterMode.Read, "World Jam Contact", "Local cooperative contact input.");
+        }
+        RegisterParameter<float>(SpotiParameters.WorldJamReceive, "SpotiOSC/WorldJam/Receive", ParameterMode.Read, "World Jam Receiver", "Local contact proximity input.");
+        RegisterParameter<int>(SpotiParameters.WorldJamBits, "SpotiOSC/WorldJam/Bits", ParameterMode.Read, "World Jam Transport Capacity", "Local avatar transport capability.");
+        RegisterParameter<bool>(SpotiParameters.WorldJamHosting, "SpotiOSC/WorldJam/Menu", ParameterMode.ReadWrite, "Share World Jam", "Advertise your jam to this VRChat instance.");
+        RegisterParameter<int>(SpotiParameters.WorldJamPrompt, "SpotiOSC/WorldJam/Prompt", ParameterMode.Write, "World Jam Prompt", "Local card: 0 hidden, 1 invitation, 2 joining, 3 retry, 4 joined.");
+        RegisterParameter<bool>(SpotiParameters.WorldJamJoin, "SpotiOSC/UI/Pressed/Join", ParameterMode.Read, "Join World Jam", "Accept the world jam invitation.");
+        RegisterParameter<bool>(SpotiParameters.WorldJamDismiss, "SpotiOSC/UI/Pressed/Dismiss", ParameterMode.Read, "Dismiss World Jam", "Dismiss this jam without repeated prompts.");
         RegisterParameter<bool>(SpotiParameters.Enabled, "SpotiOSC/Enabled", ParameterMode.Write, "Enabled", "Set to true if the module is enabled.");
         RegisterParameter<bool>(SpotiParameters.WantJam, "SpotiOSC/WantJam", ParameterMode.ReadWrite, "Want Jam", "Set to true if you want to join a jam.");
         RegisterParameter<bool>(SpotiParameters.InAJam, "SpotiOSC/InAJam", ParameterMode.Write, "In A Jam", "Set to true if you are in a jam.");
@@ -366,13 +442,13 @@ public sealed class SpotiOSC : Module
         RegisterParameter<bool>(SpotiParameters.PlayUri, "SpotiOSC/PlayUri/*", ParameterMode.ReadWrite, "Play URI (Local)", "Launches a wildcard spotify: URI through the local system handler.");
         RegisterParameter<int>(SpotiParameters.ShuffleMode, "SpotiOSC/ShuffleMode", ParameterMode.ReadWrite, "Shuffle Mode (Mapped)", "Off=0, shuffle=1, smart shuffle=2.");
         RegisterParameter<int>(SpotiParameters.RepeatMode, "SpotiOSC/RepeatMode", ParameterMode.ReadWrite, "Repeat Mode (Mapped)", "Off=0, track=1, context=2.");
-        RegisterParameter<float>(SpotiParameters.Timestamp, "SpotiOSC/Timestamp", ParameterMode.ReadWrite, "Timestamp", "Playback timestamp.");
-        RegisterParameter<float>(SpotiParameters.PlaybackPosition, "SpotiOSC/PlaybackPosition", ParameterMode.ReadWrite, "Playback Progress (ms)", "Playback progress in ms.");
+        RegisterParameter<float>(SpotiParameters.Timestamp, "SpotiOSC/Timestamp", ParameterMode.Write, "Timestamp", "Playback timestamp reported by Spotify.");
+        RegisterParameter<float>(SpotiParameters.PlaybackPosition, "SpotiOSC/PlaybackPosition", ParameterMode.ReadWrite, "Playback Progress (ms)", "Playback progress in ms. Set to a nonnegative position to seek.");
         RegisterParameter<bool>(SpotiParameters.IsPlaying, "SpotiOSC/IsPlaying", ParameterMode.Write, "Is Playing", "Whether playback is active.");
-        RegisterParameter<bool>(SpotiParameters.DeviceIsActive, "SpotiOSC/DeviceIsActive", ParameterMode.ReadWrite, "Device Active", "Device is active.");
-        RegisterParameter<bool>(SpotiParameters.DeviceIsPrivate, "SpotiOSC/DeviceIsPrivate", ParameterMode.ReadWrite, "Private Session", "Device is in a private session.");
-        RegisterParameter<bool>(SpotiParameters.DeviceIsRestricted, "SpotiOSC/DeviceIsRestricted", ParameterMode.ReadWrite, "Restricted Device", "Device is restricted.");
-        RegisterParameter<bool>(SpotiParameters.DeviceSupportsVolume, "SpotiOSC/DeviceSupportsVolume", ParameterMode.ReadWrite, "Volume Support", "Device supports volume.");
+        RegisterParameter<bool>(SpotiParameters.DeviceIsActive, "SpotiOSC/DeviceIsActive", ParameterMode.Write, "Device Active", "Device is active.");
+        RegisterParameter<bool>(SpotiParameters.DeviceIsPrivate, "SpotiOSC/DeviceIsPrivate", ParameterMode.Write, "Private Session", "Device is in a private session.");
+        RegisterParameter<bool>(SpotiParameters.DeviceIsRestricted, "SpotiOSC/DeviceIsRestricted", ParameterMode.Write, "Restricted Device", "Device is restricted.");
+        RegisterParameter<bool>(SpotiParameters.DeviceSupportsVolume, "SpotiOSC/DeviceSupportsVolume", ParameterMode.Write, "Volume Support", "Device supports volume.");
         RegisterParameter<int>(SpotiParameters.DeviceVolumePercent, "SpotiOSC/Volume", ParameterMode.ReadWrite, "Device Volume (%)", "Set to 0-100 to change playback volume.");
         RegisterParameter<int>(SpotiParameters.ContextType, "SpotiOSC/ContextType", ParameterMode.Write, "Context Type (Mapped)", "Playlist=0, otherwise -1.");
         RegisterParameter<int>(SpotiParameters.DiscNumber, "SpotiOSC/DiscNumber", ParameterMode.Write, "Disc Number", "Track disc number.");

@@ -23,6 +23,20 @@ internal sealed class JamEventHandler
         _logDebug = logDebug;
     }
 
+    public async Task LoadAsync()
+    {
+        _jam.ApplyLeave();
+        try
+        {
+            if (await _jam.GetCurrentAsync() is { ValueKind: JsonValueKind.Object } session)
+                ApplySession(session.TryGetProperty("session", out var nested) ? nested : session);
+        }
+        catch (Exception exception)
+        {
+            _logDebug($"Current Jam request failed: {exception.GetType().Name}");
+        }
+    }
+
     public void Handle(JsonElement payload)
     {
         if (payload.TryGetProperty("session", out var session)) ApplySession(session);
@@ -35,6 +49,7 @@ internal sealed class JamEventHandler
 
     private void ApplySession(JsonElement session)
     {
+        if (session.ValueKind != JsonValueKind.Object) return;
         try
         {
             var state = _jam.State;
@@ -78,7 +93,7 @@ internal sealed class JamEventHandler
         }
         catch (Exception exception)
         {
-            _logDebug($"Jam session update failed: {exception.Message}");
+            _logDebug($"Jam session update failed: {exception.GetType().Name}");
         }
     }
 
@@ -111,6 +126,7 @@ internal sealed class JamEventHandler
         _context.IsJamOwner = isOwner;
         _output.Set(SpotiOSC.SpotiParameters.JamParticipantCount, _jam.State.ParticipantCount);
         _output.Set(SpotiOSC.SpotiParameters.IsJamOwner, isOwner);
+        _output.Set(SpotiOSC.SpotiParameters.SessionIsOwner, isOwner);
     }
 
     private async Task UpdateShareableCodeAsync(string? uri)
@@ -126,7 +142,7 @@ internal sealed class JamEventHandler
         }
         catch (Exception exception)
         {
-            _logDebug($"Jam share URL generation failed: {exception.Message}");
+            _logDebug($"Jam share URL generation failed: {exception.GetType().Name}");
         }
         finally
         {

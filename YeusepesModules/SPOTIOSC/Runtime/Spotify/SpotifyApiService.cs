@@ -11,7 +11,10 @@ namespace YeusepesModules.SPOTIOSC.Runtime.Spotify;
 internal sealed class SpotifyApiService
 {
     private const string MelodyEndpoint = "https://gue1-spclient.spotify.com/melody/v1/msg/batch";
-    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web)
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower
+    };
     private readonly HttpClient _httpClient;
     private SpotifyClient _client = null!;
 
@@ -107,6 +110,9 @@ internal sealed class SpotifyApiService
 
     public Task SetVolumeAsync(int volumePercent, string? deviceId = null) =>
         _client.Player.SetVolume(new PlayerVolumeRequest(volumePercent) { DeviceId = deviceId });
+
+    public Task SeekAsync(int positionMs, string? deviceId = null) =>
+        _client.Player.SeekTo(new PlayerSeekToRequest(positionMs) { DeviceId = deviceId });
 
     public async Task<TrackAudioFeatures?> GetTrackFeaturesAsync(string trackId)
     {

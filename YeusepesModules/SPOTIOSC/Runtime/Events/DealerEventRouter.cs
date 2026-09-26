@@ -78,7 +78,7 @@ internal sealed class DealerEventRouter
         if (payload.ValueKind != JsonValueKind.Object) return;
         if (payload.TryGetProperty("session", out var session) && _deduplicator.IsDuplicate(session))
         {
-            _logDebug("Duplicate or incomplete session event ignored");
+            _logDebug("Duplicate session event ignored");
             return;
         }
 

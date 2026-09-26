@@ -61,6 +61,11 @@ internal sealed class PlaybackCommandController
                 if (volume is >= 0 and <= 100)
                     Run(() => _api.SetVolumeAsync(volume, _context.DeviceId), "Volume update failed");
                 return true;
+            case SpotiOSC.SpotiParameters.PlaybackPosition:
+                var position = parameter.GetValue<float>();
+                if (float.IsFinite(position) && position >= 0 && (double)position <= int.MaxValue)
+                    Run(() => _api.SeekAsync((int)position, _context.DeviceId), "Seek failed");
+                return true;
             case SpotiOSC.SpotiParameters.GetTrackFeatures:
                 _features.SetEnabled(parameter.GetValue<bool>());
                 return true;

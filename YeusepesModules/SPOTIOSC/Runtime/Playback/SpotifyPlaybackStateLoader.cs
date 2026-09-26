@@ -8,25 +8,26 @@ namespace YeusepesModules.SPOTIOSC.Runtime.Playback;
 
 internal static class SpotifyPlaybackStateLoader
 {
-    public static async Task LoadAsync(SpotifyRequestContext context, SpotifyUtilities utilities)
+    public static async Task LoadAsync(SpotifyRequestContext context, SpotifyUtilities utilities, CancellationToken cancellationToken = default)
     {
         try
         {
             using var request = CreateRequest(context);
-            using var response = await context.HttpClient.SendAsync(request);
-            if (response.IsSuccessStatusCode)
-            {
-                using var document = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-                Apply(document.RootElement, context);
-                return;
-            }
+            using var response = await context.HttpClient.SendAsync(request, cancellationToken);
             if (response.StatusCode == HttpStatusCode.NoContent)
             {
                 utilities.Log("No active playback detected. Please start playing something in Spotify.");
                 return;
             }
+            if (response.IsSuccessStatusCode)
+            {
+                using var document = JsonDocument.Parse(await response.Content.ReadAsByteArrayAsync(cancellationToken));
+                Apply(document.RootElement, context);
+                return;
+            }
             utilities.Log("Unable to fetch playback state. Please start playing something in Spotify.");
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (JsonException)
         {
             utilities.LogDebug("Playback state response did not contain JSON");
@@ -52,12 +53,13 @@ internal static class SpotifyPlaybackStateLoader
 
     private static void Apply(JsonElement state, SpotifyRequestContext context)
     {
-        if (state.TryGetProperty("device", out var device))
+        if (state.TryGetProperty("device", out var device) && device.ValueKind == JsonValueKind.Object)
         {
             context.DeviceId = device.GetProperty("id").GetString();
             context.DeviceName = device.GetProperty("name").GetString();
             context.IsActiveDevice = device.GetProperty("is_active").GetBoolean();
-            context.VolumePercent = device.GetProperty("volume_percent").GetInt32();
+            if (device.TryGetProperty("volume_percent", out var volume) && volume.ValueKind == JsonValueKind.Number)
+                context.VolumePercent = volume.GetInt32();
         }
         if (state.TryGetProperty("shuffle_state", out var shuffle)) context.ShuffleState = shuffle.GetBoolean();
         if (state.TryGetProperty("smart_shuffle", out var smart)) context.SmartShuffle = smart.GetBoolean();
@@ -71,6 +73,7 @@ internal static class SpotifyPlaybackStateLoader
 
     private static void ApplyContext(JsonElement source, SpotifyRequestContext context)
     {
+        if (source.ValueKind != JsonValueKind.Object) return;
         if (source.TryGetProperty("external_urls", out var urls) && urls.TryGetProperty("spotify", out var url))
             context.ContextExternalUrl = url.GetString();
         if (source.TryGetProperty("href", out var href)) context.ContextHref = href.GetString();
@@ -80,6 +83,7 @@ internal static class SpotifyPlaybackStateLoader
 
     private static void ApplyItem(JsonElement item, SpotifyRequestContext context)
     {
+        if (item.ValueKind != JsonValueKind.Object) return;
         context.TrackName = item.GetProperty("name").GetString();
         if (item.TryGetProperty("duration_ms", out var duration)) context.TrackDurationMs = duration.GetInt32();
         if (item.TryGetProperty("disc_number", out var disc)) context.DiscNumber = disc.GetInt32();

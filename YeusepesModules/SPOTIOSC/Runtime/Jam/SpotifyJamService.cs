@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
@@ -33,6 +34,18 @@ internal sealed class SpotifyJamService
 
     public JamSessionState State { get; } = new();
 
+    public async Task<JsonElement?> GetCurrentAsync()
+    {
+        using var request = _client.CreateRequest(HttpMethod.Get,
+            "https://gue1-spclient.spotify.com/social-connect/v2/sessions/current");
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        using var response = await _context.HttpClient.SendAsync(request);
+        if (response.StatusCode is HttpStatusCode.NoContent or HttpStatusCode.NotFound) return null;
+        response.EnsureSuccessStatusCode();
+        using var document = JsonDocument.Parse(await response.Content.ReadAsByteArrayAsync());
+        return document.RootElement.Clone();
+    }
+
     public async Task<bool> CreateAsync()
     {
         try
@@ -49,17 +62,18 @@ internal sealed class SpotifyJamService
         }
         catch (Exception exception)
         {
-            _utilities.LogDebug($"Spotify Jam creation failed: {exception.Message}");
+            _utilities.LogDebug($"Spotify Jam creation failed: {exception.GetType().Name}");
             _output.Set(SpotiOSC.SpotiParameters.Error, true);
         }
         return false;
     }
 
-    public async Task<bool> JoinAsync(string sessionId)
+    public async Task<bool> JoinAsync(string sessionId, CancellationToken cancellationToken = default)
     {
         try
         {
-            await SpotifyPlaybackStateLoader.LoadAsync(_context, _utilities);
+            await SpotifyPlaybackStateLoader.LoadAsync(_context, _utilities, cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
             if (string.IsNullOrEmpty(_context.DeviceId))
             {
                 _utilities.LogDebug("Failed to find an active device. Cannot join Spotify Jam.");
@@ -73,19 +87,20 @@ internal sealed class SpotifyJamService
                 url,
                 new StringContent("{}", Encoding.UTF8, "application/json"));
             ConfigureSocialHeaders(request, "1.2.57.463", "131");
-            await _client.SendAsync(request);
+            await _client.SendAsync(request, cancellationToken);
 
             State.SessionId = sessionId;
             SetActive(true);
             return true;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (UnauthorizedAccessException)
         {
             _utilities.LogDebug("Token refresh failed. Please sign in again.");
         }
         catch (Exception exception)
         {
-            _utilities.LogDebug($"Spotify Jam join failed: {exception.Message}");
+            _utilities.LogDebug($"Spotify Jam join failed: {exception.GetType().Name}");
             _output.Set(SpotiOSC.SpotiParameters.Error, true);
         }
         return false;
@@ -128,7 +143,7 @@ internal sealed class SpotifyJamService
         }
         catch (Exception exception)
         {
-            _utilities.LogDebug($"Spotify Jam leave failed: {exception.Message}");
+            _utilities.LogDebug($"Spotify Jam leave failed: {exception.GetType().Name}");
             _output.Set(SpotiOSC.SpotiParameters.Error, true);
         }
         return false;
@@ -141,8 +156,16 @@ internal sealed class SpotifyJamService
         _context.IsJamOwner = false;
         _context.JamShortCode = null;
         _context.JamOwnerName = null;
+        _context.JamParticipantImages = [];
         _output.Set(SpotiOSC.SpotiParameters.InAJam, false);
         _output.Set(SpotiOSC.SpotiParameters.IsJamOwner, false);
+        _output.Set(SpotiOSC.SpotiParameters.SessionIsOwner, false);
+        _output.Set(SpotiOSC.SpotiParameters.JamParticipantCount, 0);
+        _output.Set(SpotiOSC.SpotiParameters.SessionIsListening, false);
+        _output.Set(SpotiOSC.SpotiParameters.SessionIsControlling, false);
+        _output.Set(SpotiOSC.SpotiParameters.QueueOnlyMode, false);
+        _output.Set(SpotiOSC.SpotiParameters.SessionMaxMemberCount, 0);
+        _output.Set(SpotiOSC.SpotiParameters.HostIsGroup, false);
         _output.Set(SpotiOSC.SpotiParameters.WantJam, false);
     }
 
@@ -195,9 +218,10 @@ internal sealed class SpotifyJamService
         ConfigureBrowserHeaders(request, "131");
 
         using var response = await _context.HttpClient.SendAsync(request);
-        var body = await response.Content.ReadAsStringAsync();
         response.EnsureSuccessStatusCode();
-        var url = JsonSerializer.Deserialize<JsonElement>(body).GetProperty("shareable_url").GetString();
+        // Spotify can return JSON with an invalid charset label; parse its UTF-8 bytes directly.
+        using var document = JsonDocument.Parse(await response.Content.ReadAsByteArrayAsync());
+        var url = document.RootElement.GetProperty("shareable_url").GetString();
         return url?.Split('/').Last();
     }
 

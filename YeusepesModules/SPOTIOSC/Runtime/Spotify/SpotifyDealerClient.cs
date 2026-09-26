@@ -196,10 +196,7 @@ internal sealed class SpotifyDealerClient : IAsyncDisposable
             using var playbackRequest = CreatePlaybackRegistration(connectionId, deviceId);
             using var playbackResponse = await _context.HttpClient.SendAsync(playbackRequest, cancellationToken);
             if (!playbackResponse.IsSuccessStatusCode)
-            {
                 _logDebug($"Dealer playback registration failed: {playbackResponse.StatusCode}");
-                return;
-            }
 
             using var stateRequest = CreateStateRegistration(connectionId, deviceId);
             using var stateResponse = await _context.HttpClient.SendAsync(stateRequest, cancellationToken);

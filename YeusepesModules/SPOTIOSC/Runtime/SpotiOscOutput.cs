@@ -7,6 +7,7 @@ internal sealed class SpotiOscOutput
     private readonly Action<string> _triggerEvent;
     private readonly Action<string> _changeState;
     private readonly Action<string> _logDebug;
+    private readonly Dictionary<SpotiOSC.SpotiParameters, int> _pulseVersions = [];
 
     public SpotiOscOutput(
         Action<SpotiOSC.SpotiParameters, object> setParameter,
@@ -42,10 +43,21 @@ internal sealed class SpotiOscOutput
 
     public void ChangeState(string stateName) => _changeState(stateName);
 
-    public async Task PulseErrorAsync()
+    public Task PulseErrorAsync() => PulseAsync(SpotiOSC.SpotiParameters.Error);
+
+    public async Task PulseAsync(SpotiOSC.SpotiParameters parameter)
     {
-        Set(SpotiOSC.SpotiParameters.Error, true);
+        int version;
+        lock (_pulseVersions)
+        {
+            _pulseVersions[parameter] = version = _pulseVersions.GetValueOrDefault(parameter) + 1;
+            Set(parameter, false);
+            Set(parameter, true);
+        }
         await Task.Delay(100);
-        Set(SpotiOSC.SpotiParameters.Error, false);
+        lock (_pulseVersions)
+        {
+            if (_pulseVersions[parameter] == version) Set(parameter, false);
+        }
     }
 }

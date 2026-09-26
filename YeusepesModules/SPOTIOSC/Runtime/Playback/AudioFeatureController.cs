@@ -1,5 +1,4 @@
 using SpotifyAPI.Web;
-using System.Text.Json;
 using YeusepesModules.SPOTIOSC.Runtime.Spotify;
 using YeusepesModules.SPOTIOSC.Utils.Requests;
 
@@ -33,17 +32,13 @@ internal sealed class AudioFeatureController
         Enabled = enabled;
         if (!enabled) _requestedTrackId = null;
         _logDebug($"GetTrackFeatures set to: {enabled}");
-        if (enabled && _context.TrackUri?.StartsWith(TrackPrefix, StringComparison.Ordinal) == true)
-            Request(_context.TrackUri[TrackPrefix.Length..]);
+        FetchIfEnabled();
     }
 
-    public void FetchIfEnabled(JsonElement item)
+    public void FetchIfEnabled()
     {
-        if (!Enabled) return;
-        if (item.TryGetProperty("id", out var id) && !string.IsNullOrEmpty(id.GetString()))
-            Request(id.GetString()!);
-        else
-            _logDebug("No track ID found; audio features were not fetched");
+        if (Enabled && _context.TrackUri?.StartsWith(TrackPrefix, StringComparison.Ordinal) == true)
+            Request(_context.TrackUri[TrackPrefix.Length..]);
     }
 
     private void Request(string trackId)
@@ -63,7 +58,7 @@ internal sealed class AudioFeatureController
                 if (_requestedTrackId == trackId) _requestedTrackId = null;
                 return;
             }
-            if (!Enabled || _requestedTrackId != trackId) return;
+            if (!Enabled || _requestedTrackId != trackId || _context.TrackUri != TrackPrefix + trackId) return;
             Apply(features);
             _logDebug($"Audio features updated for track: {_context.TrackName}");
         }

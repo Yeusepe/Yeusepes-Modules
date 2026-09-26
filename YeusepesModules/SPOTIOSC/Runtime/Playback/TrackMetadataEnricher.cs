@@ -9,12 +9,11 @@ namespace YeusepesModules.SPOTIOSC.Runtime.Playback;
 
 internal sealed class TrackMetadataEnricher : IAsyncDisposable
 {
-    private const int MaxBatchSize = 50;
-    private static readonly TimeSpan BatchDelay = TimeSpan.FromMilliseconds(500);
+    private static readonly TimeSpan FetchDelay = TimeSpan.FromMilliseconds(500);
     private readonly SpotifyRequestContext _context;
     private readonly PlaybackProjection _projection;
     private readonly Action<string> _logDebug;
-    private readonly HashSet<string> _pendingIds = [];
+    private string? _pendingId;
     private readonly HashSet<Task> _activeRequests = [];
     private readonly CancellationTokenSource _lifetime = new();
     private readonly object _gate = new();
@@ -36,10 +35,10 @@ internal sealed class TrackMetadataEnricher : IAsyncDisposable
         if (string.IsNullOrWhiteSpace(trackId)) return;
         lock (_gate)
         {
-            if (_disposed) return;
-            _pendingIds.Add(trackId);
+            if (_disposed || _pendingId == trackId) return;
+            _pendingId = trackId;
             (_timer ??= new Timer(FetchPending, null, Timeout.InfiniteTimeSpan, Timeout.InfiniteTimeSpan))
-                .Change(BatchDelay, Timeout.InfiniteTimeSpan);
+                .Change(FetchDelay, Timeout.InfiniteTimeSpan);
         }
     }
 
@@ -58,24 +57,29 @@ internal sealed class TrackMetadataEnricher : IAsyncDisposable
 
     private async Task FetchPendingAsync(CancellationToken cancellationToken)
     {
-        var ids = TakePending();
-        if (ids.Count == 0) return;
+        string? trackId;
+        lock (_gate)
+        {
+            trackId = _pendingId;
+            _pendingId = null;
+        }
+        if (trackId is null) return;
 
         try
         {
-            using var request = CreateRequest(ids);
+            using var request = CreateRequest(trackId);
             using var response = await _context.HttpClient.SendAsync(request, cancellationToken);
             if (response.IsSuccessStatusCode)
             {
                 using var document = JsonDocument.Parse(
-                    await response.Content.ReadAsStringAsync(cancellationToken));
+                    await response.Content.ReadAsByteArrayAsync(cancellationToken));
                 Apply(document.RootElement);
                 return;
             }
 
             if (response.StatusCode == HttpStatusCode.TooManyRequests)
             {
-                Requeue(ids, response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(1));
+                Requeue(trackId, response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(1));
                 return;
             }
 
@@ -91,35 +95,25 @@ internal sealed class TrackMetadataEnricher : IAsyncDisposable
         }
     }
 
-    private List<string> TakePending()
+    private void Requeue(string trackId, TimeSpan delay)
     {
         lock (_gate)
         {
-            var ids = _pendingIds.Take(MaxBatchSize).ToList();
-            foreach (var id in ids) _pendingIds.Remove(id);
-            return ids;
-        }
-    }
-
-    private void Requeue(IEnumerable<string> ids, TimeSpan delay)
-    {
-        lock (_gate)
-        {
-            if (_disposed) return;
-            foreach (var id in ids) _pendingIds.Add(id);
+            if (_disposed || _context.TrackUri != $"spotify:track:{trackId}") return;
+            _pendingId = trackId;
+            _timer?.Change(delay, Timeout.InfiniteTimeSpan);
         }
         _logDebug($"Track metadata rate limited; retrying in {delay.TotalMilliseconds}ms");
-        _timer?.Change(delay, Timeout.InfiniteTimeSpan);
     }
 
-    private HttpRequestMessage CreateRequest(IEnumerable<string> ids)
+    private HttpRequestMessage CreateRequest(string trackId)
     {
         var token = CredentialManager.LoadApiAccessToken();
         if (string.IsNullOrEmpty(token)) token = _context.AccessToken;
 
         var request = new HttpRequestMessage(
             HttpMethod.Get,
-            $"https://api.spotify.com/v1/tracks?ids={string.Join(',', ids)}");
+            $"https://api.spotify.com/v1/tracks/{Uri.EscapeDataString(trackId)}");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         request.Headers.Add("Accept", "*/*");
         request.Headers.Add("Accept-Language", "en-US,en;q=0.9");
@@ -132,21 +126,15 @@ internal sealed class TrackMetadataEnricher : IAsyncDisposable
         return request;
     }
 
-    private void Apply(JsonElement response)
+    private void Apply(JsonElement track)
     {
-        if (!response.TryGetProperty("tracks", out var tracks) || tracks.ValueKind != JsonValueKind.Array)
+        if (!TryReadArtists(track, out var trackUri, out var artists) ||
+            !string.Equals(_context.TrackUri, trackUri, StringComparison.Ordinal))
             return;
 
-        foreach (var track in tracks.EnumerateArray())
-        {
-            if (!TryReadArtists(track, out var trackUri, out var artists) ||
-                !string.Equals(_context.TrackUri, trackUri, StringComparison.Ordinal))
-                continue;
-
-            _context.Artists = artists;
-            _projection.Update();
-            _logDebug($"Enriched track metadata: {string.Join(", ", artists.Select(artist => artist.Name))}");
-        }
+        _context.Artists = artists;
+        _projection.Update();
+        _logDebug($"Enriched track metadata: {string.Join(", ", artists.Select(artist => artist.Name))}");
     }
 
     private static bool TryReadArtists(
@@ -156,7 +144,7 @@ internal sealed class TrackMetadataEnricher : IAsyncDisposable
     {
         trackUri = null;
         artists = [];
-        if (track.ValueKind == JsonValueKind.Null ||
+        if (track.ValueKind != JsonValueKind.Object ||
             !track.TryGetProperty("artists", out var source) ||
             source.ValueKind != JsonValueKind.Array)
             return false;
@@ -186,7 +174,7 @@ internal sealed class TrackMetadataEnricher : IAsyncDisposable
         _lifetime.Cancel();
         lock (_gate)
         {
-            _pendingIds.Clear();
+            _pendingId = null;
             activeRequests = _activeRequests.ToArray();
         }
         await Task.WhenAll(activeRequests);

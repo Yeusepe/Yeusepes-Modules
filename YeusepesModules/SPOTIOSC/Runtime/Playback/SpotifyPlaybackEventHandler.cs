@@ -9,20 +9,17 @@ internal sealed class SpotifyPlaybackEventHandler
     private readonly SpotiOscOutput _output;
     private readonly PlaybackClock _clock;
     private readonly PlaybackProjection _projection;
-    private readonly AudioFeatureController _features;
 
     public SpotifyPlaybackEventHandler(
         SpotifyRequestContext context,
         SpotiOscOutput output,
         PlaybackClock clock,
-        PlaybackProjection projection,
-        AudioFeatureController features)
+        PlaybackProjection projection)
     {
         _context = context;
         _output = output;
         _clock = clock;
         _projection = projection;
-        _features = features;
     }
 
     public void HandlePayload(JsonElement payload)
@@ -61,11 +58,12 @@ internal sealed class SpotifyPlaybackEventHandler
 
     private void ApplyDevice(JsonElement state)
     {
-        if (!state.TryGetProperty("device", out var device)) return;
+        if (!state.TryGetProperty("device", out var device) || device.ValueKind != JsonValueKind.Object) return;
         _context.DeviceId = device.GetProperty("id").GetString();
         _context.DeviceName = device.GetProperty("name").GetString();
         _context.IsActiveDevice = device.GetProperty("is_active").GetBoolean();
-        _context.VolumePercent = device.GetProperty("volume_percent").GetInt32();
+        if (device.TryGetProperty("volume_percent", out var volume) && volume.ValueKind == JsonValueKind.Number)
+            _context.VolumePercent = volume.GetInt32();
         _output.Set(SpotiOSC.SpotiParameters.DeviceIsActive, _context.IsActiveDevice);
         _output.Set(SpotiOSC.SpotiParameters.DeviceIsPrivate, device.GetProperty("is_private_session").GetBoolean());
         _output.Set(SpotiOSC.SpotiParameters.DeviceIsRestricted, device.GetProperty("is_restricted").GetBoolean());
@@ -95,13 +93,14 @@ internal sealed class SpotifyPlaybackEventHandler
         if (state.TryGetProperty("timestamp", out var timestamp))
         {
             _context.Timestamp = timestamp.GetInt64();
-            _output.Set(SpotiOSC.SpotiParameters.Timestamp, (int)(_context.Timestamp % int.MaxValue));
+            _output.Set(SpotiOSC.SpotiParameters.Timestamp, (float)(_context.Timestamp % int.MaxValue));
         }
         if (!state.TryGetProperty("progress_ms", out var progress)) return;
 
         _context.ProgressMs = progress.GetInt32();
         var isPlaying = state.TryGetProperty("is_playing", out var playing) && playing.GetBoolean();
-        var duration = state.TryGetProperty("item", out var item) && item.TryGetProperty("duration_ms", out var value)
+        var duration = state.TryGetProperty("item", out var item) && item.ValueKind == JsonValueKind.Object &&
+                       item.TryGetProperty("duration_ms", out var value)
             ? value.GetInt32()
             : _context.TrackDurationMs;
         _clock.Synchronize(_context.ProgressMs, isPlaying, duration);
@@ -109,7 +108,7 @@ internal sealed class SpotifyPlaybackEventHandler
 
     private void ApplyContext(JsonElement state)
     {
-        if (!state.TryGetProperty("context", out var playbackContext)) return;
+        if (!state.TryGetProperty("context", out var playbackContext) || playbackContext.ValueKind != JsonValueKind.Object) return;
         if (playbackContext.TryGetProperty("external_urls", out var urls) && urls.TryGetProperty("spotify", out var spotify))
             _context.ContextExternalUrl = spotify.GetString();
         if (playbackContext.TryGetProperty("href", out var href)) _context.ContextHref = href.GetString();
@@ -146,7 +145,7 @@ internal sealed class SpotifyPlaybackEventHandler
 
     private void ApplyTrack(JsonElement state)
     {
-        if (!state.TryGetProperty("item", out var item)) return;
+        if (!state.TryGetProperty("item", out var item) || item.ValueKind != JsonValueKind.Object) return;
         _context.TrackName = item.GetProperty("name").GetString();
         if (item.TryGetProperty("artists", out var artists))
             _context.Artists = artists.EnumerateArray()
@@ -162,8 +161,6 @@ internal sealed class SpotifyPlaybackEventHandler
         if (item.TryGetProperty("uri", out var uri)) _context.TrackUri = uri.GetString();
         if (item.TryGetProperty("currently_playing_type", out var type)) _context.CurrentlyPlayingType = type.GetString();
         if (item.TryGetProperty("album", out var album)) ApplyAlbum(album);
-        _features.FetchIfEnabled(item);
-        _output.Trigger("TrackChangedEvent");
     }
 
     private void ApplyAlbum(JsonElement album)
@@ -190,7 +187,7 @@ internal sealed class SpotifyPlaybackEventHandler
         if (!source.TryGetProperty(property, out var element)) return;
         var value = element.GetInt32();
         assign(value);
-        _output.Set(parameter, sendAsFloat ? (float)value : value);
+        _output.Set(parameter, sendAsFloat ? (object)(float)value : value);
     }
 
     private void SetBool(

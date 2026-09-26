@@ -57,14 +57,12 @@ internal sealed class SpotifyClusterEventHandler
     private void ApplyState(JsonElement state)
     {
         if (state.ValueKind != JsonValueKind.Object) return;
-        var isPlaying = _context.IsPlaying;
-        if (state.TryGetProperty("is_playing", out var playing))
-        {
-            isPlaying = playing.GetBoolean();
-            _context.IsPlaying = isPlaying;
-            _output.Set(SpotiOSC.SpotiParameters.IsPlaying, isPlaying);
-        }
-        var isPaused = state.TryGetProperty("is_paused", out var paused) && paused.GetBoolean();
+        var isPlaying = state.TryGetProperty("is_playing", out var playing)
+            ? playing.GetBoolean()
+            : _context.IsPlaying;
+        if (state.TryGetProperty("is_paused", out var paused)) isPlaying &= !paused.GetBoolean();
+        _context.IsPlaying = isPlaying;
+        _output.Set(SpotiOSC.SpotiParameters.IsPlaying, isPlaying);
 
         var position = _context.ProgressMs;
         if (TryReadInt32(state, "position_as_of_timestamp", out var positionValue))
@@ -76,7 +74,11 @@ internal sealed class SpotifyClusterEventHandler
             _context.TrackDurationMs = duration = durationValue;
             _output.Set(SpotiOSC.SpotiParameters.TrackDurationMs, (float)duration);
         }
-        if (TryReadInt64(state, "timestamp", out var timestamp)) _context.Timestamp = timestamp;
+        if (TryReadInt64(state, "timestamp", out var timestamp))
+        {
+            _context.Timestamp = timestamp;
+            _output.Set(SpotiOSC.SpotiParameters.Timestamp, (float)(timestamp % int.MaxValue));
+        }
         if (state.TryGetProperty("track", out var track) && track.ValueKind == JsonValueKind.Object)
             ApplyTrack(track);
         if (state.TryGetProperty("context_uri", out var contextUri))
@@ -84,23 +86,33 @@ internal sealed class SpotifyClusterEventHandler
         if (state.TryGetProperty("options", out var options)) ApplyOptions(options);
 
         _clock.Synchronize(position, isPlaying, duration);
-        _output.Trigger(isPlaying && !isPaused ? "PlayEvent" : "PauseEvent");
+        _output.Trigger(isPlaying ? "PlayEvent" : "PauseEvent");
         _projection.Update();
     }
 
     private void ApplyTrack(JsonElement track)
     {
-        if (track.TryGetProperty("uri", out var uri)) _context.TrackUri = uri.GetString();
-        if (!track.TryGetProperty("metadata", out var metadata) || metadata.ValueKind != JsonValueKind.Object) return;
+        if (track.TryGetProperty("uri", out var uri) && _context.TrackUri != uri.GetString())
+        {
+            _context.TrackUri = uri.GetString();
+            _context.Artists = [];
+        }
+        if (track.TryGetProperty("metadata", out var metadata) && metadata.ValueKind == JsonValueKind.Object)
+            ApplyMetadata(metadata);
+        if (string.IsNullOrWhiteSpace(_context.ArtistNames) &&
+            _context.TrackUri?.StartsWith(TrackPrefix, StringComparison.Ordinal) == true)
+            _metadata.Enqueue(_context.TrackUri[TrackPrefix.Length..]);
+    }
+
+    private void ApplyMetadata(JsonElement metadata)
+    {
         if (metadata.TryGetProperty("title", out var title)) _context.TrackName = title.GetString();
         if (metadata.TryGetProperty("album_title", out var album)) _context.AlbumName = album.GetString();
 
         var artistName = metadata.TryGetProperty("artist_name", out var artist) ? artist.GetString() : null;
         var artistUri = metadata.TryGetProperty("artist_uri", out var artistId) ? artistId.GetString() : null;
-        if (!string.IsNullOrEmpty(artistName) || !string.IsNullOrEmpty(artistUri))
-            _context.Artists = [(artistName ?? string.Empty, artistUri ?? string.Empty)];
-        else if (_context.TrackUri?.StartsWith(TrackPrefix, StringComparison.Ordinal) == true)
-            _metadata.Enqueue(_context.TrackUri[TrackPrefix.Length..]);
+        if (!string.IsNullOrWhiteSpace(artistName))
+            _context.Artists = [(artistName, artistUri ?? string.Empty)];
 
         var image = metadata.TryGetProperty("image_url", out var normalImage)
             ? normalImage.GetString()

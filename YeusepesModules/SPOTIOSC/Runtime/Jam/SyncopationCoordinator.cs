@@ -6,18 +6,28 @@ namespace YeusepesModules.SPOTIOSC.Runtime.Jam;
 
 internal sealed class SyncopationCoordinator : IAsyncDisposable
 {
-    private static readonly TimeSpan JoinCooldown = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan RetryDelay = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan ContactSettleTime = TimeSpan.FromMilliseconds(200);
     private readonly SpotifyRequestContext _context;
     private readonly SpotifyJamService _jam;
     private readonly SpotiOscOutput _output;
     private readonly Action<string> _logDebug;
     private readonly SyncopationClient _client;
     private readonly Dictionary<SpotiOSC.SpotiParameters, bool> _receiverValues = [];
-    private readonly SemaphoreSlim _joinGate = new(1, 1);
+    private readonly Dictionary<SpotiOSC.SpotiParameters, bool> _senderValues = [];
+    private readonly object _stateLock = new();
+    private readonly SemaphoreSlim _jamGate = new(1, 1);
     private readonly CancellationTokenSource _lifetime = new();
     private (string Word1, string Word2)? _broadcast;
-    private Task? _joinTask;
+    private Task? _updateTask;
+    private bool _touching;
+    private int _broadcastVersion;
+    private long _receiverChangedAt;
+    private long _lastCodeAttempt;
+    private string? _resolvedCode;
+    private string? _resolvedSession;
     private long _lastJoinAttempt;
+    internal WorldJamCoordinator World { get; }
 
     public SyncopationCoordinator(
         SpotifyRequestContext context,
@@ -25,7 +35,9 @@ internal sealed class SyncopationCoordinator : IAsyncDisposable
         SpotiOscOutput output,
         HttpClient httpClient,
         Action<string> logDebug,
-        string serverUrl)
+        string serverUrl,
+        Func<string?>? worldLocation = null,
+        HttpClient? invitationTestClient = null)
     {
         _context = context;
         _jam = jam;
@@ -33,6 +45,7 @@ internal sealed class SyncopationCoordinator : IAsyncDisposable
         _logDebug = logDebug;
         _client = new SyncopationClient(httpClient, serverUrl, logDebug);
         _client.JamJoined += ClearBroadcast;
+        World = new WorldJamCoordinator(context, jam, new JamPairingClient(serverUrl, invitationTestClient), output, JoinWorldSessionAsync, logDebug, worldLocation);
         foreach (var binding in WordBindings) _receiverValues[binding.Receiver] = false;
     }
 
@@ -47,90 +60,205 @@ internal sealed class SyncopationCoordinator : IAsyncDisposable
         new("chorus", SpotiOSC.SpotiParameters.Chorus, SpotiOSC.SpotiParameters.ChorusReceiver)
     ];
 
-    public Task StartAsync() => _client.StartAsync();
+    public async Task StartAsync()
+    {
+        await _client.StartAsync();
+        World.Start();
+        _updateTask = RunInteractionsAsync();
+    }
 
     public bool TryHandleParameter(SpotiOSC.SpotiParameters parameter, bool value)
     {
         var binding = WordBindings.FirstOrDefault(item => item.Sender == parameter || item.Receiver == parameter);
         if (binding is null) return false;
-        if (binding.Receiver != parameter) return true;
+        if (binding.Receiver != parameter) {
+            bool changed;
+            lock (_stateLock) { changed = _senderValues.GetValueOrDefault(parameter) != value; _senderValues[parameter] = value; }
+            if (changed) World.PreemptControls();
+            return true;
+        }
 
-        _receiverValues[parameter] = value;
-        if (_joinTask is null || _joinTask.IsCompleted) _joinTask = TryJoinFromReceiversAsync();
+        lock (_stateLock)
+        {
+            if (_receiverValues[parameter] != value)
+            {
+                _receiverValues[parameter] = value;
+                _receiverChangedAt = Stopwatch.GetTimestamp();
+                _resolvedCode = null;
+                _resolvedSession = null;
+            }
+        }
         return true;
     }
 
-    public async Task SetTouchingAsync(bool touching)
+    public Task SetTouchingAsync(bool touching)
     {
-        if (!touching)
+        bool changed;
+        lock (_stateLock)
         {
-            ClearBroadcast();
-            return;
+            changed = _touching != touching;
+            if (_touching != touching)
+            {
+                _touching = touching;
+                _broadcastVersion++;
+            }
+            if (!touching) ClearBroadcast();
         }
-        if (!_context.IsInJam || string.IsNullOrEmpty(_jam.State.JoinToken) || _broadcast.HasValue) return;
-
-        var words = await _client.CreateCodeAsync(_jam.State.JoinToken);
-        if (!words.HasValue) return;
-        _broadcast = words;
-        SetWord(words.Value.Word1, true);
-        SetWord(words.Value.Word2, true);
+        if (changed) World.SetManualSharing(touching);
+        return Task.CompletedTask;
     }
 
     public async Task SetWantJamAsync(bool wantJam)
     {
-        if (_context.IsInJam == wantJam) return;
-        if (wantJam)
+        await _jamGate.WaitAsync(_lifetime.Token);
+        try
         {
-            await _jam.CreateAsync();
-            return;
+            if (_context.IsInJam == wantJam) return;
+            _output.Set(SpotiOSC.SpotiParameters.Error, false);
+            if (wantJam)
+            {
+                if (!await _jam.CreateAsync()) await _output.PulseErrorAsync();
+            }
+            else if (await _jam.LeaveAsync())
+            {
+                await SetTouchingAsync(false);
+                ClearReceivers();
+            }
         }
-        await _jam.LeaveAsync();
-        ClearBroadcast();
+        finally { _jamGate.Release(); }
+    }
+
+    public async Task SetWorldHostingAsync(bool hosting)
+    {
+        World.SetHosting(hosting);
+        if (hosting && !_context.IsInJam) await SetWantJamAsync(true);
+        if (hosting && World.WantsToHost && (!_context.IsInJam || (!_context.IsJamOwner && !World.CanHelp)))
+        {
+            World.SetHosting(false);
+            _output.Set(SpotiOSC.SpotiParameters.WorldJamHosting, false);
+            _logDebug("Sharing requires the jam host or a current authenticated helper session.");
+            await _output.PulseErrorAsync();
+        }
+    }
+
+    private async Task<bool> JoinWorldSessionAsync(string session, Func<bool> stillCurrent, CancellationToken cancellationToken)
+    {
+        await _jamGate.WaitAsync(cancellationToken);
+        try
+        {
+            if (_context.IsInJam || !stillCurrent()) return false;
+            bool joined = await _jam.JoinAsync(session, cancellationToken);
+            if (joined) { ClearReceivers(); _output.Set(SpotiOSC.SpotiParameters.Error, false); }
+            return joined;
+        }
+        finally { _jamGate.Release(); }
+    }
+
+    private async Task RunInteractionsAsync()
+    {
+        while (!_lifetime.IsCancellationRequested)
+        {
+            try
+            {
+                await Task.Delay(100, _lifetime.Token);
+                if (_context.IsInJam) await UpdateBroadcastAsync();
+                else
+                {
+                    ClearBroadcast();
+                    await TryJoinFromReceiversAsync();
+                }
+            }
+            catch (OperationCanceledException) when (_lifetime.IsCancellationRequested) { return; }
+            catch (Exception exception)
+            {
+                _logDebug($"Syncopation interaction failed: {exception.GetType().Name}");
+                await _output.PulseErrorAsync();
+            }
+        }
+    }
+
+    private async Task UpdateBroadcastAsync()
+    {
+        int version;
+        string? session;
+        lock (_stateLock)
+        {
+            session = _jam.State.JoinToken;
+            if (!_touching || _broadcast.HasValue || string.IsNullOrEmpty(session) ||
+                (_lastCodeAttempt != 0 && Stopwatch.GetElapsedTime(_lastCodeAttempt) < RetryDelay)) return;
+            version = _broadcastVersion;
+            _lastCodeAttempt = Stopwatch.GetTimestamp();
+        }
+
+        var words = await _client.CreateCodeAsync(session);
+        lock (_stateLock)
+        {
+            // A released contact or a different session must never publish a late response.
+            if (!words.HasValue || !_touching || !_context.IsInJam ||
+                version != _broadcastVersion || session != _jam.State.JoinToken) return;
+            _broadcast = words;
+            SetWord(words.Value.Word1, true);
+            SetWord(words.Value.Word2, true);
+            _lastCodeAttempt = 0;
+        }
     }
 
     private async Task TryJoinFromReceiversAsync()
     {
-        if (_context.IsInJam || !_joinGate.Wait(0)) return;
-        try
+        string code;
+        string? session;
+        long changedAt;
+        lock (_stateLock)
         {
-            await Task.Delay(50, _lifetime.Token);
             var words = WordBindings
                 .Where(binding => _receiverValues.GetValueOrDefault(binding.Receiver))
                 .Select(binding => binding.Word)
                 .Order(StringComparer.Ordinal)
                 .ToArray();
-            if (words.Length != 2 ||
-                (_lastJoinAttempt != 0 && Stopwatch.GetElapsedTime(_lastJoinAttempt) < JoinCooldown))
-                return;
-
+            if (words.Length != 2 || Stopwatch.GetElapsedTime(_receiverChangedAt) < ContactSettleTime ||
+                (_lastJoinAttempt != 0 && Stopwatch.GetElapsedTime(_lastJoinAttempt) < RetryDelay)) return;
+            code = $"{words[0]}_{words[1]}";
+            changedAt = _receiverChangedAt;
+            session = _resolvedCode == code ? _resolvedSession : null;
             _lastJoinAttempt = Stopwatch.GetTimestamp();
-            var sessionId = await _client.ResolveSessionAsync($"{words[0]}_{words[1]}");
-            if (string.IsNullOrEmpty(sessionId) || !await _jam.JoinAsync(sessionId))
+        }
+
+        session ??= await _client.ResolveSessionAsync(code);
+        lock (_stateLock)
+        {
+            if (_receiverChangedAt != changedAt) return;
+            // The relay consumes a code on lookup. Retrying Spotify must reuse that result.
+            _resolvedCode = code;
+            _resolvedSession = session;
+        }
+        await _jamGate.WaitAsync(_lifetime.Token);
+        try
+        {
+            lock (_stateLock)
+                if (_context.IsInJam || _receiverChangedAt != changedAt) return;
+            if (string.IsNullOrEmpty(session) || !await _jam.JoinAsync(session))
             {
                 await _output.PulseErrorAsync();
                 return;
             }
+            _output.Set(SpotiOSC.SpotiParameters.Error, false);
             ClearReceivers();
         }
-        catch (OperationCanceledException) when (_lifetime.IsCancellationRequested)
-        {
-        }
-        catch (Exception exception)
-        {
-            _logDebug($"Syncopation receiver join failed: {exception.Message}");
-        }
-        finally
-        {
-            _joinGate.Release();
-        }
+        finally { _jamGate.Release(); }
     }
 
     private void ClearReceivers()
     {
-        foreach (var binding in WordBindings)
+        lock (_stateLock)
         {
-            _receiverValues[binding.Receiver] = false;
-            _output.Set(binding.Receiver, false);
+            _resolvedCode = null;
+            _resolvedSession = null;
+            _receiverChangedAt = Stopwatch.GetTimestamp();
+            foreach (var binding in WordBindings)
+            {
+                _receiverValues[binding.Receiver] = false;
+                _output.Set(binding.Receiver, false);
+            }
         }
     }
 
@@ -143,29 +271,34 @@ internal sealed class SyncopationCoordinator : IAsyncDisposable
 
     private void ClearBroadcast()
     {
-        if (_broadcast is not { } words) return;
-        SetWord(words.Word1, false);
-        SetWord(words.Word2, false);
-        _broadcast = null;
+        lock (_stateLock)
+        {
+            if (_broadcast is not { } words) return;
+            SetWord(words.Word1, false);
+            SetWord(words.Word2, false);
+            _broadcast = null;
+            _broadcastVersion++;
+        }
     }
 
     public async ValueTask DisposeAsync()
     {
         _lifetime.Cancel();
-        if (_joinTask is not null)
+        if (_updateTask is not null)
         {
             try
             {
-                await _joinTask;
+                await _updateTask;
             }
             catch (OperationCanceledException)
             {
             }
         }
         _client.JamJoined -= ClearBroadcast;
+        await World.DisposeAsync();
         await _client.DisposeAsync();
         ClearBroadcast();
-        _joinGate.Dispose();
+        _jamGate.Dispose();
         _lifetime.Dispose();
     }
 }

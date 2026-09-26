@@ -1,5 +1,7 @@
 using System.IO;
 using System.Net.Http;
+using System.Net;
+using System.Diagnostics;
 using System.Net.Http.Headers;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -18,6 +20,10 @@ internal sealed class SyncopationClient : IAsyncDisposable
     private string? _instanceId;
     private string? _instanceToken;
     private int _lastEventSequence;
+    private readonly SemaphoreSlim _registrationGate = new(1, 1);
+    private readonly object _eventLock = new();
+    private long _lastResponseAt;
+    public bool IsHealthy => IsRegistered && _lastResponseAt != 0 && Stopwatch.GetElapsedTime(_lastResponseAt) < TimeSpan.FromSeconds(90);
 
     public SyncopationClient(HttpClient httpClient, string serverUrl, Action<string> logDebug)
     {
@@ -27,19 +33,17 @@ internal sealed class SyncopationClient : IAsyncDisposable
     }
 
     public event Action? JamJoined;
+    public event Action? RegistrationChanged;
 
-    public async Task<bool> StartAsync()
+    public Task<bool> StartAsync()
     {
-        if (string.IsNullOrEmpty(_baseUrl) || _baseUrl.Contains("your-melody-server")) return false;
-        if (!await RegisterAsync()) return false;
-        _eventsTask = RunEventLoopAsync(_lifetime.Token);
-        _heartbeatTask = RunHeartbeatLoopAsync(_lifetime.Token);
-        return true;
+        // 被动接收世界信标时不注册旧的触碰协议，也不建立身份或心跳。
+        return Task.FromResult(!string.IsNullOrEmpty(_baseUrl) && !_baseUrl.Contains("your-melody-server"));
     }
 
     public async Task<(string Word1, string Word2)?> CreateCodeAsync(string sessionId)
     {
-        if (!IsRegistered) return null;
+        if (!await EnsureRegisteredAsync()) return null;
         try
         {
             using var response = await SendAsync(
@@ -47,7 +51,11 @@ internal sealed class SyncopationClient : IAsyncDisposable
                 "/syncopation/v1/jams",
                 new { instance_id = _instanceId, session_id = sessionId },
                 _lifetime.Token);
-            if (!response.IsSuccessStatusCode) return null;
+            if (!response.IsSuccessStatusCode)
+            {
+                _logDebug($"Syncopation code creation failed: {response.StatusCode}");
+                return null;
+            }
             using var document = await ReadJsonAsync(response, _lifetime.Token);
             var root = document.RootElement;
             return root.TryGetProperty("word1", out var word1) && root.TryGetProperty("word2", out var word2)
@@ -62,7 +70,7 @@ internal sealed class SyncopationClient : IAsyncDisposable
 
     public async Task<string?> ResolveSessionAsync(string code)
     {
-        if (!IsRegistered) return null;
+        if (!await EnsureRegisteredAsync()) return null;
         try
         {
             using var response = await SendAsync(
@@ -70,7 +78,11 @@ internal sealed class SyncopationClient : IAsyncDisposable
                 "/syncopation/v1/jams/join",
                 new { code },
                 _lifetime.Token);
-            if (!response.IsSuccessStatusCode) return null;
+            if (!response.IsSuccessStatusCode)
+            {
+                _logDebug($"Syncopation join lookup failed: {response.StatusCode}");
+                return null;
+            }
             using var document = await ReadJsonAsync(response, _lifetime.Token);
             return document.RootElement.TryGetProperty("session_id", out var id) ? id.GetString() : null;
         }
@@ -78,6 +90,20 @@ internal sealed class SyncopationClient : IAsyncDisposable
         {
             return null;
         }
+    }
+
+    private async Task<bool> EnsureRegisteredAsync()
+    {
+        await _registrationGate.WaitAsync(_lifetime.Token);
+        try {
+            bool ready = IsRegistered || await RegisterAsync();
+            if (ready) {
+                _eventsTask ??= RunEventLoopAsync(_lifetime.Token);
+                _heartbeatTask ??= RunHeartbeatLoopAsync(_lifetime.Token);
+            }
+            return ready;
+        }
+        finally { _registrationGate.Release(); }
     }
 
     private async Task<bool> RegisterAsync()
@@ -101,7 +127,9 @@ internal sealed class SyncopationClient : IAsyncDisposable
             _instanceId = root.TryGetProperty("instance_id", out var id) ? id.GetString() : null;
             _instanceToken = root.TryGetProperty("instance_token", out var token) ? token.GetString() : null;
             if (!IsRegistered) return false;
-            _logDebug($"Syncopation registered: {_instanceId}");
+            lock (_eventLock) _lastEventSequence = 0;
+            RegistrationChanged?.Invoke();
+            _logDebug("Syncopation registered");
             return true;
         }
         catch (Exception exception) when (LogFailure("registration", exception))
@@ -114,13 +142,20 @@ internal sealed class SyncopationClient : IAsyncDisposable
     {
         while (!cancellationToken.IsCancellationRequested)
         {
+            bool healthy = false;
             try
             {
+                if (!await EnsureRegisteredAsync())
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+                    continue;
+                }
                 using var response = await SendAsync(
                     HttpMethod.Post,
                     $"/syncopation/v1/instances/{_instanceId}/heartbeat",
                     new { },
                     cancellationToken);
+                healthy = response.IsSuccessStatusCode;
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -128,12 +163,12 @@ internal sealed class SyncopationClient : IAsyncDisposable
             }
             catch (Exception exception)
             {
-                _logDebug($"Syncopation heartbeat failed: {exception.Message}");
+                _logDebug($"Syncopation heartbeat failed: {exception.GetType().Name}");
             }
 
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(Random.Shared.Next(40, 51)), cancellationToken);
+                await Task.Delay(TimeSpan.FromSeconds(healthy ? Random.Shared.Next(40, 51) : Random.Shared.Next(3, 8)), cancellationToken);
             }
             catch (OperationCanceledException)
             {
@@ -149,6 +184,11 @@ internal sealed class SyncopationClient : IAsyncDisposable
         {
             try
             {
+                if (!await EnsureRegisteredAsync())
+                {
+                    await Task.Delay(TimeSpan.FromSeconds(5), cancellationToken);
+                    continue;
+                }
                 await ListenAsync(cancellationToken);
                 failures = 0;
             }
@@ -158,7 +198,7 @@ internal sealed class SyncopationClient : IAsyncDisposable
             }
             catch (Exception exception)
             {
-                _logDebug($"Syncopation event stream failed: {exception.Message}");
+                _logDebug($"Syncopation event stream failed: {exception.GetType().Name}");
                 failures++;
                 await PollAsync(TimeSpan.FromSeconds(30), cancellationToken);
             }
@@ -177,6 +217,7 @@ internal sealed class SyncopationClient : IAsyncDisposable
 
     private async Task ListenAsync(CancellationToken cancellationToken)
     {
+        var token = _instanceToken;
         using var request = CreateRequest(
             HttpMethod.Get,
             $"/syncopation/v1/events/stream?instance_id={_instanceId}&since={_lastEventSequence}");
@@ -185,26 +226,31 @@ internal sealed class SyncopationClient : IAsyncDisposable
             request,
             HttpCompletionOption.ResponseHeadersRead,
             cancellationToken);
+        await CheckAuthenticationAsync(response, request, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         using var reader = new StreamReader(stream);
-        await foreach (var item in ReadEventsAsync(reader, cancellationToken)) ApplyEvent(item.Id, item.Data);
+        await foreach (var item in ReadEventsAsync(reader, cancellationToken))
+            if (token == _instanceToken) ApplyEvent(item.Id, item.Data);
     }
 
     private async Task PollAsync(TimeSpan duration, CancellationToken cancellationToken)
     {
         var stopAt = DateTime.UtcNow + duration;
+        bool snapshot = true;
         while (DateTime.UtcNow < stopAt && !cancellationToken.IsCancellationRequested)
         {
+            if (!IsRegistered) return;
             try
             {
                 using var response = await SendAsync(
                     HttpMethod.Get,
-                    $"/syncopation/v1/events?instance_id={_instanceId}&since={_lastEventSequence}",
+                    $"/syncopation/v1/events?instance_id={_instanceId}&since={_lastEventSequence}&snapshot={(snapshot ? 1 : 0)}",
                     cancellationToken: cancellationToken);
                 if (response.IsSuccessStatusCode)
                 {
+                    snapshot = false;
                     using var document = await ReadJsonAsync(response, cancellationToken);
                     if (document.RootElement.TryGetProperty("events", out var events))
                         foreach (var item in events.EnumerateArray()) ApplyEvent(null, item.GetRawText());
@@ -216,7 +262,7 @@ internal sealed class SyncopationClient : IAsyncDisposable
             }
             catch (Exception exception)
             {
-                _logDebug($"Syncopation polling failed: {exception.Message}");
+                _logDebug($"Syncopation polling failed: {exception.GetType().Name}");
             }
 
             try
@@ -232,12 +278,18 @@ internal sealed class SyncopationClient : IAsyncDisposable
 
     private void ApplyEvent(string? id, string data)
     {
+        lock (_eventLock)
+        {
         using var document = JsonDocument.Parse(data);
         var item = document.RootElement;
-        if (int.TryParse(id, out var idSequence)) AdvanceSequence(idSequence);
+        int.TryParse(id, out var eventSequence);
         if (item.TryGetProperty("seq", out var sequence) && sequence.TryGetInt32(out var value))
-            AdvanceSequence(value);
+            eventSequence = Math.Max(eventSequence, value);
+        if (eventSequence > 0 && eventSequence <= _lastEventSequence) return;
+        AdvanceSequence(eventSequence);
         if (item.TryGetProperty("type", out var type) && type.GetString() == "jam_joined") JamJoined?.Invoke();
+
+        }
     }
 
     private void AdvanceSequence(int sequence) =>
@@ -251,7 +303,26 @@ internal sealed class SyncopationClient : IAsyncDisposable
         bool authenticated = true)
     {
         using var request = CreateRequest(method, path, body, authenticated);
-        return await _httpClient.SendAsync(request, cancellationToken);
+        var response = await _httpClient.SendAsync(request, cancellationToken);
+        if (response.IsSuccessStatusCode) Interlocked.Exchange(ref _lastResponseAt, Stopwatch.GetTimestamp());
+        if (authenticated) await CheckAuthenticationAsync(response, request, cancellationToken);
+        return response;
+    }
+
+    private async Task CheckAuthenticationAsync(HttpResponseMessage response, HttpRequestMessage request, CancellationToken cancellationToken)
+    {
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+        {
+            await _registrationGate.WaitAsync(cancellationToken);
+            try
+            {
+                if (_instanceToken == request.Headers.Authorization?.Parameter)
+                {
+                    _instanceToken = null; _instanceId = null;
+                }
+            }
+            finally { _registrationGate.Release(); }
+        }
     }
 
     private HttpRequestMessage CreateRequest(
@@ -275,9 +346,9 @@ internal sealed class SyncopationClient : IAsyncDisposable
     private static async Task<JsonDocument> ReadJsonAsync(
         HttpResponseMessage response,
         CancellationToken cancellationToken) =>
-        JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        JsonDocument.Parse(await response.Content.ReadAsByteArrayAsync(cancellationToken));
 
-    private static async IAsyncEnumerable<ServerEvent> ReadEventsAsync(
+    private async IAsyncEnumerable<ServerEvent> ReadEventsAsync(
         StreamReader reader,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -287,6 +358,7 @@ internal sealed class SyncopationClient : IAsyncDisposable
         {
             var line = await reader.ReadLineAsync(cancellationToken);
             if (line is null) yield break;
+            Interlocked.Exchange(ref _lastResponseAt, Stopwatch.GetTimestamp());
             if (line.StartsWith(':')) continue;
             if (line.StartsWith("id:", StringComparison.Ordinal)) id = line[3..].Trim();
             else if (line.StartsWith("data:", StringComparison.Ordinal)) data.Append(line[5..].Trim());
@@ -312,13 +384,13 @@ internal sealed class SyncopationClient : IAsyncDisposable
         }
         catch (Exception exception)
         {
-            _logDebug($"Syncopation deregistration failed: {exception.Message}");
+            _logDebug($"Syncopation deregistration failed: {exception.GetType().Name}");
         }
     }
 
     private bool LogFailure(string operation, Exception exception)
     {
-        _logDebug($"Syncopation {operation} failed: {exception.Message}");
+        _logDebug($"Syncopation {operation} failed: {exception.GetType().Name}");
         return true;
     }
 
@@ -335,6 +407,7 @@ internal sealed class SyncopationClient : IAsyncDisposable
         {
         }
         await DeregisterAsync();
+        _registrationGate.Dispose();
         _lifetime.Dispose();
     }
 

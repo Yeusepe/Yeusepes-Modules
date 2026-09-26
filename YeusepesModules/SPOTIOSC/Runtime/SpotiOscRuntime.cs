@@ -20,6 +20,7 @@ internal sealed class SpotiOscRuntime : IAsyncDisposable
     private readonly AlbumArtworkColorService _artworkColors;
     private readonly PlaybackCommandController _commands;
     private readonly SpotifyJamService _jam;
+    private readonly JamEventHandler _jamEvents;
     private readonly SyncopationCoordinator _syncopation;
     private bool _disposed;
 
@@ -34,12 +35,13 @@ internal sealed class SpotiOscRuntime : IAsyncDisposable
     {
         _output = output;
         _logDebug = logDebug;
-        _projection = new PlaybackProjection(context, output);
+        var features = new AudioFeatureController(context, api, output, logDebug);
+        _projection = new PlaybackProjection(context, output, features);
         _clock = new PlaybackClock(output, logDebug);
         _metadata = new TrackMetadataEnricher(context, _projection, logDebug);
-        var features = new AudioFeatureController(context, api, output, logDebug);
         _artworkColors = new AlbumArtworkColorService(context, output, logDebug);
         _jam = new SpotifyJamService(context, utilities, output);
+        _jamEvents = new JamEventHandler(context, _jam, output, logDebug);
         _syncopation = new SyncopationCoordinator(
             context,
             _jam,
@@ -59,8 +61,7 @@ internal sealed class SpotiOscRuntime : IAsyncDisposable
                 context,
                 output,
                 _clock,
-                _projection,
-                features),
+                _projection),
             new SpotifyClusterEventHandler(
                 context,
                 output,
@@ -68,7 +69,7 @@ internal sealed class SpotiOscRuntime : IAsyncDisposable
                 _projection,
                 _metadata,
                 logDebug),
-            new JamEventHandler(context, _jam, output, logDebug),
+            _jamEvents,
             new SpotifyConnectEventHandler(context, output, logDebug),
             _projection,
             logDebug);
@@ -100,10 +101,9 @@ internal sealed class SpotiOscRuntime : IAsyncDisposable
 
     public async Task StartAsync()
     {
+        await _jamEvents.LoadAsync();
         await _dealer.StartAsync();
         _output.Set(SpotiOSC.SpotiParameters.Enabled, true);
-        _output.Set(SpotiOSC.SpotiParameters.InAJam, false);
-        _output.Set(SpotiOSC.SpotiParameters.IsJamOwner, false);
         _output.Set(SpotiOSC.SpotiParameters.Error, false);
         _output.Set(SpotiOSC.SpotiParameters.GetTrackFeatures, false);
         await _syncopation.StartAsync();
@@ -119,6 +119,14 @@ internal sealed class SpotiOscRuntime : IAsyncDisposable
 
     public Task SetWantJamAsync(bool value) => _syncopation.SetWantJamAsync(value);
     public Task SetTouchingAsync(bool value) => _syncopation.SetTouchingAsync(value);
+    public Task SetWorldHostingAsync(bool value) => _syncopation.SetWorldHostingAsync(value);
+    public Task JoinWorldJamAsync() => _syncopation.World.JoinAsync();
+    public void ReceiveWorldJam(float proximity) => _syncopation.World.Receive(proximity);
+    public void ReceiveWorldJam(int lane, int part, float proximity) => _syncopation.World.Receive(lane, part, proximity);
+    public void SetWorldJamBandwidth(int bits) => _syncopation.World.SetBandwidth(bits);
+    public void SetJamLocalControl(int index, float value) => _syncopation.World.SetLocalControl(index, value);
+    public void DismissWorldJam() => _syncopation.World.Dismiss();
+    public void RefreshWorldPrompt() => _syncopation.World.RefreshAvatar();
     public bool TryHandleCommand(RegisteredParameter parameter) => _commands.TryHandle(parameter);
 
     public async ValueTask DisposeAsync()

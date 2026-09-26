@@ -11,9 +11,10 @@ internal sealed class EventDeduplicator
 
     public bool IsDuplicate(JsonElement session)
     {
-        if (!session.TryGetProperty("session_id", out var sessionId) ||
+        if (session.ValueKind != JsonValueKind.Object ||
+            !session.TryGetProperty("session_id", out var sessionId) ||
             !session.TryGetProperty("timestamp", out var timestamp))
-            return true;
+            return false;
 
         var key = $"{sessionId}:{timestamp}";
         lock (_gate)

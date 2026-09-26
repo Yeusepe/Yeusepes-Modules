@@ -6,22 +6,31 @@ internal sealed class PlaybackProjection
 {
     private readonly SpotifyRequestContext _context;
     private readonly SpotiOscOutput _output;
+    private readonly AudioFeatureController _features;
     private string _trackUri = string.Empty;
     private string _contextUri = string.Empty;
     private bool _trackActive;
     private bool _contextActive;
     private string? _state;
 
-    public PlaybackProjection(SpotifyRequestContext context, SpotiOscOutput output)
+    public PlaybackProjection(SpotifyRequestContext context, SpotiOscOutput output, AudioFeatureController features)
     {
         _context = context;
         _output = output;
+        _features = features;
     }
 
     public void Update()
     {
+        var trackChanged = !string.IsNullOrEmpty(_context.TrackUri) && _trackUri != _context.TrackUri;
         UpdateEndpoint("CurrentSong", ref _trackUri, ref _trackActive, _context.TrackUri);
         UpdateEndpoint("CurrentPlaylist", ref _contextUri, ref _contextActive, _context.ContextUri);
+        if (trackChanged)
+        {
+            _output.Trigger("TrackChangedEvent");
+            _ = _output.PulseAsync(SpotiOSC.SpotiParameters.TrackChangedEvent);
+        }
+        _features.FetchIfEnabled();
     }
 
     public void UpdateState()
