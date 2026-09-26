@@ -142,6 +142,7 @@ public sealed class SpotiOSC : Module
     {
         YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("libusb-1.0.dll", Log);
         YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("cvextern.dll", Log);
+        YeusepesLowLevelTools.EarlyLoader.InitializeNativeLibraries("JamPake.dll", Log);
         _output = new SpotiOscOutput(
             (parameter, value) => SetParameterSafe(parameter, value),
             (address, value) => SendParameter(address, value),

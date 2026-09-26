@@ -22,6 +22,7 @@ namespace YeusepesLowLevelTools
         public static string Get(string key) => _config[key];
     }
 
+
     public static class NativeMethods
     {
         public const int SHOWNORMAL = 1;
