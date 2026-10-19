@@ -193,16 +193,10 @@ internal sealed class SpotifyDealerClient : IAsyncDisposable
         {
             var deviceId = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(connectionId)))
                 .ToLowerInvariant()[..40];
-            using var playbackRequest = CreatePlaybackRegistration(connectionId, deviceId);
-            using var playbackResponse = await _context.HttpClient.SendAsync(playbackRequest, cancellationToken);
-            if (!playbackResponse.IsSuccessStatusCode)
-                _logDebug($"Dealer playback registration failed: {playbackResponse.StatusCode}");
-
             using var stateRequest = CreateStateRegistration(connectionId, deviceId);
             using var stateResponse = await _context.HttpClient.SendAsync(stateRequest, cancellationToken);
-            _logDebug(stateResponse.IsSuccessStatusCode
-                ? "Dealer player-state subscription registered"
-                : $"Dealer player-state registration failed: {stateResponse.StatusCode}");
+            await SpotifyHttp.ReadResponseAsync(stateResponse, cancellationToken);
+            _logDebug("Dealer player-state subscription registered");
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -212,43 +206,6 @@ internal sealed class SpotifyDealerClient : IAsyncDisposable
             _logDebug($"Dealer device registration failed: {exception.Message}");
         }
     }
-
-    private HttpRequestMessage CreatePlaybackRegistration(string connectionId, string deviceId) =>
-        CreateJsonRequest(
-            HttpMethod.Post,
-            "https://gue1-spclient.spotify.com/track-playback/v1/devices",
-            new
-            {
-                device = new
-                {
-                    brand = "spotify",
-                    capabilities = new
-                    {
-                        change_volume = true,
-                        enable_play_token = false,
-                        supports_file_media_type = false,
-                        play_token_lost_behavior = "pause",
-                        disable_connect = false,
-                        audio_podcasts = false,
-                        video_playback = false,
-                        manifest_formats = Array.Empty<string>(),
-                        supports_preferred_media_type = false,
-                        supports_playback_offsets = false,
-                        supports_playback_speed = false
-                    },
-                    device_id = deviceId,
-                    device_type = "computer",
-                    metadata = new { },
-                    model = "web_player",
-                    name = "VRCOSC",
-                    platform_identifier = "web_player windows undefined;chrome 143.0.0.0;desktop",
-                    is_group = false
-                },
-                outro_endcontent_snooping = false,
-                connection_id = connectionId,
-                client_version = "harmony:4.62.1-5dc29b8a7",
-                volume = ushort.MaxValue
-            });
 
     private HttpRequestMessage CreateStateRegistration(string connectionId, string deviceId)
     {

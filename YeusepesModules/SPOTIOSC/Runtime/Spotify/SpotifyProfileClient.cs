@@ -1,5 +1,4 @@
 using System.Net.Http;
-using System.Net.Http.Headers;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using YeusepesModules.SPOTIOSC.Credentials;
@@ -10,23 +9,23 @@ internal sealed class SpotifyProfileClient
 {
     private const string ProfileUrl = "https://api.spotify.com/v1/me";
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
-    private readonly SpotifyAuthenticatedClient _client;
-    private readonly string _webPlayerToken;
+    private readonly HttpClient _httpClient;
 
-    public SpotifyProfileClient(HttpClient httpClient, string webPlayerToken)
+    public SpotifyProfileClient(HttpClient httpClient)
     {
-        _client = new SpotifyAuthenticatedClient(httpClient, webPlayerToken);
-        _webPlayerToken = webPlayerToken;
+        _httpClient = httpClient;
     }
 
     public async Task<SpotifyProfile> GetAsync()
     {
+        await CredentialManager.EnsureSignedInAsync();
         var token = CredentialManager.LoadApiAccessToken();
-        if (string.IsNullOrEmpty(token)) token = _webPlayerToken;
+        if (string.IsNullOrEmpty(token))
+            throw new UnauthorizedAccessException("Spotify API authorization has not completed.");
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, ProfileUrl);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        var body = await _client.SendAsync(request);
+        var client = new SpotifyAuthenticatedClient(_httpClient, token, useApiToken: true);
+        using var request = client.CreateRequest(HttpMethod.Get, ProfileUrl);
+        var body = await client.SendAsync(request);
         return JsonSerializer.Deserialize<SpotifyProfile>(body, JsonOptions)
                ?? throw new JsonException("Spotify returned an empty profile");
     }

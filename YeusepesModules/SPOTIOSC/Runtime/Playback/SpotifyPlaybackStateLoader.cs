@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using YeusepesModules.SPOTIOSC.Credentials;
+using YeusepesModules.SPOTIOSC.Runtime.Spotify;
 using YeusepesModules.SPOTIOSC.Utils.Requests;
 
 namespace YeusepesModules.SPOTIOSC.Runtime.Playback;
@@ -25,7 +26,7 @@ internal static class SpotifyPlaybackStateLoader
                 Apply(document.RootElement, context);
                 return;
             }
-            utilities.Log("Unable to fetch playback state. Please start playing something in Spotify.");
+            await SpotifyHttp.ReadResponseAsync(response, cancellationToken);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
         catch (JsonException)
@@ -41,7 +42,8 @@ internal static class SpotifyPlaybackStateLoader
     private static HttpRequestMessage CreateRequest(SpotifyRequestContext context)
     {
         var token = CredentialManager.LoadApiAccessToken();
-        if (string.IsNullOrEmpty(token)) token = context.AccessToken;
+        if (string.IsNullOrEmpty(token))
+            throw new UnauthorizedAccessException("Spotify API authorization has not completed.");
         var request = new HttpRequestMessage(HttpMethod.Get, "https://api.spotify.com/v1/me/player");
         request.Headers.Add("Authorization", $"Bearer {token}");
         request.Headers.Add("Accept", "*/*");

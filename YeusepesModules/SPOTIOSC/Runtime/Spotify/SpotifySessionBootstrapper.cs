@@ -36,13 +36,14 @@ internal sealed class SpotifySessionBootstrapper
         }
         catch (Exception exception)
         {
-            _logDebug($"Spotify session initialization failed: {exception.Message}");
+            _logDebug($"Spotify session initialization failed: {exception}");
         }
         return null;
     }
 
     private async Task<(string Access, string Client)?> GetValidatedTokensAsync(HttpClient httpClient)
     {
+        await CredentialManager.EnsureSignedInAsync().WaitAsync(LoginTimeout);
         var tokens = LoadTokens();
         if (!tokens.HasValue)
         {
@@ -52,7 +53,6 @@ internal sealed class SpotifySessionBootstrapper
         if (!tokens.HasValue) return null;
 
         if (await ValidateAsync(httpClient, tokens.Value)) return tokens;
-        CredentialManager.ClearAllTokensAndCookies();
         if (!await RefreshAsync()) return null;
         tokens = LoadTokens();
         return tokens.HasValue && await ValidateAsync(httpClient, tokens.Value) ? tokens : null;

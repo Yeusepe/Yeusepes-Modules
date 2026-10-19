@@ -15,7 +15,10 @@ public partial class NowPlayingRuntimeView : UserControl
         DataContext = module.spotifyRequestContext;
         if (module.spotifyRequestContext is not null && module.spotifyUtilities is not null)
             _ = SpotifyPlaybackStateLoader.LoadAsync(module.spotifyRequestContext, module.spotifyUtilities);
+        _ = ApplyFontAsync();
     }
+
+    private async Task ApplyFontAsync() => FontFamily = await FontHelper.SpotifyMixAsync() ?? FontFamily;
 }
 
 public sealed class BooleanToVisibilityConverter : IValueConverter

@@ -4,6 +4,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using SpotifyAPI.Web;
+using SpotifyAPI.Web.Http;
 using YeusepesModules.SPOTIOSC.Credentials;
 
 namespace YeusepesModules.SPOTIOSC.Runtime.Spotify;
@@ -20,6 +21,9 @@ internal sealed class SpotifyApiService
 
     public SpotifyApiService(HttpClient httpClient) => _httpClient = httpClient;
 
+    private SpotifyClientConfig ClientConfig() => SpotifyClientConfig.CreateDefault()
+        .WithHTTPClient(new NetHttpClient(_httpClient));
+
     public async Task InitializeAsync()
     {
         var accessToken = CredentialManager.LoadApiAccessToken();
@@ -27,7 +31,7 @@ internal sealed class SpotifyApiService
         var clientId = CredentialManager.ApiClientId;
         if (string.IsNullOrEmpty(accessToken) || string.IsNullOrEmpty(clientId))
         {
-            accessToken = (await new OAuthClient().RequestToken(
+            accessToken = (await new OAuthClient(ClientConfig()).RequestToken(
                 new PKCETokenRefreshRequest(clientId, refreshToken))).AccessToken;
         }
 
@@ -37,7 +41,7 @@ internal sealed class SpotifyApiService
             RefreshToken = refreshToken
         });
         authenticator.TokenRefreshed += (_, tokens) => SaveApiTokens(tokens.AccessToken, tokens.RefreshToken);
-        _client = new SpotifyClient(SpotifyClientConfig.CreateDefault().WithAuthenticator(authenticator));
+        _client = new SpotifyClient(ClientConfig().WithAuthenticator(authenticator));
     }
 
     public async Task PlayAsync(string? deviceId = null)
@@ -124,9 +128,7 @@ internal sealed class SpotifyApiService
             $"https://api.spotify.com/v1/audio-features/{trackId}");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
         using var response = await _httpClient.SendAsync(request);
-        var body = await response.Content.ReadAsStringAsync();
-        if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException($"Spotify API error: {response.StatusCode} - {body}");
+        var body = await SpotifyHttp.ReadResponseAsync(response);
         return JsonSerializer.Deserialize<TrackAudioFeatures>(body, JsonOptions);
     }
 
@@ -321,14 +323,12 @@ internal sealed class SpotifyApiService
         request.Headers.Add("Client-Token", clientToken);
         request.Headers.Add("Accept", "*/*");
         using var response = await _httpClient.SendAsync(request);
-        if (!response.IsSuccessStatusCode)
-            throw new HttpRequestException(
-                $"Melody API failed with status {response.StatusCode}: {await response.Content.ReadAsStringAsync()}");
+        await SpotifyHttp.ReadResponseAsync(response);
     }
 
     private async Task RefreshAndReinitializeAsync()
     {
-        var tokens = await new OAuthClient().RequestToken(new PKCETokenRefreshRequest(
+        var tokens = await new OAuthClient(ClientConfig()).RequestToken(new PKCETokenRefreshRequest(
             CredentialManager.ApiClientId,
             CredentialManager.LoadApiRefreshToken()));
         SaveApiTokens(tokens.AccessToken, tokens.RefreshToken);

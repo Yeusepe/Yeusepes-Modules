@@ -30,8 +30,6 @@
         </GeometryGroup>
         <Style x:Key="NowPlayingTextBlock"
                TargetType="TextBlock">
-            <Setter Property="FontFamily"
-                    Value="/YeusepesModules;component/SPOTIOSC/Resources/Fonts/circular-std-6.ttf#Circular Std Book" />
             <Setter Property="FontSize"
                     Value="12" />
             <Setter Property="TextTrimming"
@@ -43,12 +41,10 @@
         <Style x:Key="NowPlayingTitleTextBlock"
                TargetType="TextBlock"
                BasedOn="{StaticResource NowPlayingTextBlock}">
-            <Setter Property="FontFamily"
-                    Value="/YeusepesModules;component/SPOTIOSC/Resources/Fonts/circular-std-6.ttf#Circular Std Book" />
             <Setter Property="FontSize"
                     Value="17" />
             <Setter Property="FontWeight"
-                    Value="SemiBold" />
+                    Value="ExtraBold" />
             <Setter Property="Foreground"
                     Value="{Binding DominantColor, Converter={StaticResource ColorBrightnessToForegroundConverter}}"/>
         </Style>

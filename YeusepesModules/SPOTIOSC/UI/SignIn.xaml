@@ -261,6 +261,12 @@
     <Viewbox Stretch="Uniform"
              Margin="0,-40,0,10">
         <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBlock x:Name="AccountStatus" Grid.Row="1" TextWrapping="Wrap"
+                       FontSize="48" Foreground="White" MaxWidth="2000" Margin="20,20,20,0" />
             <Grid x:Name="SignedOutState"
                   Visibility="Visible">
                 <Button VerticalAlignment="Center"
@@ -367,6 +373,7 @@
                                     <TextBlock Text="Sign Out"
                                                x:Name="SignOutText"
                                                FontSize="70"
+                                               FontWeight="Bold"
                                                Margin="60,0,60,0"
                                                HorizontalAlignment="Center"
                                                VerticalAlignment="Center" />
@@ -402,6 +409,7 @@
                    Text="Signing in..."
                    Foreground="White"
                    FontSize="70"
+                   FontWeight="Bold"
                    HorizontalAlignment="Center"
                    Margin="0,20,0,0"/>
                 </StackPanel>

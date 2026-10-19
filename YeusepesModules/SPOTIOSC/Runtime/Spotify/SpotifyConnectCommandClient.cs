@@ -73,8 +73,7 @@ internal sealed class SpotifyConnectCommandClient
         request.Headers.Add("sec-fetch-site", "same-site");
 
         using var response = await _context.HttpClient.SendAsync(request);
-        _logDebug(response.IsSuccessStatusCode
-            ? $"Successfully set {option} mode to {mode}"
-            : $"Failed to set {option} mode: {response.StatusCode}");
+        await SpotifyHttp.ReadResponseAsync(response);
+        _logDebug($"Successfully set {option} mode to {mode}");
     }
 }

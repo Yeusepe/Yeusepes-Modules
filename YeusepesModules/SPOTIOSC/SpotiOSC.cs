@@ -135,7 +135,8 @@ public sealed class SpotiOSC : Module
         WorldJamReceiveHigh2,
         WorldJamReceiveHigh3,
         JammrResize,
-        JammrGadget
+        JammrGadget,
+        Seek
     }
 
     protected override void OnPreLoad()
@@ -193,7 +194,7 @@ public sealed class SpotiOSC : Module
         };
         TaskScheduler.UnobservedTaskException += _puppeteerNoiseHandler;
 
-        _httpClient = new HttpClient();
+        _httpClient = SpotifyHttp.CreateClient(LogDebug);
         spotifyUtilities = CreateUtilities();
         CredentialManager.SpotifyUtils = spotifyUtilities;
         spotifyRequestContext = await new SpotifySessionBootstrapper(Log, LogDebug)
@@ -444,7 +445,8 @@ public sealed class SpotiOSC : Module
         RegisterParameter<int>(SpotiParameters.ShuffleMode, "SpotiOSC/ShuffleMode", ParameterMode.ReadWrite, "Shuffle Mode (Mapped)", "Off=0, shuffle=1, smart shuffle=2.");
         RegisterParameter<int>(SpotiParameters.RepeatMode, "SpotiOSC/RepeatMode", ParameterMode.ReadWrite, "Repeat Mode (Mapped)", "Off=0, track=1, context=2.");
         RegisterParameter<float>(SpotiParameters.Timestamp, "SpotiOSC/Timestamp", ParameterMode.Write, "Timestamp", "Playback timestamp reported by Spotify.");
-        RegisterParameter<float>(SpotiParameters.PlaybackPosition, "SpotiOSC/PlaybackPosition", ParameterMode.ReadWrite, "Playback Progress (ms)", "Playback progress in ms. Set to a nonnegative position to seek.");
+        RegisterParameter<float>(SpotiParameters.PlaybackPosition, "SpotiOSC/PlaybackPosition", ParameterMode.Write, "Playback Progress (ms)", "Playback progress in ms.");
+        RegisterParameter<float>(SpotiParameters.Seek, "SpotiOSC/Seek", ParameterMode.Read, "Seek (ms)", "Set to a nonnegative position in ms to seek.");
         RegisterParameter<bool>(SpotiParameters.IsPlaying, "SpotiOSC/IsPlaying", ParameterMode.Write, "Is Playing", "Whether playback is active.");
         RegisterParameter<bool>(SpotiParameters.DeviceIsActive, "SpotiOSC/DeviceIsActive", ParameterMode.Write, "Device Active", "Device is active.");
         RegisterParameter<bool>(SpotiParameters.DeviceIsPrivate, "SpotiOSC/DeviceIsPrivate", ParameterMode.Write, "Private Session", "Device is in a private session.");

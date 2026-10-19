@@ -18,6 +18,7 @@ namespace YeusepesModules.SPOTIOSC.UI;
 public partial class SignIn : UserControl
 {
     private readonly SpotifyUtilities? _utilities;
+    private bool _busy;
 
     public SignIn(Module module, ModuleSetting setting)
     {
@@ -26,7 +27,6 @@ public partial class SignIn : UserControl
             new Uri("/YeusepesModules;component/spotiosc/ui/signin.xaml", UriKind.Relative));
         _utilities = ((SpotiOSC)module).spotifyUtilities;
         _ = setting;
-        ApplyFonts();
         _ = InitializeAsync();
     }
 
@@ -36,13 +36,13 @@ public partial class SignIn : UserControl
         try
         {
             if (!CredentialManager.IsUserSignedIn() && CredentialManager.HasSavedCookie())
-                await CredentialManager.LoginAndCaptureCookiesAsync();
+                await CredentialManager.EnsureSignedInAsync();
             await RefreshAccountAsync();
         }
         catch (Exception exception)
         {
             _utilities?.LogDebug($"Spotify account view initialization failed: {exception.Message}");
-            ShowSignedIn(false);
+            ShowAccountError(exception);
         }
         finally
         {
@@ -58,12 +58,12 @@ public partial class SignIn : UserControl
             return;
         }
 
-        using var httpClient = new HttpClient();
-        var profile = await new SpotifyProfileClient(
-            httpClient,
-            CredentialManager.LoadAccessToken()).GetAsync();
+        ShowSignedIn(true);
+        using var httpClient = SpotifyHttp.CreateClient(message => _utilities?.LogDebug(message));
+        var profile = await new SpotifyProfileClient(httpClient).GetAsync();
 
         ApplyProfile(profile);
+        AccountStatus.Text = string.Empty;
         ShowSignedIn(true);
     }
 
@@ -101,39 +101,42 @@ public partial class SignIn : UserControl
 
     private void SetBusy(bool busy)
     {
+        _busy = busy;
         SpinnerOverlay.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
         if (busy) CursorManager.SetSpinnerCursor();
         else CursorManager.RestoreCursor();
     }
 
-    private void ApplyFonts()
-    {
-        HeyText.FontFamily = FontHelper.Book;
-        UserName.FontFamily = FontHelper.Bold;
-        ExclamationText.FontFamily = FontHelper.Bold;
-        YourAccountText.FontFamily = FontHelper.Book;
-        SignOutText.FontFamily = FontHelper.Bold;
-        SpinnerText.FontFamily = FontHelper.Bold;
-    }
-
     private async void OnSignInClick(object sender, RoutedEventArgs args)
     {
+        if (_busy) return;
         SetBusy(true);
         try
         {
-            await CredentialManager.LoginAsync();
+            await CredentialManager.LoginAndCaptureCookiesAsync();
             await RefreshAccountAsync();
         }
         catch (Exception exception)
         {
             _utilities?.LogDebug($"Spotify sign-in failed: {exception}");
-            _utilities?.Log($"Spotify sign-in failed: {exception.Message}");
-            ShowSignedIn(false);
+            ShowAccountError(exception);
         }
         finally
         {
             SetBusy(false);
         }
+    }
+
+    private void ShowAccountError(Exception exception)
+    {
+        var signedIn = CredentialManager.IsUserSignedIn() && exception is not UnauthorizedAccessException;
+        ShowSignedIn(signedIn);
+        if (signedIn && string.IsNullOrEmpty(UserName.Text)) UserName.Text = "Spotify user";
+        if (signedIn && string.IsNullOrEmpty(PlanText.Text)) PlanText.Text = "Unavailable";
+        AccountStatus.Text = exception is SpotifyRateLimitException limited
+            ? $"Spotify asked us to wait. Try again after {limited.RetryAt.ToLocalTime():t}."
+            : signedIn ? "Signed in. Account details are temporarily unavailable." : "Could not finish signing in. Please try again.";
+        _utilities?.Log(AccountStatus.Text);
     }
 
     private void OnYourAccountClick(object sender, RoutedEventArgs args)
@@ -160,6 +163,7 @@ public partial class SignIn : UserControl
         try
         {
             CredentialManager.SignOut();
+            AccountStatus.Text = string.Empty;
             ShowSignedIn(false);
         }
         catch (Exception exception)

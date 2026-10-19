@@ -19,10 +19,11 @@ public partial class SignInWindow : IManagedWindow
 
     public object GetComparer() => _comparer;
 
-    private void OnSourceInitialized(object? sender, EventArgs args)
+    private async void OnSourceInitialized(object? sender, EventArgs args)
     {
         var setting = _module.GetSetting(SpotiOSC.SpotiSettings.SignInButton);
         MainGrid.Children.Insert(0, new SignIn(_module, setting));
         MainGrid.Children.Add(new AdvancedCredentials());
+        FontFamily = await FontHelper.SpotifyMixAsync() ?? FontFamily;
     }
 }

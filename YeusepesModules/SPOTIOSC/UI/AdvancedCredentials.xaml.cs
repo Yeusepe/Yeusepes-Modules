@@ -1,10 +1,13 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Navigation;
 using YeusepesModules.SPOTIOSC.Credentials;
 
 namespace YeusepesModules.SPOTIOSC.UI
@@ -17,8 +20,50 @@ namespace YeusepesModules.SPOTIOSC.UI
         private string _spTToken;
 
         public AdvancedCredentials()
-        {            
-            InitializeComponent();                       
+        {
+            InitializeComponent();
+            RedirectUriText.Text = CredentialManager.CustomRedirectUri;
+            ShowApiClient();
+        }
+
+        private void ShowApiClient()
+        {
+            var custom = CredentialManager.UsesCustomApiClient;
+            AppModeText.Text = custom ? "Using your app" : "Using shared app";
+            UseDefaultButton.Visibility = custom ? Visibility.Visible : Visibility.Collapsed;
+            ClientIdBox.Text = custom ? CredentialManager.ApiClientId : string.Empty;
+        }
+
+        private void Link_RequestNavigate(object s, RequestNavigateEventArgs e) =>
+            Process.Start(new ProcessStartInfo(e.Uri.AbsoluteUri) { UseShellExecute = true });
+
+        private void CopyRedirectUri_Click(object s, RoutedEventArgs _) => CopyToClipboard(s, CredentialManager.CustomRedirectUri);
+
+        private async void UseCustomApp_Click(object s, RoutedEventArgs _) => await UseApiClientAsync(ClientIdBox.Text.Trim());
+
+        private async void UseDefaultApp_Click(object s, RoutedEventArgs _) => await UseApiClientAsync(string.Empty);
+
+        private async Task UseApiClientAsync(string clientId)
+        {
+            if (clientId.Length > 0 && !Regex.IsMatch(clientId, "^[0-9a-f]{32}$"))
+            {
+                ApiClientStatus.Text = "That isn't a Client ID. Copy the 32 character ID from your app's page.";
+                return;
+            }
+
+            ApiClientStatus.Text = clientId.Length > 0
+                ? "Approve SpotiOSC in your browser to finish connecting."
+                : "Switching back to the shared app.";
+            try
+            {
+                await CredentialManager.UseApiClientAsync(clientId);
+                ApiClientStatus.Text = "Connected. Restart the module to start using it.";
+            }
+            catch (Exception e)
+            {
+                ApiClientStatus.Text = $"Couldn't connect: {e.Message}";
+            }
+            ShowApiClient();
         }
 
         private void ToggleButton_Click(object sender, RoutedEventArgs e)
@@ -26,7 +71,7 @@ namespace YeusepesModules.SPOTIOSC.UI
             if (Panel.Visibility == Visibility.Visible)
             {
                 Panel.Visibility = Visibility.Collapsed;
-                ArrowIcon.Text = "▼";
+                ArrowIcon.Text = "";
             }
             else
             {
@@ -41,7 +86,7 @@ namespace YeusepesModules.SPOTIOSC.UI
                 SpTTokenText.Text = new string('•', _spTToken.Length);
                 
                 Panel.Visibility = Visibility.Visible;
-                ArrowIcon.Text = "▲";
+                ArrowIcon.Text = "";
             }
         }
 
@@ -65,20 +110,22 @@ namespace YeusepesModules.SPOTIOSC.UI
             SpTTokenText.Text = new string('•', _spTToken.Length);
         }
 
-        private void CopyAccessToken_Click(object s, RoutedEventArgs _)
+        private void CopyAccessToken_Click(object s, RoutedEventArgs _) => CopyToClipboard(s, _accessToken);
+
+        private void CopyClientToken_Click(object s, RoutedEventArgs _) => CopyToClipboard(s, _clientToken);
+
+        private void CopyApiAccessToken_Click(object s, RoutedEventArgs _) => CopyToClipboard(s, _apiAccessToken);
+
+        private void CopySpTToken_Click(object s, RoutedEventArgs _) => CopyToClipboard(s, _spTToken);
+
+        private async void CopyToClipboard(object sender, string text)
         {
-            CopyToClipboard(_accessToken);
+            CopyToClipboard(text);
+            var button = (Button)sender;
+            button.Content = "Copied";
+            await Task.Delay(1500);
+            button.Content = "Copy";
         }
-
-        private void CopyClientToken_Click(object s, RoutedEventArgs _)
-        {
-            CopyToClipboard(_clientToken);
-        }
-
-        private void CopyApiAccessToken_Click(object s, RoutedEventArgs _) => CopyToClipboard(_apiAccessToken);
-
-        private void CopySpTToken_Click(object s, RoutedEventArgs _) => CopyToClipboard(_spTToken);
-
 
         private void CopyToClipboard(string text)
         {

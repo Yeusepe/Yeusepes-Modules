@@ -10,6 +10,7 @@
   <ItemGroup>
     <None Remove="Natives\concrt140.dll" />
     <None Remove="Natives\cvextern.dll" />
+    <None Remove="Natives\JamPake.dll" />
     <None Remove="Natives\libiconv.dll" />
     <None Remove="Natives\libusb-1.0.dll" />
     <None Remove="Natives\libzbar.dll" />
@@ -22,6 +23,7 @@
 
   <ItemGroup>
     <EmbeddedResource Include="Natives\concrt140.dll" />
+    <EmbeddedResource Include="Natives\JamPake.dll" />
     <EmbeddedResource Include="Natives\cvextern.dll">
       <CopyToOutputDirectory>Never</CopyToOutputDirectory>
     </EmbeddedResource>

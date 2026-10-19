@@ -27,27 +27,22 @@ internal sealed class SpotifySessionValidator
         {
             using var request = CreateRequest(accessToken, clientToken);
             using var response = await _httpClient.SendAsync(request);
-            var body = await response.Content.ReadAsStringAsync();
-            if (response.StatusCode == HttpStatusCode.TooManyRequests)
-                ThrowRateLimit();
+            var body = await SpotifyHttp.ReadResponseAsync(response);
             using var document = JsonDocument.Parse(body);
-            if (ContainsRateLimit(document.RootElement)) ThrowRateLimit();
+            if (ContainsRateLimit(document.RootElement))
+                throw new SpotifyRateLimitException(
+                    $"Spotify profile query reported a rate limit; {await SpotifyHttp.ReadErrorAsync(response)}",
+                    DateTimeOffset.UtcNow + SpotifyHttp.RetryDelay(response));
 
-            response.EnsureSuccessStatusCode();
             if (!TryGetIdentity(document.RootElement, out var displayName, out var userId))
             {
-                _log("Spotify profile response was missing the display name or user ID.");
-                return false;
+                throw new JsonException($"Spotify profile response was missing the display name or user ID; {await SpotifyHttp.ReadErrorAsync(response)}");
             }
 
             _log($"Fetched user successfully! Display Name: {displayName}, ID: {userId}");
             return true;
         }
-        catch (HttpRequestException exception) when (exception.StatusCode == HttpStatusCode.TooManyRequests)
-        {
-            throw;
-        }
-        catch (Exception exception)
+        catch (HttpRequestException exception) when (exception.StatusCode == HttpStatusCode.Unauthorized)
         {
             _log($"Error fetching profile attributes: {exception.Message}");
             _logDebug("Spotify session validation failed");
@@ -108,12 +103,4 @@ internal sealed class SpotifySessionValidator
             extensions.TryGetProperty("statusCode", out var status) &&
             status.TryGetInt32(out var code) && code == 429);
 
-    private void ThrowRateLimit()
-    {
-        _log("API rate limit exceeded (429). Please wait before trying again.");
-        throw new HttpRequestException(
-            "API rate limit exceeded (429)",
-            null,
-            HttpStatusCode.TooManyRequests);
-    }
 }

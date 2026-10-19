@@ -1,14 +1,15 @@
-using System.Net;
 using System.Net.Http;
-using System.Net.Http.Headers;
+using System.Numerics;
 using System.Text.Json;
 using YeusepesModules.SPOTIOSC.Credentials;
+using YeusepesModules.SPOTIOSC.Runtime.Spotify;
 using YeusepesModules.SPOTIOSC.Utils.Requests;
 
 namespace YeusepesModules.SPOTIOSC.Runtime.Playback;
 
 internal sealed class TrackMetadataEnricher : IAsyncDisposable
 {
+    private const string Base62 = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ";
     private static readonly TimeSpan FetchDelay = TimeSpan.FromMilliseconds(500);
     private readonly SpotifyRequestContext _context;
     private readonly PlaybackProjection _projection;
@@ -67,27 +68,21 @@ internal sealed class TrackMetadataEnricher : IAsyncDisposable
 
         try
         {
-            using var request = CreateRequest(trackId);
-            using var response = await _context.HttpClient.SendAsync(request, cancellationToken);
-            if (response.IsSuccessStatusCode)
-            {
-                using var document = JsonDocument.Parse(
-                    await response.Content.ReadAsByteArrayAsync(cancellationToken));
-                Apply(document.RootElement);
-                return;
-            }
-
-            if (response.StatusCode == HttpStatusCode.TooManyRequests)
-            {
-                Requeue(trackId, response.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(1));
-                return;
-            }
-
-            _logDebug($"Track metadata request failed: {response.StatusCode} - " +
-                      await response.Content.ReadAsStringAsync(cancellationToken));
+            var client = new SpotifyAuthenticatedClient(_context.HttpClient, CredentialManager.LoadAccessToken());
+            using var request = client.CreateRequest(
+                HttpMethod.Get,
+                $"https://spclient.wg.spotify.com/metadata/4/track/{ToGid(trackId)}?market=from_token");
+            request.Headers.Add("Accept", "application/json");
+            request.Headers.Add("client-token", CredentialManager.LoadClientToken());
+            using var document = JsonDocument.Parse(await client.SendAsync(request, cancellationToken));
+            Apply(trackId, document.RootElement);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+        }
+        catch (SpotifyRateLimitException exception)
+        {
+            Requeue(trackId, exception.RetryAt - DateTimeOffset.UtcNow);
         }
         catch (Exception exception)
         {
@@ -101,63 +96,39 @@ internal sealed class TrackMetadataEnricher : IAsyncDisposable
         {
             if (_disposed || _context.TrackUri != $"spotify:track:{trackId}") return;
             _pendingId = trackId;
-            _timer?.Change(delay, Timeout.InfiniteTimeSpan);
+            _timer?.Change(delay > TimeSpan.Zero ? delay : TimeSpan.FromSeconds(1), Timeout.InfiniteTimeSpan);
         }
         _logDebug($"Track metadata rate limited; retrying in {delay.TotalMilliseconds}ms");
     }
 
-    private HttpRequestMessage CreateRequest(string trackId)
+    private static string ToGid(string trackId)
     {
-        var token = CredentialManager.LoadApiAccessToken();
-        if (string.IsNullOrEmpty(token)) token = _context.AccessToken;
-
-        var request = new HttpRequestMessage(
-            HttpMethod.Get,
-            $"https://api.spotify.com/v1/tracks/{Uri.EscapeDataString(trackId)}");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        request.Headers.Add("Accept", "*/*");
-        request.Headers.Add("Accept-Language", "en-US,en;q=0.9");
-        request.Headers.Add("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36");
-        request.Headers.Add("Priority", "u=1, i");
-        request.Headers.Add("Sec-Fetch-Dest", "empty");
-        request.Headers.Add("Sec-Fetch-Mode", "cors");
-        request.Headers.Add("Sec-Fetch-Site", "same-site");
-        request.Headers.Add("Referer", "https://developer.spotify.com/");
-        return request;
+        var value = BigInteger.Zero;
+        foreach (var character in trackId)
+            value = value * 62 + Base62.IndexOf(character);
+        return value.ToString("x32")[^32..];
     }
 
-    private void Apply(JsonElement track)
+    private void Apply(string trackId, JsonElement track)
     {
-        if (!TryReadArtists(track, out var trackUri, out var artists) ||
-            !string.Equals(_context.TrackUri, trackUri, StringComparison.Ordinal))
+        if (_context.TrackUri != $"spotify:track:{trackId}") return;
+        List<(string Name, string Uri)> artists = track.TryGetProperty("artist", out var source)
+            ? source.EnumerateArray()
+                .Select(artist => artist.TryGetProperty("name", out var name) ? name.GetString() : null)
+                .Where(name => !string.IsNullOrEmpty(name))
+                .Select(name => (name!, string.Empty))
+                .ToList()
+            : [];
+        if (artists.Count == 0)
+        {
+            var raw = track.GetRawText();
+            _logDebug($"Track metadata had no artists: {raw[..Math.Min(300, raw.Length)]}");
             return;
+        }
 
         _context.Artists = artists;
         _projection.Update();
         _logDebug($"Enriched track metadata: {string.Join(", ", artists.Select(artist => artist.Name))}");
-    }
-
-    private static bool TryReadArtists(
-        JsonElement track,
-        out string? trackUri,
-        out List<(string Name, string Uri)> artists)
-    {
-        trackUri = null;
-        artists = [];
-        if (track.ValueKind != JsonValueKind.Object ||
-            !track.TryGetProperty("artists", out var source) ||
-            source.ValueKind != JsonValueKind.Array)
-            return false;
-
-        trackUri = track.TryGetProperty("uri", out var uri) ? uri.GetString() : null;
-        artists = source.EnumerateArray()
-            .Select(artist => (
-                Name: artist.TryGetProperty("name", out var name) ? name.GetString() : null,
-                Uri: artist.TryGetProperty("uri", out var artistUri) ? artistUri.GetString() : null))
-            .Where(artist => !string.IsNullOrEmpty(artist.Name))
-            .Select(artist => (artist.Name!, artist.Uri ?? string.Empty))
-            .ToList();
-        return artists.Count > 0;
     }
 
     public async ValueTask DisposeAsync()
