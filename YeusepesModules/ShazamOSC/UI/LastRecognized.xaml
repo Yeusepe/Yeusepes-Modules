@@ -28,7 +28,9 @@
     <!-- Outer rounded border -->
     <Border CornerRadius="12"          
           ClipToBounds="True"
-          Padding="10">
+          Padding="10"
+          Cursor="Hand"
+          MouseLeftButtonDown="OnRecognizeClick">
         <Border.Background>
             <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
                 <!-- your “shame” blue -->

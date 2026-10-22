@@ -29,9 +29,9 @@ namespace YeusepesModules.ShazamOSC.ShazamAPI
 
     public class ShazamUtilities : IShazamUtilities
     {
-        public Action<string> Log { get; set; }
-        public Action<string> LogDebug { get; set; }
-        public Action<Enum, object> SendParameter { get; set; }
+        public Action<string> Log { get; set; } = _ => { };
+        public Action<string> LogDebug { get; set; } = _ => { };
+        public Action<Enum, object> SendParameter { get; set; } = (_, __) => { };
     }
 
     /// <summary>
@@ -73,9 +73,14 @@ namespace YeusepesModules.ShazamOSC.ShazamAPI
         public int NumWritten { get; set; }
         public int BufferSize => _buffer.Length;
 
-        public RingBuffer(int bufferSize, T defaultValue = default)
+        public RingBuffer(int bufferSize) : this(bufferSize, default!)
         {
-            _buffer = Enumerable.Repeat(defaultValue, bufferSize).ToArray();
+        }
+
+        public RingBuffer(int bufferSize, T defaultValue)
+        {
+            _buffer = new T[bufferSize];
+            Array.Fill(_buffer, defaultValue);
             Position = 0;
             NumWritten = 0;
         }
@@ -244,7 +249,6 @@ namespace YeusepesModules.ShazamOSC.ShazamAPI
 
         public byte[] EncodeToBinary()
         {
-            const int HeaderSize = 48;
             const uint HeaderMagic1 = 0xCAFE2580;
             const uint HeaderMagic2 = 0x94119C00;
             const uint HeaderMagic3 = (15u << 19) + 0x40000;
@@ -411,7 +415,7 @@ namespace YeusepesModules.ShazamOSC.ShazamAPI
             }
         }
 
-        public DecodedMessage GetNextSignature()
+        public DecodedMessage? GetNextSignature()
         {
             try
             {
