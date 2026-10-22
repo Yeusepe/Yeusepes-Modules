@@ -32,6 +32,11 @@ namespace YeusepesModules.VRChatAPI
             SignInButton
         }
 
+        private enum VRChatState
+        {
+            Default
+        }
+
         public enum VRChatParameters
         {
             // Authentication
@@ -378,7 +383,7 @@ namespace YeusepesModules.VRChatAPI
 
             // Variables for world information
             CreateVariable<string>("WorldId", "World ID");
-            CreateVariable<string>("WorldName", "World Name");
+            var worldName = CreateVariable<string>("WorldName", "World Name")!;
             CreateVariable<string>("WorldDescription", "World Description");
             CreateVariable<int>("WorldCapacity", "World Capacity");
             CreateVariable<int>("WorldOccupants", "World Occupants");
@@ -391,14 +396,21 @@ namespace YeusepesModules.VRChatAPI
             CreateVariable<string>("InstanceId", "Instance ID");
             CreateVariable<string>("InstanceType", "Instance Type");
             CreateVariable<string>("InstanceOwner", "Instance Owner");
-            CreateVariable<int>("InstanceCapacity", "Instance Capacity");
-            CreateVariable<int>("InstanceOccupants", "Instance Occupants");
+            var instanceCapacity = CreateVariable<int>("InstanceCapacity", "Instance Capacity")!;
+            var instanceOccupants = CreateVariable<int>("InstanceOccupants", "Instance Occupants")!;
             CreateVariable<bool>("InstanceCanRequestInvite", "Can Request Invite");
             CreateVariable<bool>("InstanceIsFull", "Instance Is Full");
             CreateVariable<bool>("InstanceIsHidden", "Instance Is Hidden");
             CreateVariable<bool>("InstanceIsFriendsOnly", "Instance Is Friends Only");
             CreateVariable<bool>("InstanceIsFriendsOfFriends", "Instance Is Friends Of Friends");
             CreateVariable<bool>("InstanceIsInviteOnly", "Instance Is Invite Only");
+
+            // A ChatBox clip is only ever shown through a clip state, and a clip state needs a
+            // state entry from every linked module. Without one, linking this module to a clip
+            // blanks the clip permanently and none of the variables above are reachable from the
+            // ChatBox timeline. One default state fixes that; the format is just a sensible
+            // starting point users can edit.
+            CreateState(VRChatState.Default, "Default", "{0} \u00b7 {1}/{2}", new[] { worldName, instanceOccupants, instanceCapacity });
 
             // Events
             CreateEvent("UserInfoEvent", "User Info Event", "User information updated: {0}", new[] { CreateVariable<string>("UserInfoDisplayName", "Display Name") });
@@ -420,6 +432,7 @@ namespace YeusepesModules.VRChatAPI
             VRChatCredentialManager.VRChatUtils = vrchatUtilities;
 
             LogDebug("Starting VRChat API Interactor...");
+            ChangeState(VRChatState.Default);
 
             // Always start the module, authentication is handled dynamically in the UI
             SendParameter(VRChatParameters.Enabled, true);
